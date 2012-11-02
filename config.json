@@ -1,0 +1,6 @@
+{
+    "Server":"127.0.0.1",
+    "ServerPort":8388,
+    "LocalPort":1080,
+    "Password":"barfoo!"
+}

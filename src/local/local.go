@@ -88,8 +88,7 @@ func handleConnection(conn net.Conn, encryptTable, decryptTable []byte, server s
 func run(encryptTable, decryptTable []byte, port int, server string) {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
-		log.Println(err)
-		return
+		log.Fatal(err)
 	}
 	log.Printf("starting server at port %d ...\n", port)
 	for {
@@ -103,7 +102,8 @@ func run(encryptTable, decryptTable []byte, port int, server string) {
 }
 
 func main() {
-	encyrptTable, decryptTable := shadowsocks.GetTable("foobar!")
-	run(encyrptTable, decryptTable, 1080, "127.0.0.1:8388")
+	config := shadowsocks.ParseConfig()
+	encyrptTable, decryptTable := shadowsocks.GetTable(config.Password)
+	run(encyrptTable, decryptTable, config.LocalPort, fmt.Sprintf("%s:%d", config.Server, config.ServerPort))
 
 }
