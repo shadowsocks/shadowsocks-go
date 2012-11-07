@@ -13,10 +13,10 @@ import (
 	"log"
 )
 type Config struct {
-	Server string
-	ServerPort int
-	LocalPort int
-	Password string
+	Server string `json:"server"`
+	ServerPort int `json:"server_port"`
+	LocalPort int `json:"local_port"`
+	Password string `json:"password"`
 }
 
 func ParseConfig() Config {
