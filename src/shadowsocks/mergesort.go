@@ -1,7 +1,7 @@
 package shadowsocks
 
-func merge(left, right []int, comparison func (int, int) int) []int {
-	result := make([]int, len(left) + len(right))
+func merge(left, right []uint64, comparison func (uint64, uint64) int64) []uint64 {
+	result := make([]uint64, len(left) + len(right))
 	l, r := 0, 0
 	for (l < len(left)) && (r < len(right)) {
 		if comparison(left[l], right[r]) <= 0 {
@@ -23,10 +23,10 @@ func merge(left, right []int, comparison func (int, int) int) []int {
 	return result
 }
 
-func Sort(arr []int, comparison func (int, int) int) []int {
+func Sort(arr []uint64, comparison func (uint64, uint64) int64) []uint64 {
 	if len(arr) < 2 {
 		return arr
 	}
-	var middle int = int(len(arr)/2)
+	var middle uint64 = uint64(len(arr)/2)
 	return merge(Sort(arr[0:middle], comparison), Sort(arr[middle:], comparison), comparison)
 }
