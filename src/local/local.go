@@ -1,11 +1,10 @@
 package main
 
 import (
-	"shadowsocks"
-	"net"
-	"bytes"
-	"log"
 	"fmt"
+	"log"
+	"net"
+	"shadowsocks"
 )
 
 func handleConnection(conn net.Conn, encryptTable, decryptTable []byte, server string) {
@@ -39,9 +38,8 @@ func handleConnection(conn net.Conn, encryptTable, decryptTable []byte, server s
 			addrToSend = buf[3:10]
 		} else if addrType == 3 {
 			addrLen := buf[4]
-			sb := bytes.NewBuffer(buf[5:5 + addrLen])
-			addr = sb.String()
-			addrToSend = buf[3:5 + addrLen + 2]
+			addr = string(buf[5 : 5+addrLen])
+			addrToSend = buf[3 : 5+addrLen+2]
 		} else {
 			hasError = true
 			log.Println("unsurpported addr type")
