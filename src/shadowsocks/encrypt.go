@@ -1,10 +1,10 @@
 package shadowsocks
 
 import (
-	"crypto/md5"
-	"io"
-	"encoding/binary"
 	"bytes"
+	"crypto/md5"
+	"encoding/binary"
+	"io"
 )
 
 func GetTable(key string) (encryptTable []byte, decryptTable []byte) {
@@ -26,8 +26,8 @@ func GetTable(key string) (encryptTable []byte, decryptTable []byte) {
 	}
 	for i = 1; i < 1024; i++ {
 		table = Sort(table, func(x, y uint64) int64 {
-				return int64(a%uint64(x + i) - a%uint64(y + i))
-			})
+			return int64(a%uint64(x+i) - a%uint64(y+i))
+		})
 	}
 	for i = 0; i < 256; i++ {
 		encryptTable[i] = byte(table[i])
@@ -39,10 +39,14 @@ func GetTable(key string) (encryptTable []byte, decryptTable []byte) {
 	return
 }
 
-func Encrypt(table []byte, buf []byte) []byte {
-	var result = make([]byte, len(buf))
+func Encrypt2(table []byte, buf, result []byte) {
 	for i := 0; i < len(buf); i++ {
 		result[i] = table[buf[i]]
 	}
+}
+
+func Encrypt(table []byte, buf []byte) []byte {
+	var result = make([]byte, len(buf), len(buf))
+	Encrypt2(table, buf, result)
 	return result
 }
