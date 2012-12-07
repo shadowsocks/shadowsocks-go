@@ -45,7 +45,7 @@ func addrBufFromString(addr string) (buf []byte, err error) {
 	return
 }
 
-// Expose this for use by local.go and server.go
+// Export this for use by local.go and server.go
 func DialWithAddrBuf(addrBuf []byte, server string) (c Conn, err error) {
 	if encTable == nil {
 		panic("shadowsocks internal error, must call InitTable first.")
@@ -70,9 +70,6 @@ func Dial(addr string, server string) (c Conn, err error) {
 	}
 	return DialWithAddrBuf(addrBuf, server)
 }
-
-// TODO addrBufFromIP and DialWithIP
-// can be used to rewrite local.go
 
 func (c Conn) Read(b []byte) (n int, err error) {
 	buf := make([]byte, len(b), len(b))
