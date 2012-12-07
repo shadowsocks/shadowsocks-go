@@ -1,14 +1,13 @@
 package main
 
 import (
-	"shadowsocks"
-	"net"
-	"bytes"
-	"log"
 	"fmt"
+	"log"
+	"net"
+	"shadowsocks"
 )
 
-func handleConnection(conn net.Conn, encryptTable, decryptTable []byte, server string) {
+func handleConnection(conn net.Conn, server string) {
 	log.Printf("socks connect from %s\n", conn.RemoteAddr().String())
 	b := make([]byte, 262)
 	var err error = nil
@@ -39,9 +38,8 @@ func handleConnection(conn net.Conn, encryptTable, decryptTable []byte, server s
 			addrToSend = buf[3:10]
 		} else if addrType == 3 {
 			addrLen := buf[4]
-			sb := bytes.NewBuffer(buf[5:5 + addrLen])
-			addr = sb.String()
-			addrToSend = buf[3:5 + addrLen + 2]
+			addr = string(buf[5 : 5+addrLen])
+			addrToSend = buf[3 : 5+addrLen+2]
 		} else {
 			hasError = true
 			log.Println("unsurpported addr type")
@@ -49,20 +47,15 @@ func handleConnection(conn net.Conn, encryptTable, decryptTable []byte, server s
 		}
 		log.Println("connecting ", addr)
 		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
-		var remote net.Conn
-		remote, err = net.Dial("tcp", server)
-		if err != nil {
-			hasError = true
-			break
-		}
-		_, err = remote.Write(shadowsocks.Encrypt(encryptTable, addrToSend))
+
+		remote, err := shadowsocks.DialWithAddrBuf(addrToSend, server)
 		if err != nil {
 			hasError = true
 			break
 		}
 		c := make(chan int, 2)
-		go shadowsocks.Pipe(conn, remote, encryptTable, c)
-		go shadowsocks.Pipe(remote, conn, decryptTable, c)
+		go shadowsocks.Pipe(conn, remote, c)
+		go shadowsocks.Pipe(remote, conn, c)
 		<-c // close the other connection whenever one connection is closed
 		log.Println("closing")
 		err = conn.Close()
@@ -85,7 +78,7 @@ func handleConnection(conn net.Conn, encryptTable, decryptTable []byte, server s
 
 }
 
-func run(encryptTable, decryptTable []byte, port int, server string) {
+func run(port int, server string) {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		log.Fatal(err)
@@ -97,13 +90,12 @@ func run(encryptTable, decryptTable []byte, port int, server string) {
 			log.Println("accept:", err)
 			continue
 		}
-		go handleConnection(net.Conn(conn), encryptTable, decryptTable, server)
+		go handleConnection(conn, server)
 	}
 }
 
 func main() {
 	config := shadowsocks.ParseConfig()
-	encyrptTable, decryptTable := shadowsocks.GetTable(config.Password)
-	run(encyrptTable, decryptTable, config.LocalPort, fmt.Sprintf("%s:%d", config.Server, config.ServerPort))
-
+	shadowsocks.InitTable(config.Password)
+	run(config.LocalPort, fmt.Sprintf("%s:%d", config.Server, config.ServerPort))
 }
