@@ -1,16 +1,16 @@
 package shadowsocks
 
 import (
-	"net"
 	"log"
+	"net"
 )
 
-func Pipe(src net.Conn, dst net.Conn, table []byte, end chan int) {
+func Pipe(src net.Conn, dst net.Conn, end chan int) {
 	buf := make([]byte, 4096)
 	for {
 		num, err := src.Read(buf)
 		if err == nil {
-			_, err := dst.Write(Encrypt(table, buf[0:num]))
+			_, err := dst.Write(buf[0:num])
 			if err != nil {
 				log.Println("write:", err)
 				end <- 1
@@ -27,4 +27,3 @@ func Pipe(src net.Conn, dst net.Conn, table []byte, end chan int) {
 		}
 	}
 }
-
