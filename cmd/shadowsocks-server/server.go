@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"shadowsocks"
+	"github.com/cyfdecyf/shadowsocks-go/shadowsocks"
 )
 
 func handleConnection(conn shadowsocks.Conn) {

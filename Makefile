@@ -1,17 +1,28 @@
-GOPATH := $(PWD)
+# Use shadowsocks as command prefix to avoid name conflict
+# Maybe ss-local/server is better because easier to type
+PREFIX := shadowsocks
+LOCAL := $(GOBIN)/$(PREFIX)-local
+SERVER := $(GOBIN)/$(PREFIX)-server
+TEST := $(GOBIN)/$(PREFIX)-test
 
-all: bin/local bin/server bin/test
+# TODO define the install package path for use in clean and detect whether
+# package need re-build
+
+all: $(LOCAL) $(SERVER) $(TEST)
 
 .PHONY: clean
 
 clean:
-	rm -rf bin/* pkg/*
+	rm -rf $(LOCAL) $(SERVER) $(TEST)
 
-bin/local: src/shadowsocks/*.go src/local/*.go
-	go install local
+$(LOCAL): shadowsocks/*.go cmd/$(PREFIX)-local/*.go
+	cd shadowsocks; go install
+	cd cmd/$(PREFIX)-local; go install
 
-bin/server: src/shadowsocks/*.go src/server/*.go
-	go install server
+$(SERVER): shadowsocks/*.go cmd/$(PREFIX)-server/*.go
+	cd shadowsocks; go install
+	cd cmd/$(PREFIX)-server; go install
 
-bin/test: src/shadowsocks/*.go src/test/*.go
-	go install test
+$(TEST): shadowsocks/*.go cmd/$(PREFIX)-test/*.go
+	cd shadowsocks; go install
+	cd cmd/$(PREFIX)-test; go install
