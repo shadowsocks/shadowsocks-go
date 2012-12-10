@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"github.com/cyfdecyf/shadowsocks-go/shadowsocks"
+	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
 func handleConnection(conn net.Conn, server string) {

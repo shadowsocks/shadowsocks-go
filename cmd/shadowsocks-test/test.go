@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/cyfdecyf/shadowsocks-go/shadowsocks"
+	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"log"
 )
 
