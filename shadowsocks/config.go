@@ -9,14 +9,15 @@ package shadowsocks
 
 import (
 	"encoding/json"
-	"os"
 	"log"
+	"os"
 )
+
 type Config struct {
-	Server string `json:"server"`
-	ServerPort int `json:"server_port"`
-	LocalPort int `json:"local_port"`
-	Password string `json:"password"`
+	Server     string `json:"server"`
+	ServerPort int    `json:"server_port"`
+	LocalPort  int    `json:"local_port"`
+	Password   string `json:"password"`
 }
 
 func ParseConfig() Config {
@@ -35,7 +36,7 @@ func ParseConfig() Config {
 	var config Config
 	err = json.Unmarshal(data[0:count], &config)
 	if err != nil {
-		log.Fatal("can not parse config:",err)
+		log.Fatal("can not parse config:", err)
 	}
 	return config
 }
