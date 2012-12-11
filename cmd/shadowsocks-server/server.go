@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"log"
 	"net"
-	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
-func handleConnection(conn shadowsocks.Conn) {
+var config shadowsocks.Config
+var encTbl *shadowsocks.EncryptTable
+
+func handleConnection(conn *shadowsocks.Conn) {
 	log.Printf("socks connect from %s\n", conn.RemoteAddr().String())
 	var err error = nil
 	var hasError = false
@@ -106,12 +109,12 @@ func run(port int) {
 			log.Println("accept:", err)
 			continue
 		}
-		go handleConnection(shadowsocks.Conn{conn})
+		go handleConnection(shadowsocks.NewConn(conn, encTbl))
 	}
 }
 
 func main() {
-	config := shadowsocks.ParseConfig()
-	shadowsocks.InitTable(config.Password)
+	config = shadowsocks.ParseConfig()
+	encTbl = shadowsocks.GetTable(config.Password)
 	run(config.ServerPort)
 }

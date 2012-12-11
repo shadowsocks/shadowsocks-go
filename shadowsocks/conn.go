@@ -8,20 +8,16 @@ import (
 	"strings"
 )
 
-var (
-	encTable []byte
-	decTable []byte
-)
-
 type Conn struct {
 	net.Conn
+	*EncryptTable
 }
 
-func InitTable(passwd string) {
-	encTable, decTable = GetTable(passwd)
+func NewConn(cn net.Conn, encTbl *EncryptTable) *Conn {
+	return &Conn{cn, encTbl}
 }
 
-func addrBufFromString(addr string) (buf []byte, err error) {
+func rawAddr(addr string) (buf []byte, err error) {
 	arr := strings.Split(addr, ":")
 	if len(arr) != 2 {
 		return nil, errors.New(
@@ -37,51 +33,50 @@ func addrBufFromString(addr string) (buf []byte, err error) {
 	hostLen := len(host)
 	l := 1 + 1 + hostLen + 2 // addrType + lenByte + address + port
 	buf = make([]byte, l, l)
-	buf[0] = 3
-	buf[1] = byte(hostLen)
+	buf[0] = 3             // 3 means the address is domain name
+	buf[1] = byte(hostLen) // host address length  followed by host address
 	copy(buf[2:], host)
-	buf[2+hostLen] = byte(port >> 8 & 0xFF)
+	buf[2+hostLen] = byte(port >> 8 & 0xFF) // the next 2 bytes are port
 	buf[2+hostLen+1] = byte(port) & 0xFF
 	return
 }
 
-// Export this for use by local.go and server.go
-func DialWithAddrBuf(addrBuf []byte, server string) (c Conn, err error) {
-	if encTable == nil {
-		panic("shadowsocks internal error, must call InitTable first.")
-	}
+// This is intended for use by users implementing a local socks proxy.
+// rawaddr shoud contain part of the data in socks request, starting from the
+// ATYP field. (Refer to rfc1928 for more information.)
+func DialWithRawAddr(rawaddr []byte, server string, encTbl *EncryptTable) (c *Conn, err error) {
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
 		return
 	}
-	c = Conn{conn}
-	if _, err = c.Write(addrBuf); err != nil {
+	c = NewConn(conn, encTbl)
+	if _, err = c.Write(rawaddr); err != nil {
 		c.Close()
-		return
+		return nil, err
 	}
 	return
 }
 
 // addr should be in the form of host:port
-func Dial(addr string, server string) (c Conn, err error) {
-	addrBuf, err := addrBufFromString(addr)
+func Dial(addr, server string, encTbl *EncryptTable) (c *Conn, err error) {
+	ra, err := rawAddr(addr)
 	if err != nil {
 		return
 	}
-	return DialWithAddrBuf(addrBuf, server)
+	return DialWithRawAddr(ra, server, encTbl)
 }
 
 func (c Conn) Read(b []byte) (n int, err error) {
 	buf := make([]byte, len(b), len(b))
 	n, err = c.Conn.Read(buf)
 	if n > 0 {
-		Encrypt2(decTable, buf[0:n], b[0:n])
+		Encrypt2(c.DecTbl, buf[0:n], b[0:n])
 	}
 	return
 }
 
 func (c Conn) Write(b []byte) (n int, err error) {
-	buf := Encrypt(encTable, b)
+	buf := Encrypt(c.EncTbl, b)
 	n, err = c.Conn.Write(buf)
 	return
 }
