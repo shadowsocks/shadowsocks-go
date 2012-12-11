@@ -2,10 +2,13 @@ package main
 
 import (
 	"fmt"
+	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"log"
 	"net"
-	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
+
+var config shadowsocks.Config
+var encTbl *shadowsocks.EncryptTable
 
 func handleConnection(conn net.Conn, server string) {
 	log.Printf("socks connect from %s\n", conn.RemoteAddr().String())
@@ -48,7 +51,7 @@ func handleConnection(conn net.Conn, server string) {
 		log.Println("connecting ", addr)
 		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
 
-		remote, err := shadowsocks.DialWithAddrBuf(addrToSend, server)
+		remote, err := shadowsocks.DialWithRawAddr(addrToSend, server, encTbl)
 		if err != nil {
 			hasError = true
 			break
@@ -95,7 +98,7 @@ func run(port int, server string) {
 }
 
 func main() {
-	config := shadowsocks.ParseConfig()
-	shadowsocks.InitTable(config.Password)
+	config = shadowsocks.ParseConfig()
+	encTbl = shadowsocks.GetTable(config.Password)
 	run(config.LocalPort, fmt.Sprintf("%s:%d", config.Server, config.ServerPort))
 }
