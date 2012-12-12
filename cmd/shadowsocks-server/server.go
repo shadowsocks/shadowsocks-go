@@ -7,10 +7,8 @@ import (
 	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"log"
 	"net"
+	"strconv"
 )
-
-var config *shadowsocks.Config
-var encTbl *shadowsocks.EncryptTable
 
 func handleConnection(conn *shadowsocks.Conn) {
 	log.Printf("socks connect from %s\n", conn.RemoteAddr().String())
@@ -97,12 +95,13 @@ func handleConnection(conn *shadowsocks.Conn) {
 
 }
 
-func run(port int) {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+func run(port, password string) {
+	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("starting server at port %d ...\n", port)
+	encTbl := shadowsocks.GetTable(password)
+	log.Printf("starting server at port %v ...\n", port)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -114,7 +113,17 @@ func run(port int) {
 }
 
 func main() {
-	config = shadowsocks.ParseConfig("config.json")
-	encTbl = shadowsocks.GetTable(config.Password)
-	run(config.ServerPort)
+	config := shadowsocks.ParseConfig("config.json")
+	if len(config.PortPassword) == 0 {
+		run(strconv.Itoa(config.ServerPort), config.Password)
+	} else {
+		if config.ServerPort != 0 {
+			log.Println("ignoring server_port and password option, only uses port_password")
+		}
+		c := make(chan byte)
+		for port, password := range config.PortPassword {
+			go run(port, password)
+		}
+		<-c // block forever
+	}
 }
