@@ -7,7 +7,7 @@ import (
 	"net"
 )
 
-var config shadowsocks.Config
+var config *shadowsocks.Config
 var encTbl *shadowsocks.EncryptTable
 
 func handleConnection(conn net.Conn, server string) {
@@ -98,7 +98,7 @@ func run(port int, server string) {
 }
 
 func main() {
-	config = shadowsocks.ParseConfig()
+	config = shadowsocks.ParseConfig("config.json")
 	encTbl = shadowsocks.GetTable(config.Password)
 	run(config.LocalPort, fmt.Sprintf("%s:%d", config.Server, config.ServerPort))
 }

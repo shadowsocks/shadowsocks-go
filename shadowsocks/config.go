@@ -9,34 +9,32 @@ package shadowsocks
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"log"
 	"os"
 )
 
 type Config struct {
-	Server     string `json:"server"`
-	ServerPort int    `json:"server_port"`
-	LocalPort  int    `json:"local_port"`
-	Password   string `json:"password"`
+	Server       string            `json:"server"`
+	ServerPort   int               `json:"server_port"`
+	LocalPort    int               `json:"local_port"`
+	Password     string            `json:"password"`
+	PortPassword map[string]string `json:"port_password"`
 }
 
-func ParseConfig() Config {
-	file, err := os.Open("config.json") // For read access.
+func ParseConfig(path string) *Config {
+	file, err := os.Open(path) // For read access.
 	if err != nil {
-		log.Fatal("error opening config file config.json:", err)
+		log.Fatalf("error opening config file %s: %v\n", file, err)
 	}
-	data := make([]byte, 4096)
-	count, err := file.Read(data)
+	defer file.Close()
+	data, err := ioutil.ReadAll(file)
 	if err != nil {
 		log.Fatal("error reading config:", err)
 	}
-	if count == 4096 {
-		log.Fatal("config file is too large")
-	}
 	var config Config
-	err = json.Unmarshal(data[0:count], &config)
-	if err != nil {
+	if err = json.Unmarshal(data, &config); err != nil {
 		log.Fatal("can not parse config:", err)
 	}
-	return config
+	return &config
 }
