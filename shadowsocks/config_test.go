@@ -10,6 +10,9 @@ func TestParseConfig1Password(t *testing.T) {
 	if config.Password != "barfoo!" {
 		t.Error("wrong password from config")
 	}
+	if config.Debug != true {
+		t.Error("debug option wrong")
+	}
 }
 
 func TestParseConfigMultiPassword(t *testing.T) {

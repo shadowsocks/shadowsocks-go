@@ -20,6 +20,7 @@ type Config struct {
 	LocalPort    int               `json:"local_port"`
 	Password     string            `json:"password"`
 	PortPassword map[string]string `json:"port_password"`
+	Debug        bool              `json:"debug"`
 }
 
 func ParseConfig(path string) *Config {
@@ -36,5 +37,6 @@ func ParseConfig(path string) *Config {
 	if err = json.Unmarshal(data, &config); err != nil {
 		log.Fatal("can not parse config:", err)
 	}
+	Debug = DebugLog(config.Debug)
 	return &config
 }
