@@ -31,11 +31,11 @@ func ParseConfig(path string) *Config {
 	defer file.Close()
 	data, err := ioutil.ReadAll(file)
 	if err != nil {
-		log.Fatal("error reading config:", err)
+		log.Fatalln("error reading config:", err)
 	}
 	var config Config
 	if err = json.Unmarshal(data, &config); err != nil {
-		log.Fatal("can not parse config:", err)
+		log.Fatalln("can not parse config:", err)
 	}
 	Debug = DebugLog(config.Debug)
 	return &config

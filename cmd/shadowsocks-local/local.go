@@ -69,7 +69,7 @@ func handleConnection(conn net.Conn, server string, encTbl *ss.EncryptTable) {
 	}
 	if err != nil || hasError {
 		if err != nil {
-			log.Println("error ", err)
+			log.Println("error:", err)
 		}
 		err = conn.Close()
 		if err != nil {

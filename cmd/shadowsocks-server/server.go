@@ -7,6 +7,8 @@ import (
 	"log"
 	"net"
 	"strconv"
+	"sync/atomic"
+	"time"
 )
 
 var debug ss.DebugLog
@@ -57,7 +59,7 @@ func handleConnection(conn *ss.Conn) {
 			binary.Read(sb, binary.BigEndian, &port)
 		} else {
 			hasError = true
-			debug.Println("unsurpported addr type")
+			log.Println("unsurpported addr type")
 			break
 		}
 		debug.Println("connecting ", addr)
@@ -85,7 +87,7 @@ func handleConnection(conn *ss.Conn) {
 	}
 	if err != nil || hasError {
 		if err != nil {
-			debug.Println("error", err)
+			debug.Println("error:", err)
 		}
 		err = conn.Close()
 		if err != nil {
@@ -96,12 +98,30 @@ func handleConnection(conn *ss.Conn) {
 
 }
 
+// Add a encrypt table cache to save memory and startup time in case of many
+// same password.
+// If startup time becomes an issue, save the encrypt table on disk.
+var tableCache = map[string]*ss.EncryptTable{}
+var tableGetCnt int32
+
+func getTable(password string) (tbl *ss.EncryptTable) {
+	tbl, ok := tableCache[password]
+	if ok {
+		debug.Println("table cache hit for password:", password)
+		return
+	}
+	tbl = ss.GetTable(password)
+	tableCache[password] = tbl
+	return
+}
+
 func run(port, password string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		log.Fatal(err)
 	}
-	encTbl := ss.GetTable(password)
+	encTbl := getTable(password)
+	atomic.AddInt32(&tableGetCnt, 1)
 	log.Printf("starting server at port %v ...\n", port)
 	for {
 		conn, err := ln.Accept()
@@ -126,6 +146,12 @@ func main() {
 		for port, password := range config.PortPassword {
 			go run(port, password)
 		}
-		<-c // block forever
+		// Wait all ports have get it's encryption table
+		for int(tableGetCnt) != len(config.PortPassword) {
+			time.Sleep(1 * time.Second)
+		}
+		log.Println("all ports ready")
+		tableCache = nil // release memory
+		<-c              // block forever
 	}
 }
