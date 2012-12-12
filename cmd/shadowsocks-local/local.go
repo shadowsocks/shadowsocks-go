@@ -1,18 +1,15 @@
 package main
 
 import (
-	"fmt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"log"
 	"net"
+	"strconv"
 )
-
-var config *ss.Config
-var encTbl *ss.EncryptTable
 
 var debug ss.DebugLog
 
-func handleConnection(conn net.Conn, server string) {
+func handleConnection(conn net.Conn, server string, encTbl *ss.EncryptTable) {
 	debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
 	b := make([]byte, 262)
 	var err error = nil
@@ -83,25 +80,26 @@ func handleConnection(conn net.Conn, server string) {
 
 }
 
-func run(port int, server string) {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+func run(port, password, server string) {
+	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("starting server at port %d ...\n", port)
+	encTbl := ss.GetTable(password)
+	log.Printf("starting server at port %v ...\n", port)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Println("accept:", err)
 			continue
 		}
-		go handleConnection(conn, server)
+		go handleConnection(conn, server, encTbl)
 	}
 }
 
 func main() {
-	config = ss.ParseConfig("config.json")
+	config := ss.ParseConfig("config.json")
 	debug = ss.Debug
-	encTbl = ss.GetTable(config.Password)
-	run(config.LocalPort, fmt.Sprintf("%s:%d", config.Server, config.ServerPort))
+	run(strconv.Itoa(config.LocalPort), config.Password,
+		config.Server+":"+strconv.Itoa(config.ServerPort))
 }
