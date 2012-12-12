@@ -1,7 +1,6 @@
 package shadowsocks
 
 import (
-	"log"
 	"net"
 )
 
@@ -18,7 +17,7 @@ func Pipe(src, dst net.Conn, end chan int) {
 		// should always process num > 0 bytes before handling error
 		if num > 0 {
 			if _, err = dst.Write(buf[0:num]); err != nil {
-				log.Println("write:", err)
+				Debug.Println("write:", err)
 				break
 			}
 		}
@@ -26,7 +25,7 @@ func Pipe(src, dst net.Conn, end chan int) {
 			break
 		}
 		if err != nil {
-			log.Println("read:", err)
+			Debug.Println("read:", err)
 			break
 		}
 	}

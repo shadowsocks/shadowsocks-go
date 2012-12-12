@@ -3,15 +3,16 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
-	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"log"
 	"net"
 	"strconv"
 )
 
-func handleConnection(conn *shadowsocks.Conn) {
-	log.Printf("socks connect from %s\n", conn.RemoteAddr().String())
+var debug ss.DebugLog
+
+func handleConnection(conn *ss.Conn) {
+	debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
 	var err error = nil
 	var hasError = false
 	for {
@@ -56,12 +57,12 @@ func handleConnection(conn *shadowsocks.Conn) {
 			binary.Read(sb, binary.BigEndian, &port)
 		} else {
 			hasError = true
-			log.Println("unsurpported addr type")
+			debug.Println("unsurpported addr type")
 			break
 		}
-		log.Println("connecting ", addr)
+		debug.Println("connecting ", addr)
 		var remote net.Conn
-		remote, err = net.Dial("tcp", fmt.Sprintf("%s:%d", addr, port))
+		remote, err = net.Dial("tcp", addr+":"+strconv.Itoa(int(port)))
 		if err != nil {
 			hasError = true
 			break
@@ -71,10 +72,10 @@ func handleConnection(conn *shadowsocks.Conn) {
 			break
 		}
 		c := make(chan int, 2)
-		go shadowsocks.Pipe(conn, remote, c)
-		go shadowsocks.Pipe(remote, conn, c)
+		go ss.Pipe(conn, remote, c)
+		go ss.Pipe(remote, conn, c)
 		<-c // close the other connection whenever one connection is closed
-		log.Println("closing")
+		debug.Println("closing")
 		err = conn.Close()
 		err1 := remote.Close()
 		if err == nil {
@@ -84,11 +85,11 @@ func handleConnection(conn *shadowsocks.Conn) {
 	}
 	if err != nil || hasError {
 		if err != nil {
-			log.Println("error ", err)
+			debug.Println("error", err)
 		}
 		err = conn.Close()
 		if err != nil {
-			log.Println("close:", err)
+			debug.Println("close:", err)
 		}
 		return
 	}
@@ -100,7 +101,7 @@ func run(port, password string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	encTbl := shadowsocks.GetTable(password)
+	encTbl := ss.GetTable(password)
 	log.Printf("starting server at port %v ...\n", port)
 	for {
 		conn, err := ln.Accept()
@@ -108,12 +109,13 @@ func run(port, password string) {
 			log.Println("accept:", err)
 			continue
 		}
-		go handleConnection(shadowsocks.NewConn(conn, encTbl))
+		go handleConnection(ss.NewConn(conn, encTbl))
 	}
 }
 
 func main() {
-	config := shadowsocks.ParseConfig("config.json")
+	config := ss.ParseConfig("config.json")
+	debug = ss.Debug
 	if len(config.PortPassword) == 0 {
 		run(strconv.Itoa(config.ServerPort), config.Password)
 	} else {

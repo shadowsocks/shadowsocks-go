@@ -2,16 +2,18 @@ package main
 
 import (
 	"fmt"
-	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"log"
 	"net"
 )
 
-var config *shadowsocks.Config
-var encTbl *shadowsocks.EncryptTable
+var config *ss.Config
+var encTbl *ss.EncryptTable
+
+var debug ss.DebugLog
 
 func handleConnection(conn net.Conn, server string) {
-	log.Printf("socks connect from %s\n", conn.RemoteAddr().String())
+	debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
 	b := make([]byte, 262)
 	var err error = nil
 	var hasError = false
@@ -48,19 +50,19 @@ func handleConnection(conn net.Conn, server string) {
 			log.Println("unsurpported addr type")
 			break
 		}
-		log.Println("connecting ", addr)
+		debug.Println("connecting ", addr)
 		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
 
-		remote, err := shadowsocks.DialWithRawAddr(addrToSend, server, encTbl)
+		remote, err := ss.DialWithRawAddr(addrToSend, server, encTbl)
 		if err != nil {
 			hasError = true
 			break
 		}
 		c := make(chan int, 2)
-		go shadowsocks.Pipe(conn, remote, c)
-		go shadowsocks.Pipe(remote, conn, c)
+		go ss.Pipe(conn, remote, c)
+		go ss.Pipe(remote, conn, c)
 		<-c // close the other connection whenever one connection is closed
-		log.Println("closing")
+		debug.Println("closing")
 		err = conn.Close()
 		err1 := remote.Close()
 		if err == nil {
@@ -98,7 +100,8 @@ func run(port int, server string) {
 }
 
 func main() {
-	config = shadowsocks.ParseConfig("config.json")
-	encTbl = shadowsocks.GetTable(config.Password)
+	config = ss.ParseConfig("config.json")
+	debug = ss.Debug
+	encTbl = ss.GetTable(config.Password)
 	run(config.LocalPort, fmt.Sprintf("%s:%d", config.Server, config.ServerPort))
 }
