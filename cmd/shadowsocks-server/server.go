@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"log"
 	"net"
@@ -13,89 +14,70 @@ import (
 
 var debug ss.DebugLog
 
-func handleConnection(conn *ss.Conn) {
-	debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
-	var err error = nil
-	var hasError = false
-	for {
-		var _ int
-		buf := make([]byte, 1)
-		_, err = conn.Read(buf)
-		if err != nil {
-			hasError = true
-			break
-		}
-		addrType := buf[0]
-		var addr string
-		var port int16
-		if addrType == 1 {
-			buf = make([]byte, 6)
-			_, err = conn.Read(buf)
-			if err != nil {
-				hasError = true
-				break
-			}
-			var addrIp net.IP = make(net.IP, 4)
-			copy(addrIp, buf[0:4])
-			addr = addrIp.String()
-			sb := bytes.NewBuffer(buf[4:6])
-			binary.Read(sb, binary.BigEndian, &port)
-		} else if addrType == 3 {
-			_, err = conn.Read(buf)
-			if err != nil {
-				hasError = true
-				break
-			}
-			addrLen := buf[0]
-			buf = make([]byte, addrLen+2)
-			_, err = conn.Read(buf)
-			if err != nil {
-				hasError = true
-				break
-			}
-			sb := bytes.NewBuffer(buf[0:addrLen])
-			addr = sb.String()
-			sb = bytes.NewBuffer(buf[addrLen : addrLen+2])
-			binary.Read(sb, binary.BigEndian, &port)
-		} else {
-			hasError = true
-			log.Println("unsurpported addr type")
-			break
-		}
-		debug.Println("connecting ", addr)
-		var remote net.Conn
-		remote, err = net.Dial("tcp", addr+":"+strconv.Itoa(int(port)))
-		if err != nil {
-			hasError = true
-			break
-		}
-		if err != nil {
-			hasError = true
-			break
-		}
-		c := make(chan int, 2)
-		go ss.Pipe(conn, remote, c)
-		go ss.Pipe(remote, conn, c)
-		<-c // close the other connection whenever one connection is closed
-		debug.Println("closing")
-		err = conn.Close()
-		err1 := remote.Close()
-		if err == nil {
-			err = err1
-		}
-		break
-	}
-	if err != nil || hasError {
-		if err != nil {
-			debug.Println("error:", err)
-		}
-		err = conn.Close()
-		if err != nil {
-			debug.Println("close:", err)
-		}
-		return
-	}
+var errAddr = errors.New("addr type not supported")
 
+func handleConnection(conn *ss.Conn) {
+	if debug {
+		// function arguments are always evaluated, so surround debug
+		// statement with if statement
+		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
+	}
+	defer conn.Close()
+
+	var addr string
+	var port int16
+	var addrType byte
+	var remote net.Conn
+	var c chan byte
+	var err error
+
+	buf := make([]byte, 1)
+	if _, err = conn.Read(buf); err != nil {
+		goto onError
+	}
+	addrType = buf[0]
+	if addrType == 1 {
+		buf = make([]byte, 6)
+		if _, err = conn.Read(buf); err != nil {
+			goto onError
+		}
+		sb := bytes.NewBuffer(buf[4:6])
+		binary.Read(sb, binary.BigEndian, &port)
+		addrIp := make(net.IP, 4)
+		copy(addrIp, buf[0:4])
+		addr = addrIp.String()
+	} else if addrType == 3 {
+		if _, err = conn.Read(buf); err != nil {
+			goto onError
+		}
+		addrLen := buf[0]
+		buf = make([]byte, addrLen+2)
+		if _, err = conn.Read(buf); err != nil {
+			goto onError
+		}
+		sb := bytes.NewBuffer(buf[addrLen : addrLen+2])
+		binary.Read(sb, binary.BigEndian, &port)
+		addr = string(buf[0:addrLen])
+	} else {
+		log.Println("unsurpported addr type")
+		err = errAddr
+		goto onError
+	}
+	debug.Println("connecting", addr)
+	if remote, err = net.Dial("tcp", addr+":"+strconv.Itoa(int(port))); err != nil {
+		goto onError
+	}
+	defer remote.Close()
+	debug.Println("piping", addr)
+	c = make(chan byte, 2)
+	go ss.Pipe(conn, remote, c)
+	go ss.Pipe(remote, conn, c)
+	<-c // close the other connection whenever one connection is closed
+	debug.Println("closing", addr)
+	return
+
+onError:
+	debug.Println("error", addr, err)
 }
 
 // Add a encrypt table cache to save memory and startup time in case of many

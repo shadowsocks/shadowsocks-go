@@ -47,7 +47,7 @@ func handleConnection(conn net.Conn, server string, encTbl *ss.EncryptTable) {
 			log.Println("unsurpported addr type")
 			break
 		}
-		debug.Println("connecting ", addr)
+		debug.Println("connecting", addr)
 		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
 
 		remote, err := ss.DialWithRawAddr(addrToSend, server, encTbl)
@@ -55,7 +55,7 @@ func handleConnection(conn net.Conn, server string, encTbl *ss.EncryptTable) {
 			hasError = true
 			break
 		}
-		c := make(chan int, 2)
+		c := make(chan byte, 2)
 		go ss.Pipe(conn, remote, c)
 		go ss.Pipe(remote, conn, c)
 		<-c // close the other connection whenever one connection is closed

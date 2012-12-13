@@ -4,7 +4,7 @@ import (
 	"net"
 )
 
-func Pipe(src, dst net.Conn, end chan int) {
+func Pipe(src, dst net.Conn, end chan byte) {
 	// Should not use io.Copy here.
 	// io.Copy will try to use the ReadFrom interface of TCPConn, but the src
 	// here is not a regular file, so sendfile is not applicable.
