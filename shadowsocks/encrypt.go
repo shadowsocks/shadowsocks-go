@@ -46,14 +46,14 @@ func GetTable(key string) (tbl *EncryptTable) {
 	return
 }
 
-func Encrypt2(table []byte, buf, result []byte) {
+func encrypt2(table []byte, buf, result []byte) {
 	for i := 0; i < len(buf); i++ {
 		result[i] = table[buf[i]]
 	}
 }
 
-func Encrypt(table []byte, buf []byte) []byte {
+func encrypt(table []byte, buf []byte) []byte {
 	var result = make([]byte, len(buf), len(buf))
-	Encrypt2(table, buf, result)
+	encrypt2(table, buf, result)
 	return result
 }
