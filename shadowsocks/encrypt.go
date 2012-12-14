@@ -7,10 +7,18 @@ import (
 	"io"
 )
 
-func GetTable(key string) (encryptTable []byte, decryptTable []byte) {
-	encryptTable = make([]byte, 256)
-	decryptTable = make([]byte, 256)
-	table := make([]uint64, 256)
+type EncryptTable struct {
+	encTbl []byte
+	decTbl []byte
+}
+
+func GetTable(key string) (tbl *EncryptTable) {
+	const tbl_size = 256
+	tbl = &EncryptTable{
+		make([]byte, tbl_size, tbl_size),
+		make([]byte, tbl_size, tbl_size),
+	}
+	table := make([]uint64, tbl_size, tbl_size)
 
 	h := md5.New()
 	io.WriteString(h, key)
@@ -21,7 +29,7 @@ func GetTable(key string) (encryptTable []byte, decryptTable []byte) {
 	buf := bytes.NewBuffer(s)
 	binary.Read(buf, binary.LittleEndian, &a)
 	var i uint64
-	for i = 0; i < 256; i++ {
+	for i = 0; i < tbl_size; i++ {
 		table[i] = i
 	}
 	for i = 1; i < 1024; i++ {
@@ -29,24 +37,23 @@ func GetTable(key string) (encryptTable []byte, decryptTable []byte) {
 			return int64(a%uint64(x+i) - a%uint64(y+i))
 		})
 	}
-	for i = 0; i < 256; i++ {
-		encryptTable[i] = byte(table[i])
+	for i = 0; i < tbl_size; i++ {
+		tbl.encTbl[i] = byte(table[i])
 	}
-	for i = 0; i < 256; i++ {
-		decryptTable[encryptTable[i]] = byte(i)
+	for i = 0; i < tbl_size; i++ {
+		tbl.decTbl[tbl.encTbl[i]] = byte(i)
 	}
-
 	return
 }
 
-func Encrypt2(table []byte, buf, result []byte) {
+func encrypt2(table []byte, buf, result []byte) {
 	for i := 0; i < len(buf); i++ {
 		result[i] = table[buf[i]]
 	}
 }
 
-func Encrypt(table []byte, buf []byte) []byte {
+func encrypt(table []byte, buf []byte) []byte {
 	var result = make([]byte, len(buf), len(buf))
-	Encrypt2(table, buf, result)
+	encrypt2(table, buf, result)
 	return result
 }

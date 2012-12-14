@@ -3,5 +3,10 @@
     "server_port":8388,
     "local_port":1080,
     "password":"barfoo!",
-    "timeout":60
+    "port_password": {
+        "8388": "barfoo!",
+        "8387": "foobar!"
+    },
+    "timeout":60,
+    "debug":true
 }

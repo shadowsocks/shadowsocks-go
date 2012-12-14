@@ -9,33 +9,39 @@ package shadowsocks
 
 import (
 	"encoding/json"
-	"os"
+	"io/ioutil"
 	"log"
+	"os"
+	"time"
 )
+
 type Config struct {
-	Server string `json:"server"`
-	ServerPort int `json:"server_port"`
-	LocalPort int `json:"local_port"`
-	Password string `json:"password"`
+	Server       string            `json:"server"`
+	ServerPort   int               `json:"server_port"`
+	LocalPort    int               `json:"local_port"`
+	Password     string            `json:"password"`
+	PortPassword map[string]string `json:"port_password"`
+	Timeout      int               `json:"timeout"`
+	Debug        bool              `json:"debug"`
 }
 
-func ParseConfig() Config {
-	file, err := os.Open("config.json") // For read access.
+var readTimeout time.Duration
+
+func ParseConfig(path string) *Config {
+	file, err := os.Open(path) // For read access.
 	if err != nil {
-		log.Fatal("error opening config file config.json:", err)
+		log.Fatal("error opening config file:", err)
 	}
-	data := make([]byte, 4096)
-	count, err := file.Read(data)
+	defer file.Close()
+	data, err := ioutil.ReadAll(file)
 	if err != nil {
-		log.Fatal("error reading config:", err)
-	}
-	if count == 4096 {
-		log.Fatal("config file is too large")
+		log.Fatalln("error reading config:", err)
 	}
 	var config Config
-	err = json.Unmarshal(data[0:count], &config)
-	if err != nil {
-		log.Fatal("can not parse config:",err)
+	if err = json.Unmarshal(data, &config); err != nil {
+		log.Fatalln("can not parse config:", err)
 	}
-	return config
+	Debug = DebugLog(config.Debug)
+	readTimeout = time.Duration(config.Timeout) * time.Second
+	return &config
 }

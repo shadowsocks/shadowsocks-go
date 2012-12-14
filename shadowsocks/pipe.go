@@ -1,29 +1,39 @@
 package shadowsocks
 
 import (
-	"log"
+	"io"
 	"net"
+	"time"
 )
 
-func Pipe(src net.Conn, dst net.Conn, end chan int) {
+func SetReadTimeout(c net.Conn) {
+	c.SetReadDeadline(time.Now().Add(readTimeout))
+}
+
+func Pipe(src, dst net.Conn, end chan byte) {
+	// Should not use io.Copy here.
+	// io.Copy will try to use the ReadFrom interface of TCPConn, but the src
+	// here is not a regular file, so sendfile is not applicable.
+	// io.Copy will fallback to the normal copy after discovering this,
+	// introducing unnecessary overhead.
 	buf := make([]byte, 4096)
 	for {
-		num, err := src.Read(buf)
-		if err == nil {
-			_, err := dst.Write(buf[0:num])
-			if err != nil {
-				log.Println("write:", err)
-				end <- 1
-				return
+		SetReadTimeout(src)
+		n, err := src.Read(buf)
+		// read may return EOF with n > 0
+		// should always process n > 0 bytes before handling error
+		if n > 0 {
+			if _, err = dst.Write(buf[0:n]); err != nil {
+				Debug.Println("write:", err)
+				break
 			}
-		} else {
-			log.Println("read:", err)
-			end <- 1
-			return
 		}
-		if num == 0 {
-			end <- 1
-			return
+		if err != nil {
+			if err != io.EOF {
+				Debug.Println("read:", err)
+			}
+			break
 		}
 	}
+	end <- 1
 }

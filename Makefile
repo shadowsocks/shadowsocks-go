@@ -3,7 +3,6 @@
 PREFIX := shadowsocks
 LOCAL := $(GOBIN)/$(PREFIX)-local
 SERVER := $(GOBIN)/$(PREFIX)-server
-TEST := $(GOBIN)/$(PREFIX)-test
 
 # TODO define the install package path for use in clean and detect whether
 # package need re-build
@@ -23,6 +22,5 @@ $(SERVER): shadowsocks/*.go cmd/$(PREFIX)-server/*.go
 	cd shadowsocks; go install
 	cd cmd/$(PREFIX)-server; go install
 
-$(TEST): shadowsocks/*.go cmd/$(PREFIX)-test/*.go
-	cd shadowsocks; go install
-	cd cmd/$(PREFIX)-test; go install
+test:
+	cd shadowsocks; go test

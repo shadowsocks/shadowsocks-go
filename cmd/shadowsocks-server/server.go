@@ -3,115 +3,188 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
+	"errors"
+	"flag"
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"log"
 	"net"
-	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	"strconv"
+	"sync/atomic"
+	"time"
 )
 
-func handleConnection(conn shadowsocks.Conn) {
-	log.Printf("socks connect from %s\n", conn.RemoteAddr().String())
-	var err error = nil
-	var hasError = false
+var debug ss.DebugLog
+
+var errAddr = errors.New("addr type not supported")
+
+func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
+	const (
+		idType  = 0 // address type index
+		idIP0   = 1 // ip addres start index
+		idDmLen = 1 // domain address length index
+		idDm0   = 2 // domain address start index
+
+		typeIP = 1 // type is ip address
+		typeDm = 3 // type is domain address
+
+		lenIP     = 1 + 4 + 2 // 1addrType + 4ip + 2port
+		lenDmBase = 1 + 1 + 2 // 1addrType + 1addrLen + 2port, plus addrLen
+	)
+
+	// buf size should at least have the same size with the largest possible
+	// request size (when addrType is 3, domain name has at most 256 bytes)
+	// 1(addrType) + 1(lenByte) + 256(max length address) + 2(port)
+	buf := make([]byte, 260, 260)
+	cur := 0 // current location in buf
+
+	// first read the complete request, may read extra bytes
 	for {
-		var _ int
-		buf := make([]byte, 1)
-		_, err = conn.Read(buf)
-		if err != nil {
-			hasError = true
-			break
+		// hopefully, we should only need one read to get the complete request
+		// this read normally will read just the request, no extra data
+		ss.SetReadTimeout(conn)
+		var n int
+		if n, err = conn.Read(buf[cur:]); err != nil {
+			// debug.Println("read request error:", err)
+			return
 		}
-		addrType := buf[0]
-		var addr string
-		var port int16
-		if addrType == 1 {
-			buf = make([]byte, 6)
-			_, err = conn.Read(buf)
-			if err != nil {
-				hasError = true
+		cur += n
+		if buf[idType] == typeIP {
+			if cur >= lenIP {
+				// debug.Println("ip request complete, cur:", cur)
 				break
 			}
-			var addrIp net.IP = make(net.IP, 4)
-			copy(addrIp, buf[0:4])
-			addr = addrIp.String()
-			sb := bytes.NewBuffer(buf[4:6])
-			binary.Read(sb, binary.BigEndian, &port)
-		} else if addrType == 3 {
-			_, err = conn.Read(buf)
-			if err != nil {
-				hasError = true
+		} else if buf[idType] == typeDm {
+			if cur < idDmLen+1 { // read until we get address length byte
+				continue
+			}
+			if cur >= lenDmBase+int(buf[idDmLen]) {
+				// debug.Println("domain request complete, cur:", cur)
 				break
 			}
-			addrLen := buf[0]
-			buf = make([]byte, addrLen+2)
-			_, err = conn.Read(buf)
-			if err != nil {
-				hasError = true
-				break
-			}
-			sb := bytes.NewBuffer(buf[0:addrLen])
-			addr = sb.String()
-			sb = bytes.NewBuffer(buf[addrLen : addrLen+2])
-			binary.Read(sb, binary.BigEndian, &port)
 		} else {
-			hasError = true
-			log.Println("unsurpported addr type")
-			break
+			err = errAddr
+			return
 		}
-		log.Println("connecting ", addr)
-		var remote net.Conn
-		remote, err = net.Dial("tcp", fmt.Sprintf("%s:%d", addr, port))
-		if err != nil {
-			hasError = true
-			break
-		}
-		if err != nil {
-			hasError = true
-			break
-		}
-		c := make(chan int, 2)
-		go shadowsocks.Pipe(conn, remote, c)
-		go shadowsocks.Pipe(remote, conn, c)
-		<-c // close the other connection whenever one connection is closed
-		log.Println("closing")
-		err = conn.Close()
-		err1 := remote.Close()
-		if err == nil {
-			err = err1
-		}
-		break
-	}
-	if err != nil || hasError {
-		if err != nil {
-			log.Println("error ", err)
-		}
-		err = conn.Close()
-		if err != nil {
-			log.Println("close:", err)
-		}
-		return
+		// debug.Println("request not complete, cur:", cur)
 	}
 
+	reqLen := lenIP // default to IP request length
+	if buf[idType] == typeIP {
+		addrIp := make(net.IP, 4)
+		copy(addrIp, buf[idIP0:idIP0+4])
+		host = addrIp.String()
+	} else if buf[idType] == typeDm {
+		reqLen = lenDmBase + int(buf[idDmLen])
+		host = string(buf[idDm0 : idDm0+buf[idDmLen]])
+	}
+	var port int16
+	sb := bytes.NewBuffer(buf[reqLen-2 : reqLen])
+	binary.Read(sb, binary.BigEndian, &port)
+
+	// debug.Println("requesting:", host, "header len", reqLen)
+	host += ":" + strconv.Itoa(int(port))
+	if cur > reqLen {
+		extra = buf[reqLen:cur]
+		// debug.Println("extra:", string(extra))
+	}
+	return
 }
 
-func run(port int) {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+func handleConnection(conn *ss.Conn) {
+	if debug {
+		// function arguments are always evaluated, so surround debug
+		// statement with if statement
+		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
+	}
+	defer conn.Close()
+
+	host, extra, err := getRequest(conn)
+	if err != nil {
+		log.Println("error getting request:", err)
+		return
+	}
+	debug.Println("connecting", host)
+	remote, err := net.Dial("tcp", host)
+	if err != nil {
+		debug.Println("error connecting to:", host, err)
+		return
+	}
+	defer remote.Close()
+	// write extra bytes read from 
+	if extra != nil {
+		debug.Println("writing extra content to remote, len", len(extra))
+		if _, err = remote.Write(extra); err != nil {
+			debug.Println("write request extra error:", err)
+			return
+		}
+	}
+	debug.Println("piping", host)
+	c := make(chan byte, 2)
+	go ss.Pipe(conn, remote, c)
+	go ss.Pipe(remote, conn, c)
+	<-c // close the other connection whenever one connection is closed
+	debug.Println("closing", host)
+	return
+}
+
+// Add a encrypt table cache to save memory and startup time in case of many
+// same password.
+// If startup time becomes an issue, save the encrypt table on disk.
+var tableCache = map[string]*ss.EncryptTable{}
+var tableGetCnt int32
+
+func getTable(password string) (tbl *ss.EncryptTable) {
+	tbl, ok := tableCache[password]
+	if ok {
+		debug.Println("table cache hit for password:", password)
+		return
+	}
+	tbl = ss.GetTable(password)
+	tableCache[password] = tbl
+	return
+}
+
+func run(port, password string) {
+	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("starting server at port %d ...\n", port)
+	encTbl := getTable(password)
+	atomic.AddInt32(&tableGetCnt, 1)
+	log.Printf("starting server at port %v ...\n", port)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Println("accept:", err)
 			continue
 		}
-		go handleConnection(shadowsocks.Conn{conn})
+		go handleConnection(ss.NewConn(conn, encTbl))
 	}
 }
 
 func main() {
-	config := shadowsocks.ParseConfig()
-	shadowsocks.InitTable(config.Password)
-	run(config.ServerPort)
+	var configFile string
+	flag.StringVar(&configFile, "c", "config.json", "specify config file")
+	flag.Parse()
+
+	config := ss.ParseConfig(configFile)
+	debug = ss.Debug
+	if len(config.PortPassword) == 0 {
+		run(strconv.Itoa(config.ServerPort), config.Password)
+	} else {
+		if config.ServerPort != 0 {
+			log.Println("ignoring server_port and password option, only uses port_password")
+		}
+		for port, password := range config.PortPassword {
+			go run(port, password)
+		}
+		// Wait all ports have get it's encryption table
+		for int(tableGetCnt) != len(config.PortPassword) {
+			time.Sleep(1 * time.Second)
+		}
+		log.Println("all ports ready")
+		tableCache = nil // release memory
+		c := make(chan byte)
+		<-c // block forever
+	}
 }
