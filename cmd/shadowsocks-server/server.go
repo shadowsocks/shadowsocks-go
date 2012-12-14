@@ -160,7 +160,6 @@ func main() {
 		if config.ServerPort != 0 {
 			log.Println("ignoring server_port and password option, only uses port_password")
 		}
-		c := make(chan byte)
 		for port, password := range config.PortPassword {
 			go run(port, password)
 		}
@@ -170,6 +169,7 @@ func main() {
 		}
 		log.Println("all ports ready")
 		tableCache = nil // release memory
+		c := make(chan byte)
 		<-c              // block forever
 	}
 }
