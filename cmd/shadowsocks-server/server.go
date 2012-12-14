@@ -99,7 +99,7 @@ func handleConnection(conn *ss.Conn) {
 
 	host, extra, err := getRequest(conn)
 	if err != nil {
-		debug.Println("error getting request:", err)
+		log.Println("error getting request:", err)
 		return
 	}
 	debug.Println("connecting", host)
