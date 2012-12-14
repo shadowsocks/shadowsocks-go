@@ -37,18 +37,18 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	cur := 0 // current location in buf
 
 	// first read the complete request, may read extra bytes
-	var n int
 	for {
 		// hopefully, we should only need one read to get the complete request
 		// this read normally will read just the request, no extra data
 		ss.SetReadTimeout(conn)
+		var n int
 		if n, err = conn.Read(buf[cur:]); err != nil {
 			// debug.Println("read request error:", err)
 			return
 		}
 		cur += n
 		if buf[idType] == typeIP {
-			if n >= lenIP {
+			if cur >= lenIP {
 				// debug.Println("ip request complete, cur:", cur)
 				break
 			}
@@ -56,7 +56,7 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 			if cur < idDmLen+1 { // read until we get address length byte
 				continue
 			}
-			if n >= lenDmBase+int(buf[idDmLen]) {
+			if cur >= lenDmBase+int(buf[idDmLen]) {
 				// debug.Println("domain request complete, cur:", cur)
 				break
 			}

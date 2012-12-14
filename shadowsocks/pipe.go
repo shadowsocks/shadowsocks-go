@@ -1,6 +1,7 @@
 package shadowsocks
 
 import (
+	"io"
 	"net"
 	"time"
 )
@@ -28,7 +29,9 @@ func Pipe(src, dst net.Conn, end chan byte) {
 			}
 		}
 		if err != nil {
-			Debug.Println("read:", err)
+			if err != io.EOF {
+				Debug.Println("read:", err)
+			}
 			break
 		}
 	}
