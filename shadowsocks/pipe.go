@@ -2,7 +2,12 @@ package shadowsocks
 
 import (
 	"net"
+	"time"
 )
+
+func SetReadTimeout(c net.Conn) {
+	c.SetReadDeadline(time.Now().Add(readTimeout))
+}
 
 func Pipe(src, dst net.Conn, end chan byte) {
 	// Should not use io.Copy here.
@@ -12,6 +17,7 @@ func Pipe(src, dst net.Conn, end chan byte) {
 	// introducing unnecessary overhead.
 	buf := make([]byte, 4096)
 	for {
+		SetReadTimeout(src)
 		n, err := src.Read(buf)
 		// read may return EOF with n > 0
 		// should always process n > 0 bytes before handling error
@@ -20,9 +26,6 @@ func Pipe(src, dst net.Conn, end chan byte) {
 				Debug.Println("write:", err)
 				break
 			}
-		}
-		if n == 0 { // n == 0 should associate with EOF
-			break
 		}
 		if err != nil {
 			Debug.Println("read:", err)
