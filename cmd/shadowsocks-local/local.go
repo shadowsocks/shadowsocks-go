@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"flag"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
@@ -195,7 +196,11 @@ func run(port, password, server string) {
 }
 
 func main() {
-	config := ss.ParseConfig("config.json")
+	var configFile string
+	flag.StringVar(&configFile, "c", "config.json", "specify config file")
+	flag.Parse()
+	
+	config := ss.ParseConfig(configFile)
 	debug = ss.Debug
 	run(strconv.Itoa(config.LocalPort), config.Password,
 		config.Server+":"+strconv.Itoa(config.ServerPort))
