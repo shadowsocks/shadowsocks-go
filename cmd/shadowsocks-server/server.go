@@ -28,6 +28,7 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	for {
 		// hopefully, we should only need one read to get the complete request
 		// this read normally will read just the request, no extra data
+		ss.SetReadTimeout(conn)
 		if n, err = conn.Read(buf[cur:]); err != nil {
 			// debug.Println("read request error:", err)
 			return
@@ -170,6 +171,6 @@ func main() {
 		log.Println("all ports ready")
 		tableCache = nil // release memory
 		c := make(chan byte)
-		<-c              // block forever
+		<-c // block forever
 	}
 }
