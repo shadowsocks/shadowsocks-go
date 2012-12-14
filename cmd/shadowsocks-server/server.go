@@ -17,6 +17,19 @@ var debug ss.DebugLog
 var errAddr = errors.New("addr type not supported")
 
 func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
+	const (
+		idType  = 0 // address type index
+		idIP0   = 1 // ip addres start index
+		idDmLen = 1 // domain address length index
+		idDm0   = 2 // domain address start index
+
+		typeIP = 1 // type is ip address
+		typeDm = 3 // type is domain address
+
+		lenIP     = 1 + 4 + 2 // 1addrType + 4ip + 2port
+		lenDmBase = 1 + 1 + 2 // 1addrType + 1addrLen + 2port, plus addrLen
+	)
+
 	// buf size should at least have the same size with the largest possible
 	// request size (when addrType is 3, domain name has at most 256 bytes)
 	// 1(addrType) + 1(lenByte) + 256(max length address) + 2(port)
@@ -34,20 +47,16 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 			return
 		}
 		cur += n
-		// buf[0] is address type
-		if buf[0] == 1 { // ip address
-			// request need: 1(addrType) + 4(IP) + 2(port)
-			if n >= (1 + 4 + 2) {
+		if buf[idType] == typeIP {
+			if n >= lenIP {
 				// debug.Println("ip request complete, cur:", cur)
 				break
 			}
-		} else if buf[0] == 3 { // domain name
-			if cur == 1 { // need at least the addrLen byte
+		} else if buf[idType] == typeDm {
+			if cur < idDmLen+1 { // read until we get address length byte
 				continue
 			}
-			// request need: 2(addrType & addrLen) + addrLen + 2(port)
-			// buf[1] is addrLen
-			if n >= (2 + int(buf[1]) + 2) {
+			if n >= lenDmBase+int(buf[idDmLen]) {
 				// debug.Println("domain request complete, cur:", cur)
 				break
 			}
@@ -58,14 +67,14 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 		// debug.Println("request not complete, cur:", cur)
 	}
 
-	reqLen := 1 + 4 + 2 // default to IP addr length
-	if buf[0] == 1 {
+	reqLen := lenIP // default to IP request length
+	if buf[idType] == typeIP {
 		addrIp := make(net.IP, 4)
-		copy(addrIp, buf[1:5])
+		copy(addrIp, buf[idIP0:idIP0+4])
 		host = addrIp.String()
-	} else if buf[0] == 3 {
-		reqLen = 2 + int(buf[1]) + 2
-		host = string(buf[2 : 2+buf[1]])
+	} else if buf[idType] == typeDm {
+		reqLen = lenDmBase + int(buf[idDmLen])
+		host = string(buf[idDm0 : idDm0+buf[idDmLen]])
 	}
 	var port int16
 	sb := bytes.NewBuffer(buf[reqLen-2 : reqLen])
