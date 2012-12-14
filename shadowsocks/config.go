@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"time"
 )
 
 type Config struct {
@@ -20,8 +21,11 @@ type Config struct {
 	LocalPort    int               `json:"local_port"`
 	Password     string            `json:"password"`
 	PortPassword map[string]string `json:"port_password"`
+	Timeout      int               `json:"timeout"`
 	Debug        bool              `json:"debug"`
 }
+
+var readTimeout time.Duration
 
 func ParseConfig(path string) *Config {
 	file, err := os.Open(path) // For read access.
@@ -38,5 +42,6 @@ func ParseConfig(path string) *Config {
 		log.Fatalln("can not parse config:", err)
 	}
 	Debug = DebugLog(config.Debug)
+	readTimeout = time.Duration(config.Timeout) * time.Second
 	return &config
 }

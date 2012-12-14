@@ -13,6 +13,9 @@ func TestParseConfig1Password(t *testing.T) {
 	if config.Debug != true {
 		t.Error("debug option wrong")
 	}
+	if config.Timeout != 60 {
+		t.Error("tiemout wrong")
+	}
 }
 
 func TestParseConfigMultiPassword(t *testing.T) {
