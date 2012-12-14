@@ -22,30 +22,27 @@ var (
 )
 
 func handShake(conn net.Conn) (err error) {
+	const (
+		idVer     = 0
+		idNmethod = 1
+	)
 	// version identification and method selection message in theory can have
 	// at most 256 methods, plus version and nmethod field in total 258 bytes
 	// the current rfc defines only 3 authentication methods (plus 2 reserved)
 
-	// currently, we only support version 5 and 1 method
-	buf := make([]byte, 3)
-	// make sure we get 3 bytes
-	if _, err = io.ReadFull(conn, buf); err != nil {
+	buf := make([]byte, 258-2, 258-2) // reuse the buf to read nmethod field
+
+	if _, err = io.ReadFull(conn, buf[:2]); err != nil {
 		return
 	}
-	if buf[0] != 5 {
-		err = errVer
+	if buf[idVer] != 5 {
+		return errVer
 	}
-	if buf[1] != 1 {
-		err = errMethod
-	}
-	if buf[2] != 0 {
-		err = errAuth
-	}
-	if err != nil {
-		// send "no acceptable methods" to client
-		conn.Write([]byte{5, 0xff})
+	nmethod := buf[idNmethod]
+	if _, err = io.ReadFull(conn, buf[:nmethod]); err != nil {
 		return
 	}
+	// version 5, no authentication required
 	_, err = conn.Write([]byte{5, 0})
 	return
 }
@@ -71,7 +68,6 @@ func getRequest(conn net.Conn) (rawaddr []byte, extra []byte, host string, err e
 	reqLen := 0
 
 	for {
-		ss.SetReadTimeout(conn)
 		var n int
 		// usually need to read only once
 		if n, err = conn.Read(buf[cur:]); err != nil {
