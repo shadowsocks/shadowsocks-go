@@ -20,13 +20,14 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	// buf size should at least have the same size with the largest possible
 	// request size (when addrType is 3, domain name has at most 256 bytes)
 	// 1(addrType) + 1(lenByte) + 256(max length address) + 2(port)
-	buf := make([]byte, 4096, 4096) // use 4096 to read more if possible
-	cur := 0                        // current location in buf
+	buf := make([]byte, 260, 260)
+	cur := 0 // current location in buf
 
 	// first read the complete request, may read extra bytes
 	var n int
 	for {
 		// hopefully, we should only need one read to get the complete request
+		// this read normally will read just the request, no extra data
 		if n, err = conn.Read(buf[cur:]); err != nil {
 			// debug.Println("read request error:", err)
 			return

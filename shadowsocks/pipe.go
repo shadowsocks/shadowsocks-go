@@ -12,16 +12,16 @@ func Pipe(src, dst net.Conn, end chan byte) {
 	// introducing unnecessary overhead.
 	buf := make([]byte, 4096)
 	for {
-		num, err := src.Read(buf)
-		// read may return EOF with num > 0
-		// should always process num > 0 bytes before handling error
-		if num > 0 {
-			if _, err = dst.Write(buf[0:num]); err != nil {
+		n, err := src.Read(buf)
+		// read may return EOF with n > 0
+		// should always process n > 0 bytes before handling error
+		if n > 0 {
+			if _, err = dst.Write(buf[0:n]); err != nil {
 				Debug.Println("write:", err)
 				break
 			}
 		}
-		if num == 0 { // num == 0 should associate with EOF
+		if n == 0 { // n == 0 should associate with EOF
 			break
 		}
 		if err != nil {

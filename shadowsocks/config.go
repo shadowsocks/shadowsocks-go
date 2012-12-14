@@ -26,7 +26,7 @@ type Config struct {
 func ParseConfig(path string) *Config {
 	file, err := os.Open(path) // For read access.
 	if err != nil {
-		log.Fatalf("error opening config file %s: %v\n", file, err)
+		log.Fatal("error opening config file:", err)
 	}
 	defer file.Close()
 	data, err := ioutil.ReadAll(file)
