@@ -7,7 +7,9 @@ import (
 )
 
 func SetReadTimeout(c net.Conn) {
-	c.SetReadDeadline(time.Now().Add(readTimeout))
+	if readTimeout != 0 {
+		c.SetReadDeadline(time.Now().Add(readTimeout))
+	}
 }
 
 func Pipe(src, dst net.Conn, end chan byte) {
