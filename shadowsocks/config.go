@@ -10,7 +10,6 @@ package shadowsocks
 import (
 	"encoding/json"
 	"io/ioutil"
-	"log"
 	"os"
 	"reflect"
 	"time"
@@ -30,20 +29,17 @@ var readTimeout time.Duration
 func ParseConfig(path string) (config *Config, err error) {
 	file, err := os.Open(path) // For read access.
 	if err != nil {
-		log.Println("error opening config file:", err)
 		return
 	}
 	defer file.Close()
 
 	data, err := ioutil.ReadAll(file)
 	if err != nil {
-		log.Println("error reading config:", err)
 		return
 	}
 
 	config = &Config{}
 	if err = json.Unmarshal(data, config); err != nil {
-		log.Println("can not parse config:", err)
 		return nil, err
 	}
 	readTimeout = time.Duration(config.Timeout) * time.Second
