@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -150,6 +151,10 @@ func run(port, password string) {
 	}
 }
 
+func enoughOptions(config *ss.Config) bool {
+	return config.ServerPort != 0 && config.Password != ""
+}
+
 func main() {
 	var configFile string
 	var cmdConfig ss.Config
@@ -164,9 +169,18 @@ func main() {
 
 	config, err := ss.ParseConfig(configFile)
 	if err != nil {
-		return
+		enough := enoughOptions(&cmdConfig)
+		if !(enough && os.IsNotExist(err)) {
+			log.Printf("error reading %s: %v\n", configFile, err)
+		}
+		if !enough {
+			return
+		}
+		log.Println("using all options from command line")
+		config = &cmdConfig
+	} else {
+		ss.UpdateConfig(config, &cmdConfig)
 	}
-	ss.UpdateConfig(config, &cmdConfig)
 	ss.SetDebug(debug)
 
 	if len(config.PortPassword) == 0 {

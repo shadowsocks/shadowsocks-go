@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"strconv"
 )
 
@@ -178,7 +179,7 @@ func run(port, password, server string) {
 		log.Fatal(err)
 	}
 	encTbl := ss.GetTable(password)
-	log.Printf("starting local socks5 server at port %v, remote shadowsocks server %s...\n", port, server)
+	log.Printf("starting local socks5 server at port %v, remote shadowsocks server %s ...\n", port, server)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -187,6 +188,11 @@ func run(port, password, server string) {
 		}
 		go handleConnection(conn, server, encTbl)
 	}
+}
+
+func enoughOptions(config *ss.Config) bool {
+	return config.Server != "" && config.ServerPort != 0 &&
+		config.LocalPort != 0 && config.Password != ""
 }
 
 func main() {
@@ -204,9 +210,18 @@ func main() {
 
 	config, err := ss.ParseConfig(configFile)
 	if err != nil {
-		return
+		enough := enoughOptions(&cmdConfig)
+		if !(enough && os.IsNotExist(err)) {
+			log.Printf("error reading %s: %v\n", configFile, err)
+		}
+		if !enough {
+			return
+		}
+		log.Println("using all options from command line")
+		config = &cmdConfig
+	} else {
+		ss.UpdateConfig(config, &cmdConfig)
 	}
-	ss.UpdateConfig(config, &cmdConfig)
 	ss.SetDebug(debug)
 
 	run(strconv.Itoa(config.LocalPort), config.Password,
