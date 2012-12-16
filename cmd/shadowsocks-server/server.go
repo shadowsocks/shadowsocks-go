@@ -155,7 +155,10 @@ func main() {
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
 	flag.Parse()
 
-	config := ss.ParseConfig(configFile)
+	config, err := ss.ParseConfig(configFile)
+	if err != nil {
+		return
+	}
 	debug = ss.Debug
 	if len(config.PortPassword) == 0 {
 		run(strconv.Itoa(config.ServerPort), config.Password)

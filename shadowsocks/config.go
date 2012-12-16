@@ -27,21 +27,26 @@ type Config struct {
 
 var readTimeout time.Duration
 
-func ParseConfig(path string) *Config {
+func ParseConfig(path string) (config *Config, err error) {
 	file, err := os.Open(path) // For read access.
 	if err != nil {
-		log.Fatal("error opening config file:", err)
+		log.Println("error opening config file:", err)
+		return
 	}
 	defer file.Close()
+
 	data, err := ioutil.ReadAll(file)
 	if err != nil {
-		log.Fatalln("error reading config:", err)
+		log.Println("error reading config:", err)
+		return
 	}
-	var config Config
-	if err = json.Unmarshal(data, &config); err != nil {
-		log.Fatalln("can not parse config:", err)
+
+	config = &Config{}
+	if err = json.Unmarshal(data, config); err != nil {
+		log.Println("can not parse config:", err)
+		return nil, err
 	}
 	Debug = DebugLog(config.Debug)
 	readTimeout = time.Duration(config.Timeout) * time.Second
-	return &config
+	return
 }
