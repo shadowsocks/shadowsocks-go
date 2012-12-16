@@ -7,6 +7,5 @@
         "8388": "barfoo!",
         "8387": "foobar!"
     },
-    "timeout":60,
-    "debug":true
+    "timeout":60
 }
