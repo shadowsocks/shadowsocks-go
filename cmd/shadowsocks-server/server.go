@@ -152,14 +152,23 @@ func run(port, password string) {
 
 func main() {
 	var configFile string
+	var cmdConfig ss.Config
+
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
+	flag.StringVar(&cmdConfig.Password, "k", "", "password")
+	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
+	flag.IntVar(&cmdConfig.Timeout, "t", 60, "connection timeout (in seconds)")
+	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
+
 	flag.Parse()
 
 	config, err := ss.ParseConfig(configFile)
 	if err != nil {
 		return
 	}
-	debug = ss.Debug
+	ss.UpdateConfig(config, &cmdConfig)
+	ss.SetDebug(debug)
+
 	if len(config.PortPassword) == 0 {
 		run(strconv.Itoa(config.ServerPort), config.Password)
 	} else {
