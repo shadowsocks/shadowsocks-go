@@ -224,11 +224,12 @@ func main() {
 	flag.Parse()
 
 	exists, err := isFileExists(configFile)
-	// if no config file in current directory, search it in the binary directory
-	if !exists || err != nil {
-		baseDir := path.Dir(os.Args[0])
+	// If no config file in current directory, try search it in the binary directory
+	// Note there's no portable way to detect the binary directory.
+	binDir := path.Dir(os.Args[0])
+	if (!exists || err != nil) && binDir != "" && binDir != "." {
 		oldConfig := configFile
-		configFile = path.Join(baseDir, "config.json")
+		configFile = path.Join(binDir, "config.json")
 		log.Printf("%s not found, try config file %s\n", oldConfig, configFile)
 	}
 
