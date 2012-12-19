@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path"
 	"strconv"
 )
 
@@ -143,7 +144,7 @@ func handleConnection(conn net.Conn, server string, encTbl *ss.EncryptTable) {
 
 	var err error = nil
 	if err = handShake(conn); err != nil {
-		log.Println("socks handshack:", err)
+		log.Println("socks handshake:", err)
 		return
 	}
 	rawaddr, addr, err := getRequest(conn)
@@ -195,6 +196,20 @@ func enoughOptions(config *ss.Config) bool {
 		config.LocalPort != 0 && config.Password != ""
 }
 
+func isFileExists(path string) (bool, error) {
+	stat, err := os.Stat(path)
+	if err == nil {
+		if stat.Mode()&os.ModeType == 0 {
+			return true, nil
+		}
+		return false, errors.New(path + " exists but is not regular file")
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
 func main() {
 	var configFile string
 	var cmdConfig ss.Config
@@ -208,11 +223,20 @@ func main() {
 
 	flag.Parse()
 
+	exists, err := isFileExists(configFile)
+	// if no config file in current directory, search it in the binary directory
+	if !exists || err != nil {
+		baseDir := path.Dir(os.Args[0])
+		oldConfig := configFile
+		configFile = path.Join(baseDir, "config.json")
+		log.Printf("%s not found, try config file %s\n", oldConfig, configFile)
+	}
+
 	config, err := ss.ParseConfig(configFile)
 	if err != nil {
 		enough := enoughOptions(&cmdConfig)
 		if !(enough && os.IsNotExist(err)) {
-			log.Printf("error reading %s: %v\n", configFile, err)
+			log.Printf("error reading config file: %v\n", err)
 		}
 		if !enough {
 			return
