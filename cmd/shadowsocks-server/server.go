@@ -10,8 +10,11 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"strconv"
+	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -123,29 +126,138 @@ var tableCache = map[string]*ss.EncryptTable{}
 var tableGetCnt int32
 
 func getTable(password string) (tbl *ss.EncryptTable) {
-	tbl, ok := tableCache[password]
-	if ok {
-		debug.Println("table cache hit for password:", password)
+	if tableCache != nil {
+		var ok bool
+		tbl, ok = tableCache[password]
+		if ok {
+			debug.Println("table cache hit for password:", password)
+			return
+		}
+		tbl = ss.GetTable(password)
+		tableCache[password] = tbl
+	} else {
+		tbl = ss.GetTable(password)
+	}
+	return
+}
+
+type PortListener struct {
+	password string
+	listener net.Listener
+}
+
+type PasswdManager struct {
+	sync.Mutex
+	portListener map[string]*PortListener
+}
+
+func (pm *PasswdManager) add(port, password string, listener net.Listener) {
+	pm.Lock()
+	pm.portListener[port] = &PortListener{password, listener}
+	pm.Unlock()
+}
+
+func (pm *PasswdManager) get(port string) (pl *PortListener, ok bool) {
+	pm.Lock()
+	pl, ok = pm.portListener[port]
+	pm.Unlock()
+	return
+}
+
+func (pm *PasswdManager) del(port string) {
+	pl, ok := pm.get(port)
+	if !ok {
 		return
 	}
-	tbl = ss.GetTable(password)
-	tableCache[password] = tbl
-	return
+	pl.listener.Close()
+	pm.Lock()
+	delete(pm.portListener, port)
+	pm.Unlock()
+}
+
+func (pm *PasswdManager) updatePortPasswd(port, password string, oldconfig *ss.Config) {
+	if oldconfig.PortPassword != nil {
+		delete(oldconfig.PortPassword, port)
+	}
+	pl, ok := pm.get(port)
+	if !ok {
+		log.Printf("new port %s added\n", port)
+	} else {
+		if pl.password == password {
+			return
+		}
+		log.Printf("closing port %s to update password\n", port)
+		pl.listener.Close()
+	}
+	// run will add the new port listener to passwdManager.
+	// So there maybe concurrent access to passwdManager and we need lock to protect it.
+	go run(port, password)
+}
+
+var passwdManager = PasswdManager{portListener: map[string]*PortListener{}}
+
+func updatePasswd() {
+	log.Println("updating password")
+	newconfig, err := ss.ParseConfig(configFile)
+	if err != nil {
+		log.Printf("error parsing config file %s to update password: %v\n", configFile, err)
+		return
+	}
+	oldconfig := config
+	config = newconfig
+	if len(config.PortPassword) == 0 {
+		if !enoughOptions(config) {
+			log.Println("must specify both password and server port in config")
+			return
+		}
+		port := strconv.Itoa(config.ServerPort)
+		passwdManager.updatePortPasswd(port, config.Password, oldconfig)
+	} else {
+		if config.ServerPort != 0 || config.Password != "" {
+			log.Println("ignoring server_port and password option, only uses port_password")
+		}
+		for port, passwd := range config.PortPassword {
+			passwdManager.updatePortPasswd(port, passwd, oldconfig)
+		}
+	}
+	// port password left in the old config should be deleted
+	for port, _ := range oldconfig.PortPassword {
+		log.Printf("closing port %s as it's deleted\n", port)
+		passwdManager.del(port)
+	}
+	log.Println("password updated")
+}
+
+func waitSignal() {
+	var sigChan = make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGHUP)
+	for sig := range sigChan {
+		if sig == syscall.SIGHUP {
+			updatePasswd()
+		} else {
+			// is this going to happen?
+			log.Printf("caught signal %v, exit", sig)
+			os.Exit(0)
+		}
+	}
 }
 
 func run(port, password string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("try listening port %v: %v\n", port, err)
+		return
 	}
+	passwdManager.add(port, password, ln)
 	encTbl := getTable(password)
 	atomic.AddInt32(&tableGetCnt, 1)
-	log.Printf("starting server at port %v ...\n", port)
+	log.Printf("server listening port %v ...\n", port)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Println("accept:", err)
-			continue
+			// listener maybe closed to update password
+			debug.Printf("accept error: %v\n", err)
+			return
 		}
 		go handleConnection(ss.NewConn(conn, encTbl))
 	}
@@ -155,8 +267,10 @@ func enoughOptions(config *ss.Config) bool {
 	return config.ServerPort != 0 && config.Password != ""
 }
 
+var configFile string
+var config *ss.Config
+
 func main() {
-	var configFile string
 	var cmdConfig ss.Config
 
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
@@ -167,7 +281,8 @@ func main() {
 
 	flag.Parse()
 
-	config, err := ss.ParseConfig(configFile)
+	var err error
+	config, err = ss.ParseConfig(configFile)
 	if err != nil {
 		enough := enoughOptions(&cmdConfig)
 		if !(enough && os.IsNotExist(err)) {
@@ -184,9 +299,13 @@ func main() {
 	ss.SetDebug(debug)
 
 	if len(config.PortPassword) == 0 {
-		run(strconv.Itoa(config.ServerPort), config.Password)
+		if !enoughOptions(config) {
+			log.Println("must specify both port and password")
+			os.Exit(1)
+		}
+		go run(strconv.Itoa(config.ServerPort), config.Password)
 	} else {
-		if config.ServerPort != 0 {
+		if config.Password != "" || config.ServerPort != 0 {
 			log.Println("ignoring server_port and password option, only uses port_password")
 		}
 		for port, password := range config.PortPassword {
@@ -198,7 +317,6 @@ func main() {
 		}
 		log.Println("all ports ready")
 		tableCache = nil // release memory
-		c := make(chan byte)
-		<-c // block forever
 	}
+	waitSignal()
 }
