@@ -175,10 +175,7 @@ func (pm *PasswdManager) del(port string) {
 	pm.Unlock()
 }
 
-func (pm *PasswdManager) updatePortPasswd(port, password string, oldconfig *ss.Config) {
-	if oldconfig.PortPassword != nil {
-		delete(oldconfig.PortPassword, port)
-	}
+func (pm *PasswdManager) updatePortPasswd(port, password string) {
 	pl, ok := pm.get(port)
 	if !ok {
 		log.Printf("new port %s added\n", port)
@@ -205,22 +202,17 @@ func updatePasswd() {
 	}
 	oldconfig := config
 	config = newconfig
-	if len(config.PortPassword) == 0 {
-		if !enoughOptions(config) {
-			log.Println("must specify both password and server port in config")
-			return
-		}
-		port := strconv.Itoa(config.ServerPort)
-		passwdManager.updatePortPasswd(port, config.Password, oldconfig)
-	} else {
-		if config.ServerPort != 0 || config.Password != "" {
-			log.Println("ignoring server_port and password option, only uses port_password")
-		}
-		for port, passwd := range config.PortPassword {
-			passwdManager.updatePortPasswd(port, passwd, oldconfig)
+
+	if err = unifyPortPassword(config); err != nil {
+		return
+	}
+	for port, passwd := range config.PortPassword {
+		passwdManager.updatePortPasswd(port, passwd)
+		if oldconfig.PortPassword != nil {
+			delete(oldconfig.PortPassword, port)
 		}
 	}
-	// port password left in the old config should be deleted
+	// port password still left in the old config should be closed
 	for port, _ := range oldconfig.PortPassword {
 		log.Printf("closing port %s as it's deleted\n", port)
 		passwdManager.del(port)
@@ -267,6 +259,22 @@ func enoughOptions(config *ss.Config) bool {
 	return config.ServerPort != 0 && config.Password != ""
 }
 
+func unifyPortPassword(config *ss.Config) (err error) {
+	if len(config.PortPassword) == 0 { // this handles both nil PortPassword and empty one
+		if !enoughOptions(config) {
+			log.Println("must specify both port and password")
+			return errors.New("not enough options")
+		}
+		port := strconv.Itoa(config.ServerPort)
+		config.PortPassword = map[string]string{port: config.Password}
+	} else {
+		if config.Password != "" || config.ServerPort != 0 {
+			log.Println("given port_password, ignore server_port and password option")
+		}
+	}
+	return
+}
+
 var configFile string
 var config *ss.Config
 
@@ -298,25 +306,17 @@ func main() {
 	}
 	ss.SetDebug(debug)
 
-	if len(config.PortPassword) == 0 {
-		if !enoughOptions(config) {
-			log.Println("must specify both port and password")
-			os.Exit(1)
-		}
-		go run(strconv.Itoa(config.ServerPort), config.Password)
-	} else {
-		if config.Password != "" || config.ServerPort != 0 {
-			log.Println("ignoring server_port and password option, only uses port_password")
-		}
-		for port, password := range config.PortPassword {
-			go run(port, password)
-		}
-		// Wait all ports have get it's encryption table
-		for int(tableGetCnt) != len(config.PortPassword) {
-			time.Sleep(1 * time.Second)
-		}
-		log.Println("all ports ready")
-		tableCache = nil // release memory
+	if err = unifyPortPassword(config); err != nil {
+		os.Exit(1)
 	}
+	for port, password := range config.PortPassword {
+		go run(port, password)
+	}
+	// Wait all ports have get it's encryption table
+	for int(tableGetCnt) != len(config.PortPassword) {
+		time.Sleep(1 * time.Second)
+	}
+	log.Println("all ports ready")
+	tableCache = nil // release memory
 	waitSignal()
 }
