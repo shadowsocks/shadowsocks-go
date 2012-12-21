@@ -98,7 +98,13 @@ func handleConnection(conn *ss.Conn) {
 	debug.Println("connecting", host)
 	remote, err := net.Dial("tcp", host)
 	if err != nil {
-		debug.Println("error connecting to:", host, err)
+		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
+			// log too many open file error
+			// EMFILE is process reaches open file limits, ENFILE is system limit
+			log.Println("dial error:", err)
+		} else {
+			debug.Println("error connecting to:", host, err)
+		}
 		return
 	}
 	defer remote.Close()
