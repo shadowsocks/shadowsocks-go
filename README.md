@@ -52,8 +52,8 @@ SOCKS5 127.0.0.1:local_port
 Command line options can override settings from configuration files.
 
 ```
-shadowsocks-local -s server_name -p server_port -l local_port -k password
-shadowsocks-server -p server_port -k password -t timeout
+shadowsocks-local -s server_name -p server_port -l local_port -k password -c config.json
+shadowsocks-server -p server_port -k password -t timeout -c config.json
 ```
 
 Use `-d` option to enable debug message.
