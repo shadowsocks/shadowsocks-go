@@ -8,6 +8,7 @@ import (
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"path"
@@ -159,7 +160,7 @@ func handleConnection(conn net.Conn, server string, encTbl *ss.EncryptTable) {
 		return
 	}
 
-	debug.Println("connecting to", addr)
+	debug.Printf("connecting to %s via %s\n", addr, server)
 	remote, err := ss.DialWithRawAddr(rawaddr, server, encTbl)
 	if err != nil {
 		log.Println("error connect to shadowsocks server:", err)
@@ -174,7 +175,14 @@ func handleConnection(conn net.Conn, server string, encTbl *ss.EncryptTable) {
 	debug.Println("closing")
 }
 
-func run(port, password, server string) {
+func getServer(server []string) string {
+	if len(server) == 0 {
+		return server[0]
+	}
+	return server[rand.Intn(len(server))]
+}
+
+func run(port, password string, server []string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		log.Fatal(err)
@@ -187,27 +195,28 @@ func run(port, password, server string) {
 			log.Println("accept:", err)
 			continue
 		}
-		go handleConnection(conn, server, encTbl)
+		go handleConnection(conn, getServer(server), encTbl)
 	}
 }
 
 func enoughOptions(config *ss.Config) bool {
-	return config.Server != "" && config.ServerPort != 0 &&
+	return config.Server != nil && config.ServerPort != 0 &&
 		config.LocalPort != 0 && config.Password != ""
 }
 
 func main() {
-	var configFile string
+	var configFile, cmdServer string
 	var cmdConfig ss.Config
 
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
-	flag.StringVar(&cmdConfig.Server, "s", "", "server address")
+	flag.StringVar(&cmdServer, "s", "", "server address")
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
 	flag.Parse()
+	cmdConfig.Server = cmdServer
 
 	exists, err := ss.IsFileExists(configFile)
 	// If no config file in current directory, try search it in the binary directory
@@ -223,11 +232,7 @@ func main() {
 	if err != nil {
 		config = &cmdConfig
 		if os.IsNotExist(err) {
-			if !enoughOptions(config) {
-				log.Println("must specify server address, password and both server/local port")
-				os.Exit(1)
-			}
-			log.Println("using all options from command line")
+			log.Println("config file not found, using all options from command line")
 		} else {
 			log.Printf("error reading config file: %v\n", err)
 			os.Exit(1)
@@ -235,8 +240,17 @@ func main() {
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}
+	if !enoughOptions(config) {
+		log.Println("must specify server address, password and both server/local port")
+		os.Exit(1)
+	}
 	ss.SetDebug(debug)
 
-	run(strconv.Itoa(config.LocalPort), config.Password,
-		config.Server+":"+strconv.Itoa(config.ServerPort))
+	srvArr := config.GetServerArray()
+	srvPort := strconv.Itoa(config.ServerPort)
+	for i, _ := range srvArr {
+		srvArr[i] += ":" + srvPort
+	}
+
+	run(strconv.Itoa(config.LocalPort), config.Password, srvArr)
 }
