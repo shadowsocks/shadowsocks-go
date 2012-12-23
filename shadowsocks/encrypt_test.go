@@ -8,10 +8,10 @@ const tbl_size = 256
 
 func checkTable(t *testing.T, tbl *EncryptTable, encTarget, decTarget []byte, msg string) {
 	for i := 0; i < tbl_size; i++ {
-		if encTarget[i] != tbl.encTbl[i] {
+		if encTarget[i] != tbl.EncTbl[i] {
 			t.Fatalf("%s: encrypt table error at index %d\n", msg, i)
 		}
-		if decTarget[i] != tbl.decTbl[i] {
+		if decTarget[i] != tbl.DecTbl[i] {
 			t.Fatalf("%s: decrypt table error at index %d\n", msg, i)
 		}
 	}
