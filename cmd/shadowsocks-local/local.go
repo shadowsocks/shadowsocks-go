@@ -221,15 +221,17 @@ func main() {
 
 	config, err := ss.ParseConfig(configFile)
 	if err != nil {
-		enough := enoughOptions(&cmdConfig)
-		if !(enough && os.IsNotExist(err)) {
-			log.Printf("error reading config file: %v\n", err)
-		}
-		if !enough {
-			return
-		}
-		log.Println("using all options from command line")
 		config = &cmdConfig
+		if os.IsNotExist(err) {
+			if !enoughOptions(config) {
+				log.Println("must specify server address, password and both server/local port")
+				os.Exit(1)
+			}
+			log.Println("using all options from command line")
+		} else {
+			log.Printf("error reading config file: %v\n", err)
+			os.Exit(1)
+		}
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}

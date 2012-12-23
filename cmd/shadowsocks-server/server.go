@@ -367,14 +367,12 @@ func main() {
 	var err error
 	config, err = ss.ParseConfig(configFile)
 	if err != nil {
-		enough := enoughOptions(&cmdConfig)
-		if !(enough && os.IsNotExist(err)) {
+		if os.IsNotExist(err) {
+			log.Println("using all options from command line")
+		} else {
 			log.Printf("error reading %s: %v\n", configFile, err)
+			os.Exit(1)
 		}
-		if !enough {
-			return
-		}
-		log.Println("using all options from command line")
 		config = &cmdConfig
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
