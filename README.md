@@ -31,13 +31,15 @@ server          your server ip or hostname
 server_port     server port
 local_port      local socks5 proxy port
 password        a password used to encrypt transfer
-timeout         in seconds, used by server
-port_password   specify multiple ports and passwords to support multiple users, used by server
+
+timeout         server option, in seconds
+port_password   server option, specify multiple ports and passwords to support multiple users
+cache_enctable  server option, store computed encryption table on disk to speedup server startup
 ```
 
 Given `port_password` option, server program will ignore `server_port` and `password` options.
 
-Run `shadowsocks-server` on your server. To run it in the background, run `nohup shadowsocks-server > log &`.
+Run `shadowsocks-server` on your server. To run it in the background, run `shadowsocks-server > log &`.
 
 On client, run `shadowsocks-local`. Change proxy settings of your browser to
 
@@ -45,7 +47,7 @@ On client, run `shadowsocks-local`. Change proxy settings of your browser to
 SOCKS5 127.0.0.1:local_port
 ```
 
-# Command line options #
+## Command line options ##
 
 Command line options can override settings from configuration files.
 
@@ -55,3 +57,13 @@ shadowsocks-server -p server_port -k password -t timeout
 ```
 
 Use `-d` option to enable debug message.
+
+## Encryption table cache ##
+
+If the server has many different passwords, startup would be slow because it takes much time to calculate encryption tables. It's recommended to enable the `cache_enctable` option if you have more than 20 different passwords. This will save the computed encryption table in the file `table.cache`.
+
+Note: unused password will not be deleted, so you may need to delete the table cache file if it grows too big.
+
+## Updating port password for a running server  ##
+
+Edit the config file used to start the server, then send `SIGHUP` to the server process.
