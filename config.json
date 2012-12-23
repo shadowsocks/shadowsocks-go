@@ -7,5 +7,6 @@
         "8388": "barfoo!",
         "8387": "foobar!"
     },
-    "timeout":60
+    "timeout":60,
+    "cache_enctable":false
 }

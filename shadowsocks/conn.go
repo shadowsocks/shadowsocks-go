@@ -70,13 +70,13 @@ func (c Conn) Read(b []byte) (n int, err error) {
 	buf := make([]byte, len(b), len(b))
 	n, err = c.Conn.Read(buf)
 	if n > 0 {
-		encrypt2(c.decTbl, buf[0:n], b[0:n])
+		encrypt2(c.DecTbl, buf[0:n], b[0:n])
 	}
 	return
 }
 
 func (c Conn) Write(b []byte) (n int, err error) {
-	buf := encrypt(c.encTbl, b)
+	buf := encrypt(c.EncTbl, b)
 	n, err = c.Conn.Write(buf)
 	return
 }

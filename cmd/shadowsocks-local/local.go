@@ -196,20 +196,6 @@ func enoughOptions(config *ss.Config) bool {
 		config.LocalPort != 0 && config.Password != ""
 }
 
-func isFileExists(path string) (bool, error) {
-	stat, err := os.Stat(path)
-	if err == nil {
-		if stat.Mode()&os.ModeType == 0 {
-			return true, nil
-		}
-		return false, errors.New(path + " exists but is not regular file")
-	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return false, err
-}
-
 func main() {
 	var configFile string
 	var cmdConfig ss.Config
@@ -223,7 +209,7 @@ func main() {
 
 	flag.Parse()
 
-	exists, err := isFileExists(configFile)
+	exists, err := ss.IsFileExists(configFile)
 	// If no config file in current directory, try search it in the binary directory
 	// Note there's no portable way to detect the binary directory.
 	binDir := path.Dir(os.Args[0])
@@ -235,15 +221,17 @@ func main() {
 
 	config, err := ss.ParseConfig(configFile)
 	if err != nil {
-		enough := enoughOptions(&cmdConfig)
-		if !(enough && os.IsNotExist(err)) {
-			log.Printf("error reading config file: %v\n", err)
-		}
-		if !enough {
-			return
-		}
-		log.Println("using all options from command line")
 		config = &cmdConfig
+		if os.IsNotExist(err) {
+			if !enoughOptions(config) {
+				log.Println("must specify server address, password and both server/local port")
+				os.Exit(1)
+			}
+			log.Println("using all options from command line")
+		} else {
+			log.Printf("error reading config file: %v\n", err)
+			os.Exit(1)
+		}
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}

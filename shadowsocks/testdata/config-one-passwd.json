@@ -4,5 +4,5 @@
     "local_port":1081,
     "password":"barfoo!",
     "timeout":60,
-    "debug": true
+    "cache_enctable": true
 }
