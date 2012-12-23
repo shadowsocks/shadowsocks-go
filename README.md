@@ -6,7 +6,9 @@ The protocol is compatible with the origin shadowsocks (if both have been upgrad
 
 # Install #
 
-Pre-compiled binaries will be provided in the future. Currently, you can install from source (assume you have go installed):
+Compiled client binaries are provided on [google code](http://code.google.com/p/shadowsocks-go/downloads/list).
+
+You can also install from source (assume you have go installed):
 
 On server, run
 
