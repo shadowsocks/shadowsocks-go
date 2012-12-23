@@ -16,12 +16,13 @@ import (
 )
 
 type Config struct {
-	Server       string            `json:"server"`
-	ServerPort   int               `json:"server_port"`
-	LocalPort    int               `json:"local_port"`
-	Password     string            `json:"password"`
-	PortPassword map[string]string `json:"port_password"`
-	Timeout      int               `json:"timeout"`
+	Server        string            `json:"server"`
+	ServerPort    int               `json:"server_port"`
+	LocalPort     int               `json:"local_port"`
+	Password      string            `json:"password"`
+	PortPassword  map[string]string `json:"port_password"`
+	Timeout       int               `json:"timeout"`
+	CacheEncTable bool              `json:"cache_enctable"`
 }
 
 var readTimeout time.Duration
