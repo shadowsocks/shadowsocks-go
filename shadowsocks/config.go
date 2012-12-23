@@ -9,6 +9,7 @@ package shadowsocks
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"reflect"
@@ -16,7 +17,7 @@ import (
 )
 
 type Config struct {
-	Server        string            `json:"server"`
+	Server        interface{}       `json:"server"`
 	ServerPort    int               `json:"server_port"`
 	LocalPort     int               `json:"local_port"`
 	Password      string            `json:"password"`
@@ -26,6 +27,29 @@ type Config struct {
 }
 
 var readTimeout time.Duration
+
+func (config *Config) GetServerArray() []string {
+	if config.Server == nil {
+		return nil
+	}
+	single, ok := config.Server.(string)
+	if ok {
+		return []string{single}
+	}
+	arr, ok := config.Server.([]interface{})
+	if ok {
+		serverArr := make([]string, len(arr), len(arr))
+		for i, s := range arr {
+			serverArr[i], ok = s.(string)
+			if !ok {
+				goto typeError
+			}
+		}
+		return serverArr
+	}
+typeError:
+	panic(fmt.Sprintf("Config.Server type error %v", reflect.TypeOf(config.Server)))
+}
 
 func ParseConfig(path string) (config *Config, err error) {
 	file, err := os.Open(path) // For read access.

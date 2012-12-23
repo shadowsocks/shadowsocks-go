@@ -368,7 +368,7 @@ func main() {
 	config, err = ss.ParseConfig(configFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Println("using all options from command line")
+			log.Println("config file not found, using all options from command line")
 		} else {
 			log.Printf("error reading %s: %v\n", configFile, err)
 			os.Exit(1)
