@@ -1,12 +1,7 @@
 {
-    "server":["127.0.0.1"],
+    "server":"127.0.0.1",
     "server_port":8388,
     "local_port":1080,
     "password":"barfoo!",
-    "port_password": {
-        "8388": "barfoo!",
-        "8387": "foobar!"
-    },
-    "timeout":60,
-    "cache_enctable":false
+    "timeout":60
 }
