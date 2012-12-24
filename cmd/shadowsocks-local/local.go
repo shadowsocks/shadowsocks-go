@@ -8,7 +8,6 @@ import (
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
-	"math/rand"
 	"net"
 	"os"
 	"path"
@@ -137,7 +136,66 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 	return
 }
 
-func handleConnection(conn net.Conn, server string, encTbl *ss.EncryptTable) {
+type ServerPassword struct {
+	server string
+	enctbl *ss.EncryptTable
+}
+
+var serverPassword []*ServerPassword
+var serverIdx uint8
+
+// select one server, round robin order
+func getServer() *ServerPassword {
+	if len(serverPassword) == 0 {
+		return serverPassword[0]
+	}
+	serverIdx++ // concurrent update is not a problem
+	return serverPassword[int(serverIdx)%len(serverPassword)]
+}
+
+func initAvailableServer(config *ss.Config) {
+	if len(config.ServerPassword) == 0 {
+
+		// only one encryption table
+		enctbl := ss.GetTable(config.Password)
+		srvPort := strconv.Itoa(config.ServerPort)
+		srvArr := config.GetServerArray()
+		n := len(srvArr)
+		serverPassword = make([]*ServerPassword, n, n)
+
+		for i, s := range srvArr {
+			if ss.HasPort(s) {
+				log.Println("ignore server_port option for server", s)
+				serverPassword[i] = &ServerPassword{s, enctbl}
+			} else {
+				serverPassword[i] = &ServerPassword{s + ":" + srvPort, enctbl}
+			}
+		}
+	} else {
+		n := len(config.ServerPassword)
+		serverPassword = make([]*ServerPassword, n, n)
+
+		tblCache := make(map[string]*ss.EncryptTable)
+		i := 0
+		for s, passwd := range config.ServerPassword {
+			if !ss.HasPort(s) {
+				log.Fatal("no port for server %s, please specify port in the form of %s:port", s, s)
+			}
+			tbl, ok := tblCache[passwd]
+			if !ok {
+				tbl = ss.GetTable(passwd)
+				tblCache[passwd] = tbl
+			}
+			serverPassword[i] = &ServerPassword{s, tbl}
+			i++
+		}
+	}
+	for _, sp := range serverPassword {
+		log.Println("available remote server", sp.server)
+	}
+}
+
+func handleConnection(conn net.Conn) {
 	if debug {
 		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
 	}
@@ -160,8 +218,9 @@ func handleConnection(conn net.Conn, server string, encTbl *ss.EncryptTable) {
 		return
 	}
 
-	debug.Printf("connecting to %s via %s\n", addr, server)
-	remote, err := ss.DialWithRawAddr(rawaddr, server, encTbl)
+	sp := getServer()
+	debug.Printf("connecting to %s via %s\n", addr, sp.server)
+	remote, err := ss.DialWithRawAddr(rawaddr, sp.server, sp.enctbl)
 	if err != nil {
 		log.Println("error connect to shadowsocks server:", err)
 		return
@@ -175,27 +234,19 @@ func handleConnection(conn net.Conn, server string, encTbl *ss.EncryptTable) {
 	debug.Println("closing")
 }
 
-func getServer(server []string) string {
-	if len(server) == 0 {
-		return server[0]
-	}
-	return server[rand.Intn(len(server))]
-}
-
-func run(port, password string, server []string) {
+func run(port string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		log.Fatal(err)
 	}
-	encTbl := ss.GetTable(password)
-	log.Printf("starting local socks5 server at port %v, remote shadowsocks server %s ...\n", port, server)
+	log.Printf("starting local socks5 server at port %v ...\n", port)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Println("accept:", err)
 			continue
 		}
-		go handleConnection(conn, getServer(server), encTbl)
+		go handleConnection(conn)
 	}
 }
 
@@ -216,7 +267,9 @@ func main() {
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
 	flag.Parse()
+
 	cmdConfig.Server = cmdServer
+	ss.SetDebug(debug)
 
 	exists, err := ss.IsFileExists(configFile)
 	// If no config file in current directory, try search it in the binary directory
@@ -240,17 +293,21 @@ func main() {
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}
-	if !enoughOptions(config) {
-		log.Println("must specify server address, password and both server/local port")
-		os.Exit(1)
-	}
-	ss.SetDebug(debug)
 
-	srvArr := config.GetServerArray()
-	srvPort := strconv.Itoa(config.ServerPort)
-	for i, _ := range srvArr {
-		srvArr[i] += ":" + srvPort
+	if len(config.ServerPassword) == 0 {
+		if !enoughOptions(config) {
+			log.Println("must specify server address, password and both server/local port")
+			os.Exit(1)
+		}
+	} else {
+		if config.Password != "" || config.ServerPort != 0 || config.GetServerArray() != nil {
+			log.Println("given server_password, ignore server, server_port and password option:", config)
+		}
+		if config.LocalPort == 0 {
+			log.Fatal("must specify local port")
+		}
 	}
+	initAvailableServer(config)
 
-	run(strconv.Itoa(config.LocalPort), config.Password, srvArr)
+	run(strconv.Itoa(config.LocalPort))
 }

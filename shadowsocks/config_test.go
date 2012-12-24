@@ -7,7 +7,7 @@ import (
 func TestConfigJson(t *testing.T) {
 	config, err := ParseConfig("testdata/config.json")
 	if err != nil {
-		t.Error("error parsing config.json:", err)
+		t.Fatal("error parsing config.json:", err)
 	}
 
 	if config.Password != "barfoo!" {
@@ -28,7 +28,7 @@ func TestConfigJson(t *testing.T) {
 func TestServerMultiPort(t *testing.T) {
 	config, err := ParseConfig("testdata/server-multi-port.json")
 	if err != nil {
-		t.Error("error parsing multi server-multi-port.json:", err)
+		t.Fatal("error parsing multi server-multi-port.json:", err)
 	}
 
 	if config.PortPassword["8387"] != "foobar" {
@@ -50,7 +50,7 @@ func TestDeprecatedClientMultiServerArray(t *testing.T) {
 	// This form of config is deprecated. Provided only for backward compatibility.
 	config, err := ParseConfig("testdata/deprecated-client-multi-server.json")
 	if err != nil {
-		t.Error("error parsing deprecated-client-multi-server.json:", err)
+		t.Fatal("error parsing deprecated-client-multi-server.json:", err)
 	}
 
 	srvArr := config.GetServerArray()
@@ -68,11 +68,11 @@ func TestDeprecatedClientMultiServerArray(t *testing.T) {
 func TestClientMultiServerArray(t *testing.T) {
 	config, err := ParseConfig("testdata/client-multi-server.json")
 	if err != nil {
-		t.Error("error parsing client-multi-server.json:", err)
+		t.Fatal("error parsing client-multi-server.json:", err)
 	}
 
-	if config.ServerPassword["127.0.0.1:8388"] != "foobar" ||
-		config.ServerPassword["127.0.1.1:8389"] != "barfoo" {
+	if config.ServerPassword["127.0.0.1:8387"] != "foobar" ||
+		config.ServerPassword["127.0.0.1:8388"] != "barfoo" {
 		t.Error("server_password parse error")
 	}
 }
@@ -81,7 +81,7 @@ func TestParseConfigEmpty(t *testing.T) {
 	// make sure we will not crash
 	config, err := ParseConfig("testdata/noserver.json")
 	if err != nil {
-		t.Error("error parsing noserver config:", err)
+		t.Fatal("error parsing noserver config:", err)
 	}
 
 	srvArr := config.GetServerArray()
