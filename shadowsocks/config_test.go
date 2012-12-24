@@ -65,6 +65,18 @@ func TestDeprecatedClientMultiServerArray(t *testing.T) {
 	}
 }
 
+func TestClientMultiServerArray(t *testing.T) {
+	config, err := ParseConfig("testdata/client-multi-server.json")
+	if err != nil {
+		t.Error("error parsing client-multi-server.json:", err)
+	}
+
+	if config.ServerPassword["127.0.0.1:8388"] != "foobar" ||
+		config.ServerPassword["127.0.1.1:8389"] != "barfoo" {
+		t.Error("server_password parse error")
+	}
+}
+
 func TestParseConfigEmpty(t *testing.T) {
 	// make sure we will not crash
 	config, err := ParseConfig("testdata/noserver.json")
