@@ -2,8 +2,14 @@ package shadowsocks
 
 import (
 	"errors"
+	"fmt"
 	"os"
 )
+
+func PrintVersion() {
+	const version = "0.5"
+	fmt.Println("shadowsocks-go version", version)
+}
 
 func IsFileExists(path string) (bool, error) {
 	stat, err := os.Stat(path)
@@ -17,4 +23,13 @@ func IsFileExists(path string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+func HasPort(s string) bool {
+	for i := len(s) - 1; i > 0; i-- {
+		if s[i] == ':' {
+			return true
+		}
+	}
+	return false
 }

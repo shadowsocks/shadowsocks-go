@@ -11,24 +11,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"reflect"
 	"time"
 )
 
 type Config struct {
-	Server        interface{}       `json:"server"`
-	ServerPort    int               `json:"server_port"`
-	LocalPort     int               `json:"local_port"`
-	Password      string            `json:"password"`
+	Server     interface{} `json:"server"`
+	ServerPort int         `json:"server_port"`
+	LocalPort  int         `json:"local_port"`
+	Password   string      `json:"password"`
+
+	// following options are only used by server
 	PortPassword  map[string]string `json:"port_password"`
 	Timeout       int               `json:"timeout"`
 	CacheEncTable bool              `json:"cache_enctable"`
+
+	// following options are only used by client
+	ServerPassword map[string]string `json:"server_password"`
 }
 
 var readTimeout time.Duration
 
 func (config *Config) GetServerArray() []string {
+	// Specifying multiple servers in the "server" options is deprecated.
+	// But for backward compatiblity, keep this.
 	if config.Server == nil {
 		return nil
 	}
@@ -38,6 +46,10 @@ func (config *Config) GetServerArray() []string {
 	}
 	arr, ok := config.Server.([]interface{})
 	if ok {
+		if len(arr) > 1 {
+			log.Println("Multiple servers in \"server\" option is deprecated. " +
+				"Please use \"server_password\" instead.")
+		}
 		serverArr := make([]string, len(arr), len(arr))
 		for i, s := range arr {
 			serverArr[i], ok = s.(string)
