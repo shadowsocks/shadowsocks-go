@@ -188,15 +188,28 @@ func initServers(config *ss.Config) {
 	return
 }
 
-// select one server in round robin order
-// also return selected server id, this can be used to try next server in case
-// of connection failure
-func getServer() (*ServerEnctbl, uint8) {
-	if len(servers.srvenc) == 0 {
-		return servers.srvenc[0], 0
+// select one server to connect in round robin order
+func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) {
+	n := len(servers.srvenc)
+	if n == 1 {
+		se := servers.srvenc[0]
+		debug.Printf("connecting to %s via %s\n", addr, se.server)
+		return ss.DialWithRawAddr(rawaddr, se.server, se.enctbl)
 	}
-	servers.idx++ // concurrent update is not a problem
-	return servers.srvenc[int(servers.idx)%len(servers.srvenc)], servers.idx
+
+	id := servers.idx
+	servers.idx++ // it's ok for concurrent update
+	for i := 0; i < n; i++ {
+		se := servers.srvenc[(int(id)+i)%n]
+		remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.enctbl)
+		if err == nil {
+			debug.Printf("connected to %s via %s\n", addr, se.server)
+			return
+		} else {
+			log.Println("error connecting to shadowsocks server:", err)
+		}
+	}
+	return
 }
 
 func handleConnection(conn net.Conn) {
@@ -215,18 +228,20 @@ func handleConnection(conn net.Conn) {
 		log.Println("error getting request:", err)
 		return
 	}
-	// TODO should send error code to client if connect to server failed
+	// Sending connection established message immediately to client.
+	// This some round trip time for creating socks connection with the client.
+	// But if connection failed, the client will get connection reset error.
 	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
 	if err != nil {
 		debug.Println("send connection confirmation:", err)
 		return
 	}
 
-	se, _ := getServer()
-	debug.Printf("connecting to %s via %s\n", addr, se.server)
-	remote, err := ss.DialWithRawAddr(rawaddr, se.server, se.enctbl)
+	remote, err := createServerConn(rawaddr, addr)
 	if err != nil {
-		log.Println("error connect to shadowsocks server:", err)
+		if len(servers.srvenc) > 1 {
+			log.Println("Failed connect to all avaiable shadowsocks server")
+		}
 		return
 	}
 	defer remote.Close()
