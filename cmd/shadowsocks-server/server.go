@@ -353,6 +353,8 @@ var configFile string
 var config *ss.Config
 
 func main() {
+	log.SetOutput(os.Stdout)
+	
 	var cmdConfig ss.Config
 	var printVer bool
 

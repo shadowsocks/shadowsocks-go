@@ -250,7 +250,7 @@ func handleConnection(conn net.Conn) {
 	go ss.Pipe(conn, remote, c)
 	go ss.Pipe(remote, conn, c)
 	<-c // close the other connection whenever one connection is closed
-	debug.Println("closing")
+	debug.Println("closing connection to", addr)
 }
 
 func run(port string) {
@@ -275,6 +275,8 @@ func enoughOptions(config *ss.Config) bool {
 }
 
 func main() {
+	log.SetOutput(os.Stdout)
+
 	var configFile, cmdServer string
 	var cmdConfig ss.Config
 	var printVer bool
