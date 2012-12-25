@@ -1,5 +1,6 @@
-set GOPATH=%cd%
-go install local
-go install server
-go install test
-
+pushd cmd\shadowsocks-local
+go install
+popd
+pushd cmd\shadowsocks-server
+go install
+popd

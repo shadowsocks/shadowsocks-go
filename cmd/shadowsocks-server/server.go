@@ -354,7 +354,9 @@ var config *ss.Config
 
 func main() {
 	var cmdConfig ss.Config
+	var printVer bool
 
+	flag.BoolVar(&printVer, "version", false, "print version")
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
@@ -362,6 +364,12 @@ func main() {
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
 	flag.Parse()
+
+	if printVer {
+		ss.PrintVersion()
+		os.Exit(0)
+	}
+
 	ss.SetDebug(debug)
 
 	var err error

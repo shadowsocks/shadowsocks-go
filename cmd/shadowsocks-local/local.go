@@ -277,7 +277,9 @@ func enoughOptions(config *ss.Config) bool {
 func main() {
 	var configFile, cmdServer string
 	var cmdConfig ss.Config
+	var printVer bool
 
+	flag.BoolVar(&printVer, "version", false, "print version")
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
 	flag.StringVar(&cmdServer, "s", "", "server address")
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
@@ -286,6 +288,11 @@ func main() {
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
 	flag.Parse()
+
+	if printVer {
+		ss.PrintVersion()
+		os.Exit(0)
+	}
 
 	cmdConfig.Server = cmdServer
 	ss.SetDebug(debug)
