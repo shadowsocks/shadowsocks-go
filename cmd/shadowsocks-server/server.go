@@ -70,8 +70,7 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	if buf[idType] == typeDm {
 		host = string(buf[idDm0 : idDm0+buf[idDmLen]])
 	} else if buf[idType] == typeIP {
-		addrIp := make(net.IP, 4)
-		copy(addrIp, buf[idIP0:idIP0+4])
+		addrIp := net.IPv4(buf[idIP0], buf[idIP0+1], buf[idIP0+2], buf[idIP0+3])
 		host = addrIp.String()
 	}
 	// parse port
