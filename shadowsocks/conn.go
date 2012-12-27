@@ -2,6 +2,7 @@ package shadowsocks
 
 import (
 	"errors"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"strconv"
@@ -36,8 +37,7 @@ func rawAddr(addr string) (buf []byte, err error) {
 	buf[0] = 3             // 3 means the address is domain name
 	buf[1] = byte(hostLen) // host address length  followed by host address
 	copy(buf[2:], host)
-	buf[2+hostLen] = byte(port >> 8 & 0xFF) // the next 2 bytes are port
-	buf[2+hostLen+1] = byte(port) & 0xFF
+	binary.BigEndian.PutUint16(buf[2+hostLen:2+hostLen+2], uint16(port))
 	return
 }
 
