@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/binary"
 	"encoding/gob"
 	"errors"
@@ -76,10 +75,7 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 		host = addrIp.String()
 	}
 	// parse port
-	var port int16
-	sb := bytes.NewBuffer(buf[reqLen-2 : reqLen])
-	binary.Read(sb, binary.BigEndian, &port)
-
+	port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
 	host += ":" + strconv.Itoa(int(port))
 	return
 }
@@ -354,7 +350,7 @@ var config *ss.Config
 
 func main() {
 	log.SetOutput(os.Stdout)
-	
+
 	var cmdConfig ss.Config
 	var printVer bool
 

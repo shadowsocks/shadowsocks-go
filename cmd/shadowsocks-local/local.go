@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"flag"
@@ -127,9 +126,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 			copy(addrIp, buf[idIP0:idIP0+4])
 			host = addrIp.String()
 		}
-		var port int16
-		sb := bytes.NewBuffer(buf[reqLen-2 : reqLen])
-		binary.Read(sb, binary.BigEndian, &port)
+		port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
 		host += ":" + strconv.Itoa(int(port))
 	}
 
