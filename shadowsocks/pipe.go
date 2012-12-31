@@ -1,7 +1,7 @@
 package shadowsocks
 
 import (
-	"io"
+	// "io"
 	"net"
 	"time"
 )
@@ -31,9 +31,13 @@ func Pipe(src, dst net.Conn, end chan byte) {
 			}
 		}
 		if err != nil {
-			if err != io.EOF {
-				Debug.Println("read:", err)
-			}
+			// always "use of closed network connection", but no easy way to
+			// identify this specific error. So just leave the error along
+			/*
+				if bool(Debug) && err != io.EOF {
+					Debug.Println("read:", err)
+				}
+			*/
 			break
 		}
 	}

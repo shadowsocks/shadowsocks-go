@@ -79,13 +79,24 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	return
 }
 
+var connCnt int32
+
 func handleConnection(conn *ss.Conn) {
+	var host string
 	if debug {
 		// function arguments are always evaluated, so surround debug
 		// statement with if statement
-		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
+		debug.Printf("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
+		atomic.AddInt32(&connCnt, 1)
+		defer func() {
+			atomic.AddInt32(&connCnt, -1)
+			debug.Printf("closing pipe %s<->%s\n", conn.RemoteAddr(), host)
+			conn.Close()
+			debug.Printf("%d concurrent client connections\n", connCnt)
+		}()
+	} else {
+		defer conn.Close()
 	}
-	defer conn.Close()
 
 	host, extra, err := getRequest(conn)
 	if err != nil {
@@ -107,18 +118,19 @@ func handleConnection(conn *ss.Conn) {
 	defer remote.Close()
 	// write extra bytes read from 
 	if extra != nil {
-		debug.Println("getRequest read extra data, writing to remote, len", len(extra))
+		// debug.Println("getRequest read extra data, writing to remote, len", len(extra))
 		if _, err = remote.Write(extra); err != nil {
 			debug.Println("write request extra error:", err)
 			return
 		}
 	}
-	debug.Println("piping", host)
+	if debug {
+		debug.Printf("piping %s<->%s", conn.RemoteAddr(), host)
+	}
 	c := make(chan byte, 2)
 	go ss.Pipe(conn, remote, c)
 	go ss.Pipe(remote, conn, c)
 	<-c // close the other connection whenever one connection is closed
-	debug.Println("closing", host)
 	return
 }
 
