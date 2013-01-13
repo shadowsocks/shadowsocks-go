@@ -31,8 +31,9 @@ func Pipe(src, dst net.Conn, end chan byte) {
 			}
 		}
 		if err != nil {
-			// always "use of closed network connection", but no easy way to
-			// identify this specific error. So just leave the error along
+			// Always "use of closed network connection", but no easy way to
+			// identify this specific error. So just leave the error along for now.
+			// More info here: https://code.google.com/p/go/issues/detail?id=4373
 			/*
 				if bool(Debug) && err != io.EOF {
 					Debug.Println("read:", err)

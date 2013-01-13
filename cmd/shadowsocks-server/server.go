@@ -79,24 +79,35 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	return
 }
 
+const logCntDelta = 100
+
 var connCnt int32
+var nextLogConnCnt int32 = logCntDelta
 
 func handleConnection(conn *ss.Conn) {
 	var host string
-	if debug {
-		// function arguments are always evaluated, so surround debug
-		// statement with if statement
-		debug.Printf("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
-		atomic.AddInt32(&connCnt, 1)
-		defer func() {
-			atomic.AddInt32(&connCnt, -1)
-			debug.Printf("closing pipe %s<->%s\n", conn.RemoteAddr(), host)
-			conn.Close()
-			debug.Printf("%d concurrent client connections\n", connCnt)
-		}()
-	} else {
-		defer conn.Close()
+
+	atomic.AddInt32(&connCnt, 1)
+	if connCnt-nextLogConnCnt >= 0 {
+		// XXX There's no xadd in the atomic package, so it's difficult to log
+		// the message only once with low cost. Also note nextLogConnCnt maybe
+		// added twice for current peak connection number level.
+		log.Printf("Number of client connections reaches %d\n", nextLogConnCnt)
+		nextLogConnCnt += logCntDelta
 	}
+
+	// function arguments are always evaluated, so surround debug statement
+	// with if statement
+	if debug {
+		debug.Printf("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
+	}
+	defer func() {
+		if debug {
+			debug.Printf("closing pipe %s<->%s\n", conn.RemoteAddr(), host)
+		}
+		atomic.AddInt32(&connCnt, -1)
+		conn.Close()
+	}()
 
 	host, extra, err := getRequest(conn)
 	if err != nil {
