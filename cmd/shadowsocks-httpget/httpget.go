@@ -106,13 +106,13 @@ func main() {
 		fmt.Println("Error parsing url:", err)
 		os.Exit(1)
 	}
-	host, port, _ := net.SplitHostPort(parsedURL.Host)
-	if port == "" {
-		host += ":80"
+	host, _, err := net.SplitHostPort(parsedURL.Host)
+	if err != nil {
+		host = net.JoinHostPort(parsedURL.Host, "80")
 	} else {
 		host = parsedURL.Host
 	}
-	fmt.Println(host)
+	// fmt.Println(host)
 	rawAddr, err := ss.RawAddr(host)
 	if err != nil {
 		panic("Error getting raw address.")
