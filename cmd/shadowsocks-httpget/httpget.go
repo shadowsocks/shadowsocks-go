@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strconv"
@@ -27,10 +28,10 @@ var config struct {
 
 var debug ss.DebugLog
 
-func doOneRequest(client *http.Client, url string, buf []byte) (err error) {
-	resp, err := client.Get(url)
+func doOneRequest(client *http.Client, uri string, buf []byte) (err error) {
+	resp, err := client.Get(uri)
 	if err != nil {
-		fmt.Printf("GET %s error: %v\n", url, err)
+		fmt.Printf("GET %s error: %v\n", uri, err)
 		return err
 	}
 	for err == nil {
@@ -40,26 +41,21 @@ func doOneRequest(client *http.Client, url string, buf []byte) (err error) {
 		}
 	}
 	if err != io.EOF {
-		fmt.Printf("Read %s response error: %v\n", url, err)
+		fmt.Printf("Read %s response error: %v\n", uri, err)
 	} else {
 		err = nil
 	}
 	return
 }
 
-func get(connid int, url, serverAddr string, enctbl *ss.EncryptTable, done chan []time.Duration) {
+func get(connid int, uri, serverAddr string, rawAddr []byte, enctbl *ss.EncryptTable, done chan []time.Duration) {
 	reqDone := 0
 	reqTime := make([]time.Duration, config.nreq, config.nreq)
 	defer func() {
 		done <- reqTime[:reqDone]
 	}()
-	rawAddr, err := ss.RawAddr(url)
-	if err != nil {
-		panic("Error getting raw address.")
-		return
-	}
 	tr := &http.Transport{
-		Dial: func(net, addr string) (c net.Conn, err error) {
+		Dial: func(_, _ string) (net.Conn, error) {
 			return ss.DialWithRawAddr(rawAddr, serverAddr, enctbl)
 		},
 	}
@@ -68,13 +64,13 @@ func get(connid int, url, serverAddr string, enctbl *ss.EncryptTable, done chan 
 	client := &http.Client{Transport: tr}
 	for ; reqDone < config.nreq; reqDone++ {
 		start := time.Now()
-		if err := doOneRequest(client, url, buf); err != nil {
+		if err := doOneRequest(client, uri, buf); err != nil {
 			return
 		}
 		reqTime[reqDone] = time.Now().Sub(start)
 
 		if (reqDone+1)%1000 == 0 {
-			fmt.Printf("conn %d finished %d get request\n", connid, reqDone+1)
+			fmt.Printf("conn %d finished %d get requests\n", connid, reqDone+1)
 		}
 	}
 }
@@ -97,17 +93,35 @@ func main() {
 	}
 
 	runtime.GOMAXPROCS(config.core)
-	url := flag.Arg(0)
-	if !strings.HasPrefix(url, "http://") {
-		url = "http://" + url
+	uri := flag.Arg(0)
+	if !strings.HasPrefix(uri, "http://") {
+		uri = "http://" + uri
 	}
 
 	enctbl := ss.GetTable(config.passwd)
 	serverAddr := net.JoinHostPort(config.server, strconv.Itoa(config.port))
 
+	parsedURL, err := url.Parse(uri)
+	if err != nil {
+		fmt.Println("Error parsing url:", err)
+		os.Exit(1)
+	}
+	host, port, _ := net.SplitHostPort(parsedURL.Host)
+	if port == "" {
+		host += ":80"
+	} else {
+		host = parsedURL.Host
+	}
+	fmt.Println(host)
+	rawAddr, err := ss.RawAddr(host)
+	if err != nil {
+		panic("Error getting raw address.")
+		return
+	}
+
 	done := make(chan []time.Duration)
 	for i := 1; i <= config.nconn; i++ {
-		go get(i, url, serverAddr, enctbl, done)
+		go get(i, uri, serverAddr, rawAddr, enctbl, done)
 	}
 
 	// collect request finish time
