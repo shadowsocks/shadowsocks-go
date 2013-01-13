@@ -53,9 +53,14 @@ func get(connid int, url, serverAddr string, enctbl *ss.EncryptTable, done chan 
 	defer func() {
 		done <- reqTime[:reqDone]
 	}()
+	rawAddr, err := ss.RawAddr(url)
+	if err != nil {
+		panic("Error getting raw address.")
+		return
+	}
 	tr := &http.Transport{
 		Dial: func(net, addr string) (c net.Conn, err error) {
-			return ss.Dial(addr, serverAddr, enctbl)
+			return ss.DialWithRawAddr(rawAddr, serverAddr, enctbl)
 		},
 	}
 

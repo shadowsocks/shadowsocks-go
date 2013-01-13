@@ -18,7 +18,7 @@ func NewConn(cn net.Conn, encTbl *EncryptTable) *Conn {
 	return &Conn{cn, encTbl}
 }
 
-func rawAddr(addr string) (buf []byte, err error) {
+func RawAddr(addr string) (buf []byte, err error) {
 	arr := strings.Split(addr, ":")
 	if len(arr) != 2 {
 		return nil, errors.New(
@@ -59,7 +59,7 @@ func DialWithRawAddr(rawaddr []byte, server string, encTbl *EncryptTable) (c *Co
 
 // addr should be in the form of host:port
 func Dial(addr, server string, encTbl *EncryptTable) (c *Conn, err error) {
-	ra, err := rawAddr(addr)
+	ra, err := RawAddr(addr)
 	if err != nil {
 		return
 	}
