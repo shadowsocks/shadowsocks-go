@@ -156,7 +156,6 @@ func main() {
 		varSum += di
 	}
 	stddev := math.Sqrt(varSum / float64(reqDone))
-	fmt.Println("\ntotal time used:", time.Duration(sum))
-	fmt.Println("average time per request:", time.Duration(avg))
+	fmt.Println("\naverage time per request:", time.Duration(avg))
 	fmt.Println("standard deviation:", time.Duration(stddev))
 }
