@@ -58,8 +58,9 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, isIP bool, err error)
 		idDmLen = 1 // domain address length index
 		idDm0   = 2 // domain address start index
 
-		typeIP = 1 // type is ip address
-		typeDm = 3 // type is domain address
+		typeIPv4 = 1 // type is ipv4 address
+		typeDm   = 3 // type is domain address
+		typeIPv6 = 4 // type is ipv6 address
 
 		lenIP     = 1 + 4 + 2 // 1addrType + 4ip + 2port
 		lenDmBase = 1 + 1 + 2 // 1addrType + 1addrLen + 2port, plus addrLen
@@ -76,10 +77,11 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, isIP bool, err error)
 		return
 	}
 
+	// Currently the client will not send request with ipv6 address.
 	reqLen := lenIP
 	if buf[idType] == typeDm {
 		reqLen = int(buf[idDmLen]) + lenDmBase
-	} else if buf[idType] != typeIP {
+	} else if buf[idType] != typeIPv4 {
 		err = errAddrType
 		return
 	}
@@ -94,10 +96,9 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, isIP bool, err error)
 		extra = buf[reqLen:n]
 	}
 
-	// TODO add ipv6 address support
 	if buf[idType] == typeDm {
 		host = string(buf[idDm0 : idDm0+buf[idDmLen]])
-	} else if buf[idType] == typeIP {
+	} else if buf[idType] == typeIPv4 {
 		addrIp := net.IPv4(buf[idIP0], buf[idIP0+1], buf[idIP0+2], buf[idIP0+3])
 		host = addrIp.String()
 		isIP = true

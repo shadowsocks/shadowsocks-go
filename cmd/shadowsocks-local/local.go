@@ -74,8 +74,9 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 		idDmLen = 4 // domain address length index
 		idDm0   = 5 // domain address start index
 
-		typeIP = 1 // type is ip address
-		typeDm = 3 // type is domain address
+		typeIPv4 = 1 // type is ipv4 address
+		typeDm   = 3 // type is domain address
+		typeIPv6 = 4 // type is ipv6 address
 
 		lenIP     = 3 + 1 + 4 + 2 // 3(ver+cmd+rsv) + 1addrType + 4ip + 2port
 		lenDmBase = 3 + 1 + 1 + 2 // 3 + 1addrType + 1addrLen + 2port, plus addrLen
@@ -97,10 +98,15 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 		return
 	}
 
+	// Browsers seems always using domain name, so it's not urgent to support
+	// IPv6 address in the local socks server.
 	reqLen := lenIP
 	if buf[idType] == typeDm {
 		reqLen = int(buf[idDmLen]) + lenDmBase
-	} else if buf[idType] != typeIP {
+	} else if buf[idType] != typeIPv4 {
+		if buf[idType] == typeIPv6 {
+			log.Println("IPv6 address type not supported in socks request")
+		}
 		err = errAddrType
 		return
 	}
@@ -121,7 +127,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 	if debug {
 		if buf[idType] == typeDm {
 			host = string(buf[idDm0 : idDm0+buf[idDmLen]])
-		} else if buf[idType] == typeIP {
+		} else if buf[idType] == typeIPv4 {
 			addrIp := net.IPv4(buf[idIP0], buf[idIP0+1], buf[idIP0+2], buf[idIP0+3])
 			host = addrIp.String()
 		}
