@@ -26,32 +26,7 @@ var errAddrType = errors.New("addr type not supported")
 
 const dnsGoroutineNum = 64
 
-func dial(hostPort string, isIP bool) (c net.Conn, err error) {
-	// return net.Dial("tcp", host)
-	if isIP {
-		return net.Dial("tcp", hostPort)
-	}
-
-	var addrs []string
-	var host, port string
-
-	if host, port, err = net.SplitHostPort(hostPort); err != nil {
-		log.Println("Internal error: host should always has port specified")
-		return
-	}
-	if addrs, err = dnspool.LookupHost(host); err != nil {
-		return
-	}
-	for _, ip := range addrs {
-		ipHost := net.JoinHostPort(ip, port)
-		if c, err = net.Dial("tcp", ipHost); err == nil {
-			return
-		}
-	}
-	return nil, err
-}
-
-func getRequest(conn *ss.Conn) (host string, extra []byte, isIP bool, err error) {
+func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	const (
 		idType  = 0 // address type index
 		idIP0   = 1 // ip addres start index
@@ -101,7 +76,6 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, isIP bool, err error)
 	} else if buf[idType] == typeIPv4 {
 		addrIp := net.IPv4(buf[idIP0], buf[idIP0+1], buf[idIP0+2], buf[idIP0+3])
 		host = addrIp.String()
-		isIP = true
 	}
 	// parse port
 	port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
@@ -139,13 +113,13 @@ func handleConnection(conn *ss.Conn) {
 		conn.Close()
 	}()
 
-	host, extra, isIP, err := getRequest(conn)
+	host, extra, err := getRequest(conn)
 	if err != nil {
 		log.Println("error getting request:", err)
 		return
 	}
 	debug.Println("connecting", host)
-	remote, err := dial(host, isIP)
+	remote, err := dnspool.Dial(host)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error

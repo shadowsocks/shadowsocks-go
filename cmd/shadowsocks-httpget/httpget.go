@@ -69,7 +69,7 @@ func get(connid int, uri, serverAddr string, rawAddr []byte, enctbl *ss.EncryptT
 		}
 		reqTime[reqDone] = time.Now().Sub(start)
 
-		if (reqDone+1)%1000 == 0 {
+		if (reqDone+1)%100 == 0 {
 			fmt.Printf("conn %d finished %d get requests\n", connid, reqDone+1)
 		}
 	}
