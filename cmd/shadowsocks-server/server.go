@@ -6,7 +6,6 @@ import (
 	"encoding/gob"
 	"errors"
 	"flag"
-	"github.com/cyfdecyf/dnspool"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
@@ -119,7 +118,7 @@ func handleConnection(conn *ss.Conn) {
 		return
 	}
 	debug.Println("connecting", host)
-	remote, err := dnspool.Dial(host)
+	remote, err := net.Dial("tcp", host)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
@@ -413,8 +412,6 @@ func main() {
 	if err = unifyPortPassword(config); err != nil {
 		os.Exit(1)
 	}
-
-	dnspool.SetGoroutineNumber(dnsGoroutineNum)
 
 	initTableCache(config)
 	for port, password := range config.PortPassword {
