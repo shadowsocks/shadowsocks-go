@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"encoding/binary"
-	"encoding/gob"
 	"errors"
 	"flag"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
@@ -16,7 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"time"
 )
 
 var debug ss.DebugLog
@@ -148,91 +145,13 @@ func handleConnection(conn *ss.Conn) {
 	return
 }
 
-const tableCacheFile = "table.cache"
-
-var table struct {
-	cache  map[string]*ss.EncryptTable
-	getCnt int32
-	hitCnt int32
-}
-
-func initTableCache(config *ss.Config) {
-	var exists bool
-	var err error
-	if !config.CacheEncTable {
-		goto emptyCache
-	}
-	exists, err = ss.IsFileExists(tableCacheFile)
-	if exists {
-		// load table cache from file
-		f, err := os.Open(tableCacheFile)
-		if err != nil {
-			log.Println("error opening table cache:", err)
-			goto emptyCache
-		}
-		defer f.Close()
-
-		dec := gob.NewDecoder(bufio.NewReader(f))
-		if err = dec.Decode(&table.cache); err != nil {
-			log.Println("error loading table cache:", err)
-			goto emptyCache
-		}
-		debug.Println("table cache loaded from disk")
-		return
-	}
-	if err != nil {
-		log.Println("table cache:", err)
-	}
-
-emptyCache:
-	debug.Println("creating empty table cache")
-	table.cache = map[string]*ss.EncryptTable{}
-}
-
-func storeTableCache(config *ss.Config) {
-	if !config.CacheEncTable || table.getCnt == table.hitCnt {
-		return
-	}
-
-	const tmpPath = "tmp.cache"
-	f, err := os.Create(tmpPath)
-	if err != nil {
-		log.Println("can't create tmp table cache")
-		return
-	}
-	defer f.Close()
-
-	w := bufio.NewWriter(f)
-	enc := gob.NewEncoder(w)
-	if err = enc.Encode(table.cache); err != nil {
-		log.Println("error saving tmp table cache:", err)
-		return
-	}
-	if err = w.Flush(); err != nil {
-		log.Println("error flushing table cache:", err)
-		return
-	}
-	if err = os.Rename(tmpPath, tableCacheFile); err != nil {
-		log.Printf("error renaming %s to %s: %v\n", tmpPath, tableCacheFile, err)
-		return
-	}
-	debug.Println("table cache saved")
-}
-
 func getTable(password string) (tbl *ss.EncryptTable) {
-	if table.cache != nil {
-		var ok bool
-		tbl, ok = table.cache[password]
-		if ok {
-			atomic.AddInt32(&table.hitCnt, 1)
-			debug.Println("table cache hit for password:", password)
-			return
-		}
-		tbl = ss.GetTable(password)
-		table.cache[password] = tbl
-	} else {
-		tbl = ss.GetTable(password)
-	}
+	// I'm not using a map to cache ciphers with same password because map
+	// needs lock to protect concurrent access. Memory is not an issue
+	// because each cipher takes only a few more than 512 bytes.
+	// Besides, many same passwords for different users should be rare, and
+	// using cipher cache adds complexity with not much benefit.
+	tbl = ss.GetTable(password)
 	return
 }
 
@@ -336,8 +255,7 @@ func run(port, password string) {
 		return
 	}
 	passwdManager.add(port, password, ln)
-	encTbl := getTable(password)
-	atomic.AddInt32(&table.getCnt, 1)
+	var encTbl *ss.EncryptTable
 	log.Printf("server listening port %v ...\n", port)
 	for {
 		conn, err := ln.Accept()
@@ -345,6 +263,11 @@ func run(port, password string) {
 			// listener maybe closed to update password
 			debug.Printf("accept error: %v\n", err)
 			return
+		}
+		// Creating cipher upon first connection.
+		if encTbl == nil {
+			debug.Println("creating cipher for port:", port)
+			encTbl = getTable(password)
 		}
 		go handleConnection(ss.NewConn(conn, encTbl))
 	}
@@ -413,17 +336,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	initTableCache(config)
 	for port, password := range config.PortPassword {
 		go run(port, password)
 	}
-	// Wait all ports have get it's encryption table
-	for int(table.getCnt) != len(config.PortPassword) {
-		time.Sleep(1 * time.Second)
-	}
-	storeTableCache(config)
-	log.Println("all ports ready")
 
-	table.cache = nil // release memory
 	waitSignal()
 }

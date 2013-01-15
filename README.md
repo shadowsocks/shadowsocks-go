@@ -72,12 +72,9 @@ The server can support users with different passwords. Each user will be served 
 
 ```
 port_password   specify multiple ports and passwords to support multiple users
-cache_enctable  store computed encryption table on disk to speedup server startup
 ```
 
 Here's a sample configuration [`server-multi-port.json`](https://github.com/shadowsocks/shadowsocks-go/blob/master/sample-config/server-multi-port.json). Given `port_password`, server program will ignore `server_port` and `password` options.
-
-Enabling `cache_enctable` is recommended if you have more than 20 different passwords. Unused password will not be deleted, so you may need to delete the file `table.cache` if it grows too big.
 
 ### Update port password for a running server  ###
 

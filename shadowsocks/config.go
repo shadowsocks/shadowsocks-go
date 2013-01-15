@@ -24,9 +24,8 @@ type Config struct {
 	Password   string      `json:"password"`
 
 	// following options are only used by server
-	PortPassword  map[string]string `json:"port_password"`
-	Timeout       int               `json:"timeout"`
-	CacheEncTable bool              `json:"cache_enctable"`
+	PortPassword map[string]string `json:"port_password"`
+	Timeout      int               `json:"timeout"`
 
 	// following options are only used by client
 	ServerPassword map[string]string `json:"server_password"`

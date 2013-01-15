@@ -8,8 +8,8 @@ import (
 )
 
 type EncryptTable struct {
-	EncTbl []byte
-	DecTbl []byte
+	encTbl []byte
+	decTbl []byte
 }
 
 func GetTable(key string) (tbl *EncryptTable) {
@@ -38,10 +38,10 @@ func GetTable(key string) (tbl *EncryptTable) {
 		})
 	}
 	for i = 0; i < tbl_size; i++ {
-		tbl.EncTbl[i] = byte(table[i])
+		tbl.encTbl[i] = byte(table[i])
 	}
 	for i = 0; i < tbl_size; i++ {
-		tbl.DecTbl[tbl.EncTbl[i]] = byte(i)
+		tbl.decTbl[tbl.encTbl[i]] = byte(i)
 	}
 	return
 }
