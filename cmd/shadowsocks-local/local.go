@@ -151,7 +151,10 @@ var servers struct {
 func initServers(config *ss.Config) {
 	if len(config.ServerPassword) == 0 {
 		// only one encryption table
-		cipher := ss.NewCipher(config.Password)
+		cipher, err := ss.NewCipher(config.Password)
+		if err != nil {
+			log.Fatal("Failed generating ciphers:", err)
+		}
 		srvPort := strconv.Itoa(config.ServerPort)
 		srvArr := config.GetServerArray()
 		n := len(srvArr)
@@ -177,7 +180,11 @@ func initServers(config *ss.Config) {
 			}
 			cipher, ok := cipherCache[passwd]
 			if !ok {
-				cipher = ss.NewCipher(passwd)
+				var err error
+				cipher, err = ss.NewCipher(passwd)
+				if err != nil {
+					log.Fatal("Failed generating ciphers:", err)
+				}
 				cipherCache[passwd] = cipher
 			}
 			servers.srvCipher[i] = &ServerCipher{s, cipher}
@@ -196,14 +203,14 @@ func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) 
 	if n == 1 {
 		se := servers.srvCipher[0]
 		debug.Printf("connecting to %s via %s\n", addr, se.server)
-		return ss.DialWithRawAddr(rawaddr, se.server, se.cipher)
+		return ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
 	}
 
 	id := servers.idx
 	servers.idx++ // it's ok for concurrent update
 	for i := 0; i < n; i++ {
 		se := servers.srvCipher[(int(id)+i)%n]
-		remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher)
+		remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
 		if err == nil {
 			debug.Printf("connected to %s via %s\n", addr, se.server)
 			return
@@ -289,6 +296,7 @@ func main() {
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
+	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, use empty string or rc4")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
 	flag.Parse()
@@ -317,17 +325,18 @@ func main() {
 		if os.IsNotExist(err) {
 			log.Println("config file not found, using all options from command line")
 		} else {
-			log.Printf("error reading config file: %v\n", err)
-			os.Exit(1)
+			log.Fatal("error reading config file: %v\n", err)
 		}
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}
+	if err = ss.SetDefaultCipher(config.Method); err != nil {
+		log.Fatal(err)
+	}
 
 	if len(config.ServerPassword) == 0 {
 		if !enoughOptions(config) {
-			log.Println("must specify server address, password and both server/local port")
-			os.Exit(1)
+			log.Fatal("must specify server address, password and both server/local port")
 		}
 	} else {
 		if config.Password != "" || config.ServerPort != 0 || config.GetServerArray() != nil {

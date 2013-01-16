@@ -10,6 +10,12 @@ import (
 )
 
 type Cipher interface {
+	// Some ciphers maintains context (e.g. RC4), which means different
+	// connections need to use their own ciphers. Copy() will create an copy
+	// of the cipher in the current state. Use this before calling
+	// Encrypt/Decrypt to avoid initialization cost of of creating a new
+	// cipher.
+	Copy() Cipher
 	// dst should have at least the same length as src
 	Encrypt(dst, src []byte)
 	Decrypt(dst, src []byte)
@@ -67,6 +73,11 @@ func (c *TableCipher) Decrypt(dst, src []byte) {
 	}
 }
 
+// Table cipher has no state, so can return itself.
+func (c *TableCipher) Copy() Cipher {
+	return c
+}
+
 type RC4Cipher struct {
 	dec *rc4.Cipher
 	enc *rc4.Cipher
@@ -91,6 +102,13 @@ func (c RC4Cipher) Decrypt(dst, src []byte) {
 	c.dec.XORKeyStream(dst, src)
 }
 
+// Create a new RC4 cipher with the same keystream.
+func (c RC4Cipher) Copy() Cipher {
+	dec := *c.dec
+	enc := *c.enc
+	return &RC4Cipher{&dec, &enc}
+}
+
 // Function to get default cipher
 var NewCipher = NewTableCipher
 
@@ -103,7 +121,7 @@ func SetDefaultCipher(cipherName string) (err error) {
 	case "rc4":
 		NewCipher = NewRC4Cipher
 	default:
-		return errors.New("cipher " + cipherName + " not supported")
+		return errors.New("encryption method " + cipherName + " not supported")
 	}
 	return
 }

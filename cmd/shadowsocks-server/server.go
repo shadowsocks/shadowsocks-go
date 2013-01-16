@@ -261,9 +261,13 @@ func run(port, password string) {
 		// Creating cipher upon first connection.
 		if cipher == nil {
 			debug.Println("creating cipher for port:", port)
-			cipher = ss.NewCipher(password)
+			cipher, err = ss.NewCipher(password)
+			if err != nil {
+				log.Printf("Error generating cipher for port: %s password: %s\n", port, password)
+				return
+			}
 		}
-		go handleConnection(ss.NewConn(conn, cipher))
+		go handleConnection(ss.NewConn(conn, cipher.Copy()))
 	}
 }
 
@@ -301,6 +305,7 @@ func main() {
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.Timeout, "t", 60, "connection timeout (in seconds)")
+	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, use empty string or rc4")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
 	flag.Parse()
@@ -324,6 +329,9 @@ func main() {
 		config = &cmdConfig
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
+	}
+	if err = ss.SetDefaultCipher(config.Method); err != nil {
+		log.Fatal(err)
 	}
 
 	if err = unifyPortPassword(config); err != nil {
