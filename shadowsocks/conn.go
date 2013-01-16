@@ -1,8 +1,8 @@
 package shadowsocks
 
 import (
-	"errors"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -11,11 +11,11 @@ import (
 
 type Conn struct {
 	net.Conn
-	*EncryptTable
+	Cipher
 }
 
-func NewConn(cn net.Conn, encTbl *EncryptTable) *Conn {
-	return &Conn{cn, encTbl}
+func NewConn(cn net.Conn, cipher Cipher) *Conn {
+	return &Conn{cn, cipher}
 }
 
 func RawAddr(addr string) (buf []byte, err error) {
@@ -44,12 +44,12 @@ func RawAddr(addr string) (buf []byte, err error) {
 // This is intended for use by users implementing a local socks proxy.
 // rawaddr shoud contain part of the data in socks request, starting from the
 // ATYP field. (Refer to rfc1928 for more information.)
-func DialWithRawAddr(rawaddr []byte, server string, encTbl *EncryptTable) (c *Conn, err error) {
+func DialWithRawAddr(rawaddr []byte, server string, cipher Cipher) (c *Conn, err error) {
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
 		return
 	}
-	c = NewConn(conn, encTbl)
+	c = NewConn(conn, cipher)
 	if _, err = c.Write(rawaddr); err != nil {
 		c.Close()
 		return nil, err
@@ -58,25 +58,26 @@ func DialWithRawAddr(rawaddr []byte, server string, encTbl *EncryptTable) (c *Co
 }
 
 // addr should be in the form of host:port
-func Dial(addr, server string, encTbl *EncryptTable) (c *Conn, err error) {
+func Dial(addr, server string, cipher Cipher) (c *Conn, err error) {
 	ra, err := RawAddr(addr)
 	if err != nil {
 		return
 	}
-	return DialWithRawAddr(ra, server, encTbl)
+	return DialWithRawAddr(ra, server, cipher)
 }
 
 func (c Conn) Read(b []byte) (n int, err error) {
-	buf := make([]byte, len(b), len(b))
-	n, err = c.Conn.Read(buf)
+	cipherData := make([]byte, len(b), len(b))
+	n, err = c.Conn.Read(cipherData)
 	if n > 0 {
-		encrypt2(c.decTbl, buf[0:n], b[0:n])
+		c.Decrypt(b[0:n], cipherData[0:n])
 	}
 	return
 }
 
 func (c Conn) Write(b []byte) (n int, err error) {
-	buf := encrypt(c.encTbl, b)
-	n, err = c.Conn.Write(buf)
+	cipherData := make([]byte, len(b), len(b))
+	c.Encrypt(cipherData, b)
+	n, err = c.Conn.Write(cipherData)
 	return
 }

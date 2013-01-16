@@ -138,53 +138,53 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 	return
 }
 
-type ServerEnctbl struct {
+type ServerCipher struct {
 	server string
-	enctbl *ss.EncryptTable
+	cipher ss.Cipher
 }
 
 var servers struct {
-	srvenc []*ServerEnctbl
-	idx    uint8
+	srvCipher []*ServerCipher
+	idx       uint8
 }
 
 func initServers(config *ss.Config) {
 	if len(config.ServerPassword) == 0 {
 		// only one encryption table
-		enctbl := ss.GetTable(config.Password)
+		cipher := ss.NewCipher(config.Password)
 		srvPort := strconv.Itoa(config.ServerPort)
 		srvArr := config.GetServerArray()
 		n := len(srvArr)
-		servers.srvenc = make([]*ServerEnctbl, n, n)
+		servers.srvCipher = make([]*ServerCipher, n, n)
 
 		for i, s := range srvArr {
 			if ss.HasPort(s) {
 				log.Println("ignore server_port option for server", s)
-				servers.srvenc[i] = &ServerEnctbl{s, enctbl}
+				servers.srvCipher[i] = &ServerCipher{s, cipher}
 			} else {
-				servers.srvenc[i] = &ServerEnctbl{s + ":" + srvPort, enctbl}
+				servers.srvCipher[i] = &ServerCipher{s + ":" + srvPort, cipher}
 			}
 		}
 	} else {
 		n := len(config.ServerPassword)
-		servers.srvenc = make([]*ServerEnctbl, n, n)
+		servers.srvCipher = make([]*ServerCipher, n, n)
 
-		tblCache := make(map[string]*ss.EncryptTable)
+		cipherCache := make(map[string]ss.Cipher)
 		i := 0
 		for s, passwd := range config.ServerPassword {
 			if !ss.HasPort(s) {
 				log.Fatal("no port for server %s, please specify port in the form of %s:port", s, s)
 			}
-			tbl, ok := tblCache[passwd]
+			cipher, ok := cipherCache[passwd]
 			if !ok {
-				tbl = ss.GetTable(passwd)
-				tblCache[passwd] = tbl
+				cipher = ss.NewCipher(passwd)
+				cipherCache[passwd] = cipher
 			}
-			servers.srvenc[i] = &ServerEnctbl{s, tbl}
+			servers.srvCipher[i] = &ServerCipher{s, cipher}
 			i++
 		}
 	}
-	for _, se := range servers.srvenc {
+	for _, se := range servers.srvCipher {
 		log.Println("available remote server", se.server)
 	}
 	return
@@ -192,18 +192,18 @@ func initServers(config *ss.Config) {
 
 // select one server to connect in round robin order
 func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) {
-	n := len(servers.srvenc)
+	n := len(servers.srvCipher)
 	if n == 1 {
-		se := servers.srvenc[0]
+		se := servers.srvCipher[0]
 		debug.Printf("connecting to %s via %s\n", addr, se.server)
-		return ss.DialWithRawAddr(rawaddr, se.server, se.enctbl)
+		return ss.DialWithRawAddr(rawaddr, se.server, se.cipher)
 	}
 
 	id := servers.idx
 	servers.idx++ // it's ok for concurrent update
 	for i := 0; i < n; i++ {
-		se := servers.srvenc[(int(id)+i)%n]
-		remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.enctbl)
+		se := servers.srvCipher[(int(id)+i)%n]
+		remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher)
 		if err == nil {
 			debug.Printf("connected to %s via %s\n", addr, se.server)
 			return
@@ -241,7 +241,7 @@ func handleConnection(conn net.Conn) {
 
 	remote, err := createServerConn(rawaddr, addr)
 	if err != nil {
-		if len(servers.srvenc) > 1 {
+		if len(servers.srvCipher) > 1 {
 			log.Println("Failed connect to all avaiable shadowsocks server")
 		}
 		return

@@ -4,17 +4,24 @@ import (
 	"bytes"
 	"crypto/md5"
 	"encoding/binary"
+	"errors"
 	"io"
 )
 
-type EncryptTable struct {
+type Cipher interface {
+	// dst should have at least the same length as src
+	Encrypt(dst, src []byte)
+	Decrypt(dst, src []byte)
+}
+
+type TableCipher struct {
 	encTbl []byte
 	decTbl []byte
 }
 
-func GetTable(key string) (tbl *EncryptTable) {
+func NewTableCipher(key string) (tbl *TableCipher) {
 	const tbl_size = 256
-	tbl = &EncryptTable{
+	tbl = &TableCipher{
 		make([]byte, tbl_size, tbl_size),
 		make([]byte, tbl_size, tbl_size),
 	}
@@ -46,14 +53,26 @@ func GetTable(key string) (tbl *EncryptTable) {
 	return
 }
 
-func encrypt2(table []byte, buf, result []byte) {
-	for i := 0; i < len(buf); i++ {
-		result[i] = table[buf[i]]
+func (c *TableCipher) Encrypt(dst, src []byte) {
+	for i := 0; i < len(src); i++ {
+		dst[i] = c.encTbl[src[i]]
 	}
 }
 
-func encrypt(table []byte, buf []byte) []byte {
-	var result = make([]byte, len(buf), len(buf))
-	encrypt2(table, buf, result)
-	return result
+func (c *TableCipher) Decrypt(dst, src []byte) {
+	for i := 0; i < len(src); i++ {
+		dst[i] = c.decTbl[src[i]]
+	}
+}
+
+// Function to get default cipher
+var NewCipher = NewTableCipher
+
+// Set default cipher. Empty string of cipher name uses the simple table
+// cipher.
+func SetDefaultCipher(cipherName string) (err error) {
+	if cipherName == "" {
+		return
+	}
+	return errors.New("cipher " + cipherName + " not supported")
 }

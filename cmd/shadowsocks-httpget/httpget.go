@@ -48,7 +48,7 @@ func doOneRequest(client *http.Client, uri string, buf []byte) (err error) {
 	return
 }
 
-func get(connid int, uri, serverAddr string, rawAddr []byte, enctbl *ss.EncryptTable, done chan []time.Duration) {
+func get(connid int, uri, serverAddr string, rawAddr []byte, cipher ss.Cipher, done chan []time.Duration) {
 	reqDone := 0
 	reqTime := make([]time.Duration, config.nreq, config.nreq)
 	defer func() {
@@ -56,7 +56,7 @@ func get(connid int, uri, serverAddr string, rawAddr []byte, enctbl *ss.EncryptT
 	}()
 	tr := &http.Transport{
 		Dial: func(_, _ string) (net.Conn, error) {
-			return ss.DialWithRawAddr(rawAddr, serverAddr, enctbl)
+			return ss.DialWithRawAddr(rawAddr, serverAddr, cipher)
 		},
 	}
 
@@ -98,7 +98,7 @@ func main() {
 		uri = "http://" + uri
 	}
 
-	enctbl := ss.GetTable(config.passwd)
+	enctbl := ss.NewCipher(config.passwd)
 	serverAddr := net.JoinHostPort(config.server, strconv.Itoa(config.port))
 
 	parsedURL, err := url.Parse(uri)
