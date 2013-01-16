@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -299,6 +300,7 @@ func main() {
 
 	var cmdConfig ss.Config
 	var printVer bool
+	var core int
 
 	flag.BoolVar(&printVer, "version", false, "print version")
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
@@ -306,6 +308,7 @@ func main() {
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.Timeout, "t", 60, "connection timeout (in seconds)")
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, use empty string or rc4")
+	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
 	flag.Parse()
@@ -330,14 +333,15 @@ func main() {
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}
-	if err = ss.SetDefaultCipher(config.Method); err != nil {
-		log.Fatal(err)
-	}
-
 	if err = unifyPortPassword(config); err != nil {
 		os.Exit(1)
 	}
-
+	if err = ss.SetDefaultCipher(config.Method); err != nil {
+		log.Fatal(err)
+	}
+	if core > 0 {
+		runtime.GOMAXPROCS(core)
+	}
 	for port, password := range config.PortPassword {
 		go run(port, password)
 	}
