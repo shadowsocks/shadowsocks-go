@@ -3,6 +3,7 @@ package shadowsocks
 import (
 	"bytes"
 	"crypto/md5"
+	"crypto/rc4"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -19,9 +20,10 @@ type TableCipher struct {
 	decTbl []byte
 }
 
-func NewTableCipher(key string) (tbl *TableCipher) {
+// Creates a new table based cipher. err is always nil.
+func NewTableCipher(key string) (c Cipher, err error) {
 	const tbl_size = 256
-	tbl = &TableCipher{
+	tbl := TableCipher{
 		make([]byte, tbl_size, tbl_size),
 		make([]byte, tbl_size, tbl_size),
 	}
@@ -50,7 +52,7 @@ func NewTableCipher(key string) (tbl *TableCipher) {
 	for i = 0; i < tbl_size; i++ {
 		tbl.decTbl[tbl.encTbl[i]] = byte(i)
 	}
-	return
+	return &tbl, nil
 }
 
 func (c *TableCipher) Encrypt(dst, src []byte) {
@@ -65,14 +67,43 @@ func (c *TableCipher) Decrypt(dst, src []byte) {
 	}
 }
 
+type RC4Cipher struct {
+	dec *rc4.Cipher
+	enc *rc4.Cipher
+}
+
+func NewRC4Cipher(key string) (c Cipher, err error) {
+	keybytes := []byte(key)
+	enc, err := rc4.NewCipher(keybytes)
+	if err != nil {
+		return
+	}
+	dec, _ := rc4.NewCipher(keybytes)
+	c = &RC4Cipher{dec, enc}
+	return
+}
+
+func (c RC4Cipher) Encrypt(dst, src []byte) {
+	c.enc.XORKeyStream(dst, src)
+}
+
+func (c RC4Cipher) Decrypt(dst, src []byte) {
+	c.dec.XORKeyStream(dst, src)
+}
+
 // Function to get default cipher
 var NewCipher = NewTableCipher
 
 // Set default cipher. Empty string of cipher name uses the simple table
 // cipher.
 func SetDefaultCipher(cipherName string) (err error) {
-	if cipherName == "" {
-		return
+	switch cipherName {
+	case "":
+		NewCipher = NewTableCipher
+	case "rc4":
+		NewCipher = NewRC4Cipher
+	default:
+		return errors.New("cipher " + cipherName + " not supported")
 	}
-	return errors.New("cipher " + cipherName + " not supported")
+	return
 }
