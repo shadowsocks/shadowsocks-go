@@ -1,3 +1,4 @@
 0.6 (not released)
 
     * Generate ciphers on demand. (Encryption table cache is removed.)
+    * Support RC4 encryption.
