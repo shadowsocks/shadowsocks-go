@@ -145,16 +145,6 @@ func handleConnection(conn *ss.Conn) {
 	return
 }
 
-func getTable(password string) (tbl *ss.EncryptTable) {
-	// I'm not using a map to cache ciphers with same password because map
-	// needs lock to protect concurrent access. Memory is not an issue
-	// because each cipher takes only a few more than 512 bytes.
-	// Besides, many same passwords for different users should be rare, and
-	// using cipher cache adds complexity with not much benefit.
-	tbl = ss.GetTable(password)
-	return
-}
-
 type PortListener struct {
 	password string
 	listener net.Listener
@@ -189,6 +179,10 @@ func (pm *PasswdManager) del(port string) {
 	pm.Unlock()
 }
 
+// Update port password would first close a port and restart listening on that
+// port. A different approach would be directly change the password used by
+// that port, but that requires **sharing** password between the port listener
+// and password manager.
 func (pm *PasswdManager) updatePortPasswd(port, password string) {
 	pl, ok := pm.get(port)
 	if !ok {
@@ -255,7 +249,7 @@ func run(port, password string) {
 		return
 	}
 	passwdManager.add(port, password, ln)
-	var encTbl *ss.EncryptTable
+	var cipher ss.Cipher
 	log.Printf("server listening port %v ...\n", port)
 	for {
 		conn, err := ln.Accept()
@@ -265,11 +259,15 @@ func run(port, password string) {
 			return
 		}
 		// Creating cipher upon first connection.
-		if encTbl == nil {
+		if cipher == nil {
 			debug.Println("creating cipher for port:", port)
-			encTbl = getTable(password)
+			cipher, err = ss.NewCipher(password)
+			if err != nil {
+				log.Printf("Error generating cipher for port: %s password: %s\n", port, password)
+				return
+			}
 		}
-		go handleConnection(ss.NewConn(conn, encTbl))
+		go handleConnection(ss.NewConn(conn, cipher.Copy()))
 	}
 }
 
@@ -307,6 +305,7 @@ func main() {
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.Timeout, "t", 60, "connection timeout (in seconds)")
+	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, use empty string or rc4")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
 	flag.Parse()
@@ -330,6 +329,9 @@ func main() {
 		config = &cmdConfig
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
+	}
+	if err = ss.SetDefaultCipher(config.Method); err != nil {
+		log.Fatal(err)
 	}
 
 	if err = unifyPortPassword(config); err != nil {

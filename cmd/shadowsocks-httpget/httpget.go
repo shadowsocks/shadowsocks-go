@@ -20,6 +20,7 @@ var config struct {
 	server string
 	port   int
 	passwd string
+	method string
 	core   int
 	nconn  int
 	nreq   int
@@ -48,7 +49,7 @@ func doOneRequest(client *http.Client, uri string, buf []byte) (err error) {
 	return
 }
 
-func get(connid int, uri, serverAddr string, rawAddr []byte, enctbl *ss.EncryptTable, done chan []time.Duration) {
+func get(connid int, uri, serverAddr string, rawAddr []byte, cipher ss.Cipher, done chan []time.Duration) {
 	reqDone := 0
 	reqTime := make([]time.Duration, config.nreq, config.nreq)
 	defer func() {
@@ -56,7 +57,7 @@ func get(connid int, uri, serverAddr string, rawAddr []byte, enctbl *ss.EncryptT
 	}()
 	tr := &http.Transport{
 		Dial: func(_, _ string) (net.Conn, error) {
-			return ss.DialWithRawAddr(rawAddr, serverAddr, enctbl)
+			return ss.DialWithRawAddr(rawAddr, serverAddr, cipher.Copy())
 		},
 	}
 
@@ -80,6 +81,7 @@ func main() {
 	flag.IntVar(&config.port, "p", 0, "server:port")
 	flag.IntVar(&config.core, "core", 1, "number of CPU cores to use")
 	flag.StringVar(&config.passwd, "k", "", "password")
+	flag.StringVar(&config.method, "m", "", "encryption method, use empty string or rc4")
 	flag.IntVar(&config.nconn, "nc", 1, "number of connection to server")
 	flag.IntVar(&config.nreq, "nr", 1, "number of request for each connection")
 	// flag.IntVar(&config.nsec, "ns", 0, "run how many seconds for each connection")
@@ -91,6 +93,10 @@ func main() {
 		fmt.Printf("Usage: %s -s <server> -p <port> -k <password> <url>\n", os.Args[0])
 		os.Exit(1)
 	}
+	if err := ss.SetDefaultCipher(config.method); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	runtime.GOMAXPROCS(config.core)
 	uri := flag.Arg(0)
@@ -98,7 +104,11 @@ func main() {
 		uri = "http://" + uri
 	}
 
-	enctbl := ss.GetTable(config.passwd)
+	cipher, err := ss.NewCipher(config.passwd)
+	if err != nil {
+		fmt.Println("Error creating cipher:", err)
+		os.Exit(1)
+	}
 	serverAddr := net.JoinHostPort(config.server, strconv.Itoa(config.port))
 
 	parsedURL, err := url.Parse(uri)
@@ -121,7 +131,7 @@ func main() {
 
 	done := make(chan []time.Duration)
 	for i := 1; i <= config.nconn; i++ {
-		go get(i, uri, serverAddr, rawAddr, enctbl, done)
+		go get(i, uri, serverAddr, rawAddr, cipher, done)
 	}
 
 	// collect request finish time
