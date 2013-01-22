@@ -6,7 +6,6 @@ import (
 	"crypto/rc4"
 	"encoding/binary"
 	"errors"
-	"io"
 )
 
 type Cipher interface {
@@ -36,7 +35,7 @@ func NewTableCipher(key string) (c Cipher, err error) {
 	table := make([]uint64, tbl_size, tbl_size)
 
 	h := md5.New()
-	io.WriteString(h, key)
+	h.Write([]byte(key))
 
 	s := h.Sum(nil)
 
@@ -84,13 +83,14 @@ type RC4Cipher struct {
 }
 
 func NewRC4Cipher(key string) (c Cipher, err error) {
-	keybytes := []byte(key)
-	enc, err := rc4.NewCipher(keybytes)
+	h := md5.New()
+	h.Write([]byte(key))
+	enc, err := rc4.NewCipher(h.Sum(nil))
 	if err != nil {
 		return
 	}
-	dec, _ := rc4.NewCipher(keybytes)
-	c = &RC4Cipher{dec, enc}
+	dec := *enc // create a copy
+	c = &RC4Cipher{&dec, enc}
 	return
 }
 
