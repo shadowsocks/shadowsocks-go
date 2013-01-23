@@ -1,10 +1,7 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 	"errors"
 	"flag"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
@@ -13,16 +10,18 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"time"
 )
 
 var debug ss.DebugLog
 
 var errAddrType = errors.New("addr type not supported")
+
+const dnsGoroutineNum = 64
 
 func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	const (
@@ -31,8 +30,9 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 		idDmLen = 1 // domain address length index
 		idDm0   = 2 // domain address start index
 
-		typeIP = 1 // type is ip address
-		typeDm = 3 // type is domain address
+		typeIPv4 = 1 // type is ipv4 address
+		typeDm   = 3 // type is domain address
+		typeIPv6 = 4 // type is ipv6 address
 
 		lenIP     = 1 + 4 + 2 // 1addrType + 4ip + 2port
 		lenDmBase = 1 + 1 + 2 // 1addrType + 1addrLen + 2port, plus addrLen
@@ -49,10 +49,11 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 		return
 	}
 
+	// Currently the client will not send request with ipv6 address.
 	reqLen := lenIP
 	if buf[idType] == typeDm {
 		reqLen = int(buf[idDmLen]) + lenDmBase
-	} else if buf[idType] != typeIP {
+	} else if buf[idType] != typeIPv4 {
 		err = errAddrType
 		return
 	}
@@ -67,30 +68,47 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 		extra = buf[reqLen:n]
 	}
 
-	// TODO add ipv6 support
 	if buf[idType] == typeDm {
 		host = string(buf[idDm0 : idDm0+buf[idDmLen]])
-	} else if buf[idType] == typeIP {
-		addrIp := make(net.IP, 4)
-		copy(addrIp, buf[idIP0:idIP0+4])
+	} else if buf[idType] == typeIPv4 {
+		addrIp := net.IPv4(buf[idIP0], buf[idIP0+1], buf[idIP0+2], buf[idIP0+3])
 		host = addrIp.String()
 	}
 	// parse port
-	var port int16
-	sb := bytes.NewBuffer(buf[reqLen-2 : reqLen])
-	binary.Read(sb, binary.BigEndian, &port)
-
-	host += ":" + strconv.Itoa(int(port))
+	port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
+	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 	return
 }
 
+const logCntDelta = 100
+
+var connCnt int32
+var nextLogConnCnt int32 = logCntDelta
+
 func handleConnection(conn *ss.Conn) {
-	if debug {
-		// function arguments are always evaluated, so surround debug
-		// statement with if statement
-		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
+	var host string
+
+	atomic.AddInt32(&connCnt, 1)
+	if connCnt-nextLogConnCnt >= 0 {
+		// XXX There's no xadd in the atomic package, so it's difficult to log
+		// the message only once with low cost. Also note nextLogConnCnt maybe
+		// added twice for current peak connection number level.
+		log.Printf("Number of client connections reaches %d\n", nextLogConnCnt)
+		nextLogConnCnt += logCntDelta
 	}
-	defer conn.Close()
+
+	// function arguments are always evaluated, so surround debug statement
+	// with if statement
+	if debug {
+		debug.Printf("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
+	}
+	defer func() {
+		if debug {
+			debug.Printf("closing pipe %s<->%s\n", conn.RemoteAddr(), host)
+		}
+		atomic.AddInt32(&connCnt, -1)
+		conn.Close()
+	}()
 
 	host, extra, err := getRequest(conn)
 	if err != nil {
@@ -110,108 +128,21 @@ func handleConnection(conn *ss.Conn) {
 		return
 	}
 	defer remote.Close()
-	// write extra bytes read from 
+	// write extra bytes read from
 	if extra != nil {
-		debug.Println("getRequest read extra data, writing to remote, len", len(extra))
+		// debug.Println("getRequest read extra data, writing to remote, len", len(extra))
 		if _, err = remote.Write(extra); err != nil {
 			debug.Println("write request extra error:", err)
 			return
 		}
 	}
-	debug.Println("piping", host)
+	if debug {
+		debug.Printf("piping %s<->%s", conn.RemoteAddr(), host)
+	}
 	c := make(chan byte, 2)
 	go ss.Pipe(conn, remote, c)
 	go ss.Pipe(remote, conn, c)
 	<-c // close the other connection whenever one connection is closed
-	debug.Println("closing", host)
-	return
-}
-
-const tableCacheFile = "table.cache"
-
-var table struct {
-	cache  map[string]*ss.EncryptTable
-	getCnt int32
-	hitCnt int32
-}
-
-func initTableCache(config *ss.Config) {
-	var exists bool
-	var err error
-	if !config.CacheEncTable {
-		goto emptyCache
-	}
-	exists, err = ss.IsFileExists(tableCacheFile)
-	if exists {
-		// load table cache from file
-		f, err := os.Open(tableCacheFile)
-		if err != nil {
-			log.Println("error opening table cache:", err)
-			goto emptyCache
-		}
-		defer f.Close()
-
-		dec := gob.NewDecoder(bufio.NewReader(f))
-		if err = dec.Decode(&table.cache); err != nil {
-			log.Println("error loading table cache:", err)
-			goto emptyCache
-		}
-		debug.Println("table cache loaded from disk")
-		return
-	}
-	if err != nil {
-		log.Println("table cache:", err)
-	}
-
-emptyCache:
-	debug.Println("creating empty table cache")
-	table.cache = map[string]*ss.EncryptTable{}
-}
-
-func storeTableCache(config *ss.Config) {
-	if !config.CacheEncTable || table.getCnt == table.hitCnt {
-		return
-	}
-
-	const tmpPath = "tmp.cache"
-	f, err := os.Create(tmpPath)
-	if err != nil {
-		log.Println("can't create tmp table cache")
-		return
-	}
-	defer f.Close()
-
-	w := bufio.NewWriter(f)
-	enc := gob.NewEncoder(w)
-	if err = enc.Encode(table.cache); err != nil {
-		log.Println("error saving tmp table cache:", err)
-		return
-	}
-	if err = w.Flush(); err != nil {
-		log.Println("error flushing table cache:", err)
-		return
-	}
-	if err = os.Rename(tmpPath, tableCacheFile); err != nil {
-		log.Printf("error renaming %s to %s: %v\n", tmpPath, tableCacheFile, err)
-		return
-	}
-	debug.Println("table cache saved")
-}
-
-func getTable(password string) (tbl *ss.EncryptTable) {
-	if table.cache != nil {
-		var ok bool
-		tbl, ok = table.cache[password]
-		if ok {
-			atomic.AddInt32(&table.hitCnt, 1)
-			debug.Println("table cache hit for password:", password)
-			return
-		}
-		tbl = ss.GetTable(password)
-		table.cache[password] = tbl
-	} else {
-		tbl = ss.GetTable(password)
-	}
 	return
 }
 
@@ -249,6 +180,10 @@ func (pm *PasswdManager) del(port string) {
 	pm.Unlock()
 }
 
+// Update port password would first close a port and restart listening on that
+// port. A different approach would be directly change the password used by
+// that port, but that requires **sharing** password between the port listener
+// and password manager.
 func (pm *PasswdManager) updatePortPasswd(port, password string) {
 	pl, ok := pm.get(port)
 	if !ok {
@@ -315,8 +250,7 @@ func run(port, password string) {
 		return
 	}
 	passwdManager.add(port, password, ln)
-	encTbl := getTable(password)
-	atomic.AddInt32(&table.getCnt, 1)
+	var cipher ss.Cipher
 	log.Printf("server listening port %v ...\n", port)
 	for {
 		conn, err := ln.Accept()
@@ -325,7 +259,16 @@ func run(port, password string) {
 			debug.Printf("accept error: %v\n", err)
 			return
 		}
-		go handleConnection(ss.NewConn(conn, encTbl))
+		// Creating cipher upon first connection.
+		if cipher == nil {
+			debug.Println("creating cipher for port:", port)
+			cipher, err = ss.NewCipher(password)
+			if err != nil {
+				log.Printf("Error generating cipher for port: %s password: %s\n", port, password)
+				return
+			}
+		}
+		go handleConnection(ss.NewConn(conn, cipher.Copy()))
 	}
 }
 
@@ -353,14 +296,19 @@ var configFile string
 var config *ss.Config
 
 func main() {
+	log.SetOutput(os.Stdout)
+
 	var cmdConfig ss.Config
 	var printVer bool
+	var core int
 
 	flag.BoolVar(&printVer, "version", false, "print version")
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.Timeout, "t", 60, "connection timeout (in seconds)")
+	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, use empty string or rc4")
+	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
 	flag.Parse()
@@ -385,22 +333,18 @@ func main() {
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}
-
 	if err = unifyPortPassword(config); err != nil {
 		os.Exit(1)
 	}
-
-	initTableCache(config)
+	if err = ss.SetDefaultCipher(config.Method); err != nil {
+		log.Fatal(err)
+	}
+	if core > 0 {
+		runtime.GOMAXPROCS(core)
+	}
 	for port, password := range config.PortPassword {
 		go run(port, password)
 	}
-	// Wait all ports have get it's encryption table
-	for int(table.getCnt) != len(config.PortPassword) {
-		time.Sleep(1 * time.Second)
-	}
-	storeTableCache(config)
-	log.Println("all ports ready")
 
-	table.cache = nil // release memory
 	waitSignal()
 }

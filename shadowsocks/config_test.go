@@ -20,9 +20,6 @@ func TestConfigJson(t *testing.T) {
 	if len(srvArr) != 1 || srvArr[0] != "127.0.0.1" {
 		t.Error("server option is not set correctly")
 	}
-	if config.CacheEncTable {
-		t.Error("cache_enctable should be false by default")
-	}
 }
 
 func TestServerMultiPort(t *testing.T) {
@@ -39,10 +36,6 @@ func TestServerMultiPort(t *testing.T) {
 	}
 	if config.PortPassword["8389"] != "" {
 		t.Error("should have no password for port 8389")
-	}
-
-	if !config.CacheEncTable {
-		t.Error("cache_enctable should be true")
 	}
 }
 

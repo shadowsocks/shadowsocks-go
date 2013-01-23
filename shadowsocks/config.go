@@ -22,11 +22,11 @@ type Config struct {
 	ServerPort int         `json:"server_port"`
 	LocalPort  int         `json:"local_port"`
 	Password   string      `json:"password"`
+	Method     string      `json:"method"` // encryption method
 
 	// following options are only used by server
-	PortPassword  map[string]string `json:"port_password"`
-	Timeout       int               `json:"timeout"`
-	CacheEncTable bool              `json:"cache_enctable"`
+	PortPassword map[string]string `json:"port_password"`
+	Timeout      int               `json:"timeout"`
 
 	// following options are only used by client
 	ServerPassword map[string]string `json:"server_password"`

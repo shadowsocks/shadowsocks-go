@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"flag"
@@ -75,8 +74,9 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 		idDmLen = 4 // domain address length index
 		idDm0   = 5 // domain address start index
 
-		typeIP = 1 // type is ip address
-		typeDm = 3 // type is domain address
+		typeIPv4 = 1 // type is ipv4 address
+		typeDm   = 3 // type is domain address
+		typeIPv6 = 4 // type is ipv6 address
 
 		lenIP     = 3 + 1 + 4 + 2 // 3(ver+cmd+rsv) + 1addrType + 4ip + 2port
 		lenDmBase = 3 + 1 + 1 + 2 // 3 + 1addrType + 1addrLen + 2port, plus addrLen
@@ -98,10 +98,15 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 		return
 	}
 
+	// Browsers seems always using domain name, so it's not urgent to support
+	// IPv6 address in the local socks server.
 	reqLen := lenIP
 	if buf[idType] == typeDm {
 		reqLen = int(buf[idDmLen]) + lenDmBase
-	} else if buf[idType] != typeIP {
+	} else if buf[idType] != typeIPv4 {
+		if buf[idType] == typeIPv6 {
+			log.Println("IPv6 address type not supported in socks request")
+		}
 		err = errAddrType
 		return
 	}
@@ -122,67 +127,71 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 	if debug {
 		if buf[idType] == typeDm {
 			host = string(buf[idDm0 : idDm0+buf[idDmLen]])
-		} else if buf[idType] == typeIP {
-			addrIp := make(net.IP, 4)
-			copy(addrIp, buf[idIP0:idIP0+4])
+		} else if buf[idType] == typeIPv4 {
+			addrIp := net.IPv4(buf[idIP0], buf[idIP0+1], buf[idIP0+2], buf[idIP0+3])
 			host = addrIp.String()
 		}
-		var port int16
-		sb := bytes.NewBuffer(buf[reqLen-2 : reqLen])
-		binary.Read(sb, binary.BigEndian, &port)
+		port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
 		host += ":" + strconv.Itoa(int(port))
 	}
 
 	return
 }
 
-type ServerEnctbl struct {
+type ServerCipher struct {
 	server string
-	enctbl *ss.EncryptTable
+	cipher ss.Cipher
 }
 
 var servers struct {
-	srvenc []*ServerEnctbl
-	idx    uint8
+	srvCipher []*ServerCipher
+	idx       uint8
 }
 
 func initServers(config *ss.Config) {
 	if len(config.ServerPassword) == 0 {
 		// only one encryption table
-		enctbl := ss.GetTable(config.Password)
+		cipher, err := ss.NewCipher(config.Password)
+		if err != nil {
+			log.Fatal("Failed generating ciphers:", err)
+		}
 		srvPort := strconv.Itoa(config.ServerPort)
 		srvArr := config.GetServerArray()
 		n := len(srvArr)
-		servers.srvenc = make([]*ServerEnctbl, n, n)
+		servers.srvCipher = make([]*ServerCipher, n, n)
 
 		for i, s := range srvArr {
 			if ss.HasPort(s) {
 				log.Println("ignore server_port option for server", s)
-				servers.srvenc[i] = &ServerEnctbl{s, enctbl}
+				servers.srvCipher[i] = &ServerCipher{s, cipher}
 			} else {
-				servers.srvenc[i] = &ServerEnctbl{s + ":" + srvPort, enctbl}
+				servers.srvCipher[i] = &ServerCipher{s + ":" + srvPort, cipher}
 			}
 		}
 	} else {
 		n := len(config.ServerPassword)
-		servers.srvenc = make([]*ServerEnctbl, n, n)
+		servers.srvCipher = make([]*ServerCipher, n, n)
 
-		tblCache := make(map[string]*ss.EncryptTable)
+		cipherCache := make(map[string]ss.Cipher)
 		i := 0
 		for s, passwd := range config.ServerPassword {
 			if !ss.HasPort(s) {
 				log.Fatal("no port for server %s, please specify port in the form of %s:port", s, s)
 			}
-			tbl, ok := tblCache[passwd]
+			cipher, ok := cipherCache[passwd]
 			if !ok {
-				tbl = ss.GetTable(passwd)
-				tblCache[passwd] = tbl
+				var err error
+				cipher, err = ss.NewCipher(passwd)
+				if err != nil {
+					log.Fatal("Failed generating ciphers:", err)
+				}
+				cipherCache[passwd] = cipher
 			}
-			servers.srvenc[i] = &ServerEnctbl{s, tbl}
+			servers.srvCipher[i] = &ServerCipher{s, cipher}
 			i++
 		}
 	}
-	for _, se := range servers.srvenc {
+	for _, se := range servers.srvCipher {
 		log.Println("available remote server", se.server)
 	}
 	return
@@ -190,18 +199,18 @@ func initServers(config *ss.Config) {
 
 // select one server to connect in round robin order
 func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) {
-	n := len(servers.srvenc)
+	n := len(servers.srvCipher)
 	if n == 1 {
-		se := servers.srvenc[0]
+		se := servers.srvCipher[0]
 		debug.Printf("connecting to %s via %s\n", addr, se.server)
-		return ss.DialWithRawAddr(rawaddr, se.server, se.enctbl)
+		return ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
 	}
 
 	id := servers.idx
 	servers.idx++ // it's ok for concurrent update
 	for i := 0; i < n; i++ {
-		se := servers.srvenc[(int(id)+i)%n]
-		remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.enctbl)
+		se := servers.srvCipher[(int(id)+i)%n]
+		remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
 		if err == nil {
 			debug.Printf("connected to %s via %s\n", addr, se.server)
 			return
@@ -239,7 +248,7 @@ func handleConnection(conn net.Conn) {
 
 	remote, err := createServerConn(rawaddr, addr)
 	if err != nil {
-		if len(servers.srvenc) > 1 {
+		if len(servers.srvCipher) > 1 {
 			log.Println("Failed connect to all avaiable shadowsocks server")
 		}
 		return
@@ -250,7 +259,7 @@ func handleConnection(conn net.Conn) {
 	go ss.Pipe(conn, remote, c)
 	go ss.Pipe(remote, conn, c)
 	<-c // close the other connection whenever one connection is closed
-	debug.Println("closing")
+	debug.Println("closing connection to", addr)
 }
 
 func run(port string) {
@@ -275,6 +284,8 @@ func enoughOptions(config *ss.Config) bool {
 }
 
 func main() {
+	log.SetOutput(os.Stdout)
+
 	var configFile, cmdServer string
 	var cmdConfig ss.Config
 	var printVer bool
@@ -285,6 +296,7 @@ func main() {
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
+	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, use empty string or rc4")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
 	flag.Parse()
@@ -313,17 +325,18 @@ func main() {
 		if os.IsNotExist(err) {
 			log.Println("config file not found, using all options from command line")
 		} else {
-			log.Printf("error reading config file: %v\n", err)
-			os.Exit(1)
+			log.Fatal("error reading config file: %v\n", err)
 		}
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}
+	if err = ss.SetDefaultCipher(config.Method); err != nil {
+		log.Fatal(err)
+	}
 
 	if len(config.ServerPassword) == 0 {
 		if !enoughOptions(config) {
-			log.Println("must specify server address, password and both server/local port")
-			os.Exit(1)
+			log.Fatal("must specify server address, password and both server/local port")
 		}
 	} else {
 		if config.Password != "" || config.ServerPort != 0 || config.GetServerArray() != nil {
