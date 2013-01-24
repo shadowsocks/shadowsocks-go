@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"flag"
+	"fmt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
@@ -279,14 +280,14 @@ func enoughOptions(config *ss.Config) bool {
 func unifyPortPassword(config *ss.Config) (err error) {
 	if len(config.PortPassword) == 0 { // this handles both nil PortPassword and empty one
 		if !enoughOptions(config) {
-			log.Println("must specify both port and password")
+			fmt.Fprintln(os.Stderr, "must specify both port and password")
 			return errors.New("not enough options")
 		}
 		port := strconv.Itoa(config.ServerPort)
 		config.PortPassword = map[string]string{port: config.Password}
 	} else {
 		if config.Password != "" || config.ServerPort != 0 {
-			log.Println("given port_password, ignore server_port and password option")
+			fmt.Fprintln(os.Stderr, "given port_password, ignore server_port and password option")
 		}
 	}
 	return
@@ -323,10 +324,8 @@ func main() {
 	var err error
 	config, err = ss.ParseConfig(configFile)
 	if err != nil {
-		if os.IsNotExist(err) {
-			log.Println("config file not found, using all options from command line")
-		} else {
-			log.Printf("error reading %s: %v\n", configFile, err)
+		if !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", configFile, err)
 			os.Exit(1)
 		}
 		config = &cmdConfig
@@ -337,7 +336,8 @@ func main() {
 		os.Exit(1)
 	}
 	if err = ss.SetDefaultCipher(config.Method); err != nil {
-		log.Fatal(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 	if core > 0 {
 		runtime.GOMAXPROCS(core)
