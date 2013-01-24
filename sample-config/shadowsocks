@@ -77,7 +77,7 @@ do_start() {
   echo $PID > $PID_FILE
   sleep 0.3
   if ! check_running; then
-    echo "start failed, log file $LOG_FILE may provide some help"
+    echo "start failed"
     return 1
   fi
   echo "shadowsocks running with PID $PID"

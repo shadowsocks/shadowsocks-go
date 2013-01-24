@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"flag"
+	"fmt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
@@ -322,28 +323,30 @@ func main() {
 	config, err := ss.ParseConfig(configFile)
 	if err != nil {
 		config = &cmdConfig
-		if os.IsNotExist(err) {
-			log.Println("config file not found, using all options from command line")
-		} else {
-			log.Fatal("error reading config file: %v\n", err)
+		if !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", configFile, err)
+			os.Exit(1)
 		}
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}
 	if err = ss.SetDefaultCipher(config.Method); err != nil {
-		log.Fatal(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 
 	if len(config.ServerPassword) == 0 {
 		if !enoughOptions(config) {
-			log.Fatal("must specify server address, password and both server/local port")
+			fmt.Fprintln(os.Stderr, "must specify server address, password and both server/local port")
+			os.Exit(1)
 		}
 	} else {
 		if config.Password != "" || config.ServerPort != 0 || config.GetServerArray() != nil {
-			log.Println("given server_password, ignore server, server_port and password option:", config)
+			fmt.Fprintln(os.Stderr, "given server_password, ignore server, server_port and password option:", config)
 		}
 		if config.LocalPort == 0 {
-			log.Fatal("must specify local port")
+			fmt.Fprintln(os.Stderr, "must specify local port")
+			os.Exit(1)
 		}
 	}
 
