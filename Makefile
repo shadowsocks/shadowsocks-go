@@ -23,5 +23,9 @@ $(SERVER): shadowsocks/*.go cmd/$(PREFIX)-server/*.go
 	cd shadowsocks; go install
 	cd cmd/$(PREFIX)-server; $(CGO) go install -a
 
+local: $(LOCAL)
+
+server: $(SERVER)
+
 test:
 	cd shadowsocks; go test

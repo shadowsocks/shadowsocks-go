@@ -1,0 +1,9 @@
+Package: shadowsocks-go
+Version: 0.6-1
+Section: net
+Priority: optional
+Architecture: i386
+Depends:
+Maintainer: CYF <cyfdecyf@gmail.com>
+Description: shadowsocks-go is the go port of shadowsocks, a light weight tunneling proxy
+ This package contains only the server.
