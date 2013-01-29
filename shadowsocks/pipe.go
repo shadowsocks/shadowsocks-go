@@ -12,12 +12,15 @@ func SetReadTimeout(c net.Conn) {
 	}
 }
 
-func Pipe(src, dst net.Conn, end chan byte) {
-	// Should not use io.Copy here.
-	// io.Copy will try to use the ReadFrom interface of TCPConn, but the src
-	// here is not a regular file, so sendfile is not applicable.
-	// io.Copy will fallback to the normal copy after discovering this,
-	// introducing unnecessary overhead.
+// Pipe copies data between c1 and c2. Closes c1 and c2 when done.
+func Pipe(c1, c2 net.Conn) {
+	go pipeClose(c1, c2)
+	pipeClose(c2, c1)
+}
+
+// pipeClose copies data from src to dst. Closes dst when done.
+func pipeClose(src, dst net.Conn) {
+	defer dst.Close()
 	buf := make([]byte, 4096)
 	for {
 		SetReadTimeout(src)
@@ -42,5 +45,4 @@ func Pipe(src, dst net.Conn, end chan byte) {
 			break
 		}
 	}
-	end <- 1
 }

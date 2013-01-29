@@ -103,12 +103,15 @@ func handleConnection(conn *ss.Conn) {
 	if debug {
 		debug.Printf("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
 	}
+	closed := false
 	defer func() {
 		if debug {
-			debug.Printf("closing pipe %s<->%s\n", conn.RemoteAddr(), host)
+			debug.Printf("closed pipe %s<->%s\n", conn.RemoteAddr(), host)
 		}
 		atomic.AddInt32(&connCnt, -1)
-		conn.Close()
+		if !closed {
+			conn.Close()
+		}
 	}()
 
 	host, extra, err := getRequest(conn)
@@ -128,7 +131,11 @@ func handleConnection(conn *ss.Conn) {
 		}
 		return
 	}
-	defer remote.Close()
+	defer func() {
+		if !closed {
+			remote.Close()
+		}
+	}()
 	// write extra bytes read from
 	if extra != nil {
 		// debug.Println("getRequest read extra data, writing to remote, len", len(extra))
@@ -140,10 +147,8 @@ func handleConnection(conn *ss.Conn) {
 	if debug {
 		debug.Printf("piping %s<->%s", conn.RemoteAddr(), host)
 	}
-	c := make(chan byte, 2)
-	go ss.Pipe(conn, remote, c)
-	go ss.Pipe(remote, conn, c)
-	<-c // close the other connection whenever one connection is closed
+	ss.Pipe(conn, remote)
+	closed = true
 	return
 }
 

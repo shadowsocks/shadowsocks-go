@@ -226,7 +226,12 @@ func handleConnection(conn net.Conn) {
 	if debug {
 		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
 	}
-	defer conn.Close()
+	closed := false
+	defer func() {
+		if !closed {
+			conn.Close()
+		}
+	}()
 
 	var err error = nil
 	if err = handShake(conn); err != nil {
@@ -254,13 +259,15 @@ func handleConnection(conn net.Conn) {
 		}
 		return
 	}
-	defer remote.Close()
+	defer func() {
+		if !closed {
+			remote.Close()
+		}
+	}()
 
-	c := make(chan byte, 2)
-	go ss.Pipe(conn, remote, c)
-	go ss.Pipe(remote, conn, c)
-	<-c // close the other connection whenever one connection is closed
-	debug.Println("closing connection to", addr)
+	ss.Pipe(conn, remote)
+	closed = true
+	debug.Println("closed connection to", addr)
 }
 
 func run(port string) {
