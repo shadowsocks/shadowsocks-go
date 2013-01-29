@@ -147,7 +147,8 @@ func handleConnection(conn *ss.Conn) {
 	if debug {
 		debug.Printf("piping %s<->%s", conn.RemoteAddr(), host)
 	}
-	ss.Pipe(conn, remote)
+	go ss.PipeThenClose(conn, remote, ss.SET_TIMEOUT)
+	ss.PipeThenClose(remote, conn, ss.NO_TIMEOUT)
 	closed = true
 	return
 }

@@ -6,24 +6,25 @@ import (
 	"time"
 )
 
+const (
+	NO_TIMEOUT = iota
+	SET_TIMEOUT
+)
+
 func SetReadTimeout(c net.Conn) {
 	if readTimeout != 0 {
 		c.SetReadDeadline(time.Now().Add(readTimeout))
 	}
 }
 
-// Pipe copies data between c1 and c2. Closes c1 and c2 when done.
-func Pipe(c1, c2 net.Conn) {
-	go pipeClose(c1, c2)
-	pipeClose(c2, c1)
-}
-
-// pipeClose copies data from src to dst. Closes dst when done.
-func pipeClose(src, dst net.Conn) {
+// PipeThenClose copies data from src to dst, closes dst when done.
+func PipeThenClose(src, dst net.Conn, timeoutOpt int) {
 	defer dst.Close()
 	buf := make([]byte, 4096)
 	for {
-		SetReadTimeout(src)
+		if timeoutOpt == SET_TIMEOUT {
+			SetReadTimeout(src)
+		}
 		n, err := src.Read(buf)
 		// read may return EOF with n > 0
 		// should always process n > 0 bytes before handling error
