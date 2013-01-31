@@ -10,3 +10,4 @@ script:
   - pushd $GOPATH/src/github.com/shadowsocks/shadowsocks-go
   - PATH=$PATH:$GOPATH/bin/ bash -x ./testscript/test.sh
   - popd
+
