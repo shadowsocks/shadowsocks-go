@@ -39,7 +39,7 @@ test_get() {
     sleep 0.5
 }
 
-test_get localhost:4000
+#test_get localhost:4000
 test_get baidu.com
 test_get baidu.com rc4
 
