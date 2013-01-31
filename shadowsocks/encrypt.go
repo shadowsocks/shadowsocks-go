@@ -29,10 +29,10 @@ type TableCipher struct {
 func NewTableCipher(key string) (c Cipher, err error) {
 	const tbl_size = 256
 	tbl := TableCipher{
-		make([]byte, tbl_size, tbl_size),
-		make([]byte, tbl_size, tbl_size),
+		make([]byte, tbl_size),
+		make([]byte, tbl_size),
 	}
-	table := make([]uint64, tbl_size, tbl_size)
+	table := make([]uint64, tbl_size)
 
 	h := md5.New()
 	h.Write([]byte(key))

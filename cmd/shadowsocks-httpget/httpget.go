@@ -51,7 +51,7 @@ func doOneRequest(client *http.Client, uri string, buf []byte) (err error) {
 
 func get(connid int, uri, serverAddr string, rawAddr []byte, cipher ss.Cipher, done chan []time.Duration) {
 	reqDone := 0
-	reqTime := make([]time.Duration, config.nreq, config.nreq)
+	reqTime := make([]time.Duration, config.nreq)
 	defer func() {
 		done <- reqTime[:reqDone]
 	}()

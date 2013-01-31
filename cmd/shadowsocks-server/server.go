@@ -42,7 +42,7 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	// buf size should at least have the same size with the largest possible
 	// request size (when addrType is 3, domain name has at most 256 bytes)
 	// 1(addrType) + 1(lenByte) + 256(max length address) + 2(port)
-	buf := make([]byte, 260, 260)
+	buf := make([]byte, 260)
 	var n int
 	// read till we get possible domain length field
 	ss.SetReadTimeout(conn)

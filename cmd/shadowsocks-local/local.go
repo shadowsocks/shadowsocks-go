@@ -40,7 +40,7 @@ func handShake(conn net.Conn) (err error) {
 	// the current rfc defines only 3 authentication methods (plus 2 reserved),
 	// so it won't be such long in practice
 
-	buf := make([]byte, 258, 258)
+	buf := make([]byte, 258)
 
 	var n int
 	// make sure we get the nmethod field
@@ -83,7 +83,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 		lenDmBase = 3 + 1 + 1 + 2 // 3 + 1addrType + 1addrLen + 2port, plus addrLen
 	)
 	// refer to getRequest in server.go for why set buffer size to 263
-	buf := make([]byte, 263, 263)
+	buf := make([]byte, 263)
 	var n int
 	// read till we get possible domain length field
 	if n, err = io.ReadAtLeast(conn, buf, idDmLen+1); err != nil {
@@ -159,7 +159,7 @@ func initServers(config *ss.Config) {
 		srvPort := strconv.Itoa(config.ServerPort)
 		srvArr := config.GetServerArray()
 		n := len(srvArr)
-		servers.srvCipher = make([]*ServerCipher, n, n)
+		servers.srvCipher = make([]*ServerCipher, n)
 
 		for i, s := range srvArr {
 			if ss.HasPort(s) {
@@ -171,7 +171,7 @@ func initServers(config *ss.Config) {
 		}
 	} else {
 		n := len(config.ServerPassword)
-		servers.srvCipher = make([]*ServerCipher, n, n)
+		servers.srvCipher = make([]*ServerCipher, n)
 
 		cipherCache := make(map[string]ss.Cipher)
 		i := 0

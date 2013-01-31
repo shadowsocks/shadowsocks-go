@@ -33,7 +33,7 @@ func RawAddr(addr string) (buf []byte, err error) {
 
 	hostLen := len(host)
 	l := 1 + 1 + hostLen + 2 // addrType + lenByte + address + port
-	buf = make([]byte, l, l)
+	buf = make([]byte, l)
 	buf[0] = 3             // 3 means the address is domain name
 	buf[1] = byte(hostLen) // host address length  followed by host address
 	copy(buf[2:], host)
