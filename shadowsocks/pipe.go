@@ -6,21 +6,25 @@ import (
 	"time"
 )
 
+const (
+	NO_TIMEOUT = iota
+	SET_TIMEOUT
+)
+
 func SetReadTimeout(c net.Conn) {
 	if readTimeout != 0 {
 		c.SetReadDeadline(time.Now().Add(readTimeout))
 	}
 }
 
-func Pipe(src, dst net.Conn, end chan byte) {
-	// Should not use io.Copy here.
-	// io.Copy will try to use the ReadFrom interface of TCPConn, but the src
-	// here is not a regular file, so sendfile is not applicable.
-	// io.Copy will fallback to the normal copy after discovering this,
-	// introducing unnecessary overhead.
+// PipeThenClose copies data from src to dst, closes dst when done.
+func PipeThenClose(src, dst net.Conn, timeoutOpt int) {
+	defer dst.Close()
 	buf := make([]byte, 4096)
 	for {
-		SetReadTimeout(src)
+		if timeoutOpt == SET_TIMEOUT {
+			SetReadTimeout(src)
+		}
 		n, err := src.Read(buf)
 		// read may return EOF with n > 0
 		// should always process n > 0 bytes before handling error
@@ -42,5 +46,4 @@ func Pipe(src, dst net.Conn, end chan byte) {
 			break
 		}
 	}
-	end <- 1
 }

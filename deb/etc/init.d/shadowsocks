@@ -16,7 +16,7 @@
 # Note: this script requires sudo in order to run shadowsocks as the specified
 # user. 
 
-BIN=/usr/local/bin/shadowsocks
+BIN=/usr/bin/shadowsocks
 CONFIG_FILE=/etc/shadowsocks/config.json
 LOG_FILE=/var/log/shadowsocks
 USER=nobody

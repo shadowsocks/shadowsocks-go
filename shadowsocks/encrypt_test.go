@@ -37,8 +37,8 @@ const text = "Don't tell me the moon is shining; show me the glint of light on b
 
 func testCiphter(t *testing.T, c Cipher, msg string) {
 	n := len(text)
-	cipherBuf := make([]byte, n, n)
-	originTxt := make([]byte, n, n)
+	cipherBuf := make([]byte, n)
+	originTxt := make([]byte, n)
 
 	c.Encrypt(cipherBuf, []byte(text))
 	c.Decrypt(originTxt, cipherBuf)

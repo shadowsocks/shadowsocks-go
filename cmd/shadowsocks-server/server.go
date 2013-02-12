@@ -42,7 +42,7 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	// buf size should at least have the same size with the largest possible
 	// request size (when addrType is 3, domain name has at most 256 bytes)
 	// 1(addrType) + 1(lenByte) + 256(max length address) + 2(port)
-	buf := make([]byte, 260, 260)
+	buf := make([]byte, 260)
 	var n int
 	// read till we get possible domain length field
 	ss.SetReadTimeout(conn)
@@ -103,12 +103,15 @@ func handleConnection(conn *ss.Conn) {
 	if debug {
 		debug.Printf("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
 	}
+	closed := false
 	defer func() {
 		if debug {
-			debug.Printf("closing pipe %s<->%s\n", conn.RemoteAddr(), host)
+			debug.Printf("closed pipe %s<->%s\n", conn.RemoteAddr(), host)
 		}
 		atomic.AddInt32(&connCnt, -1)
-		conn.Close()
+		if !closed {
+			conn.Close()
+		}
 	}()
 
 	host, extra, err := getRequest(conn)
@@ -128,7 +131,11 @@ func handleConnection(conn *ss.Conn) {
 		}
 		return
 	}
-	defer remote.Close()
+	defer func() {
+		if !closed {
+			remote.Close()
+		}
+	}()
 	// write extra bytes read from
 	if extra != nil {
 		// debug.Println("getRequest read extra data, writing to remote, len", len(extra))
@@ -140,10 +147,9 @@ func handleConnection(conn *ss.Conn) {
 	if debug {
 		debug.Printf("piping %s<->%s", conn.RemoteAddr(), host)
 	}
-	c := make(chan byte, 2)
-	go ss.Pipe(conn, remote, c)
-	go ss.Pipe(remote, conn, c)
-	<-c // close the other connection whenever one connection is closed
+	go ss.PipeThenClose(conn, remote, ss.SET_TIMEOUT)
+	ss.PipeThenClose(remote, conn, ss.NO_TIMEOUT)
+	closed = true
 	return
 }
 

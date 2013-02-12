@@ -1,0 +1,13 @@
+language: go
+install:
+  - mkdir -p $GOPATH/src/github.com/shadowsocks/shadowsocks-go/shadowsocks
+  - mv * $GOPATH/src/github.com/shadowsocks/shadowsocks-go
+  - pushd $GOPATH/src/github.com/shadowsocks/shadowsocks-go
+  - go install ./cmd/shadowsocks-local
+  - go install ./cmd/shadowsocks-server
+  - popd
+script:
+  - pushd $GOPATH/src/github.com/shadowsocks/shadowsocks-go
+  - PATH=$PATH:$GOPATH/bin/ bash -x ./testscript/test.sh
+  - popd
+
