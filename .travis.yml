@@ -1,5 +1,6 @@
 language: go
 install:
+  - go get github.com/cyfdecyf/leakybuf
   - go get github.com/shadowsocks/shadowsocks-go/cmd/shadowsocks-server
   - go get github.com/shadowsocks/shadowsocks-go/cmd/shadowsocks-local
 script:
