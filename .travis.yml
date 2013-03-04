@@ -9,5 +9,5 @@ install:
   - popd
 script:
   - pushd $GOPATH/src/github.com/shadowsocks/shadowsocks-go
-  - PATH=$PATH:$GOPATH/bin/ bash -x ./testscript/test.sh
+  - PATH=$PATH:$GOPATH/bin/ bash -x ./script/test.sh
   - popd

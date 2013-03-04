@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd "$( dirname "${BASH_SOURCE[0]}" )/.."
+
 version=`grep 'const version = ' ./shadowsocks/util.go | sed -e 's/.*= //' | sed -e 's/"//g'`
 echo "creating shadowsocks binary version $version"
 
@@ -23,7 +25,7 @@ build() {
         zip $name.zip $prog.exe
         rm -f $prog.exe
         mv $name.zip $bindir
-    else 
+    else
         mv $prog $name
         gzip -f $name
         mv $name.gz $bindir

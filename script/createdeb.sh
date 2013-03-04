@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd "$( dirname "${BASH_SOURCE[0]}" )/.."
+
 if [[ $# != 1 ]]; then
     echo "$0 <arch, i386 or amd64>"
     exit 1
