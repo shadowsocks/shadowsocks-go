@@ -7,8 +7,8 @@ echo "creating shadowsocks binary version $version"
 
 export CGO_ENABLED=0
 
-cur=`pwd`
-bindir=$cur/bin
+ROOT=`pwd`
+bindir=$ROOT/bin
 mkdir -p $bindir
 
 build() {
@@ -22,9 +22,12 @@ build() {
     echo "building $name"
     GOOS=$1 GOARCH=$2 go build -a || exit 1
     if [[ $1 == "windows" ]]; then
-        zip $name.zip $prog.exe
+        mv $prog.exe $ROOT/script/
+        pushd $ROOT/script/
+        zip $name.zip $prog.exe shadowsocks-tray.exe
         rm -f $prog.exe
         mv $name.zip $bindir
+        popd
     else
         mv $prog $name
         gzip -f $name
