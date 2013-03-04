@@ -42,9 +42,9 @@ build linux 386 linux32 local
 build windows amd64 win64 local
 build windows 386 win32 local
 
+build linux amd64 linux64 server
+build linux 386 linux32 server
 #build darwin amd64 mac64 server
-#build linux amd64 linux64 server
-#build linux 386 linux32 server
 #build windows amd64 win64 server
 #build windows 386 win32 server
 
