@@ -1,3 +1,8 @@
+0.6.1 (2013-03-04)
+    * Small performance improvement
+    * For windows: provide shadowsocks-tray.exe to hide shadowsocks-local.exe in
+      system tray. (Thanks to phuslu's taskbar.)
+
 0.6 (2013-01-23)
 
     * Generate ciphers on demand (encryption table cache is removed)
