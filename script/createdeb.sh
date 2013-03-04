@@ -1,5 +1,8 @@
 #!/bin/bash
 
+cd "$( dirname "${BASH_SOURCE[0]}" )/.."
+ver=$(awk '/\tconst version =/ { print $4 }' shadowsocks/util.go | sed -e 's/"//g')
+
 if [[ $# != 1 ]]; then
     echo "$0 <arch, i386 or amd64>"
     exit 1
@@ -28,7 +31,7 @@ go build -a -v || exit 1
 popd
 
 # create debian package
-DEBDIR=shadowsocks-go_0.6-1-$arch
+DEBDIR=shadowsocks-go_$ver-1-$arch
 rm -rf $DEBDIR
 cp -r deb $DEBDIR
 
@@ -36,6 +39,7 @@ sed -i -e "s/^Architecture.*$/Architecture: $arch/" $DEBDIR/DEBIAN/control || ex
 
 mkdir -p $DEBDIR/usr/bin
 cp cmd/shadowsocks-server/shadowsocks-server $DEBDIR/usr/bin/shadowsocks
+rm -f cmd/shadowsocks-server/shadowsocks-server
 
 fakeroot dpkg-deb --build $DEBDIR
 

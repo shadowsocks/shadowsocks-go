@@ -1,5 +1,6 @@
 language: go
 install:
+  - go get github.com/cyfdecyf/leakybuf
   - mkdir -p $GOPATH/src/github.com/shadowsocks/shadowsocks-go/shadowsocks
   - mv * $GOPATH/src/github.com/shadowsocks/shadowsocks-go
   - pushd $GOPATH/src/github.com/shadowsocks/shadowsocks-go
@@ -8,6 +9,5 @@ install:
   - popd
 script:
   - pushd $GOPATH/src/github.com/shadowsocks/shadowsocks-go
-  - PATH=$PATH:$GOPATH/bin/ bash -x ./testscript/test.sh
+  - PATH=$PATH:$GOPATH/bin/ bash -x ./script/test.sh
   - popd
-

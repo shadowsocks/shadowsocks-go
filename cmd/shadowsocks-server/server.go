@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"syscall"
 )
 
@@ -83,13 +82,13 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 
 const logCntDelta = 100
 
-var connCnt int32
-var nextLogConnCnt int32 = logCntDelta
+var connCnt int
+var nextLogConnCnt int = logCntDelta
 
 func handleConnection(conn *ss.Conn) {
 	var host string
 
-	atomic.AddInt32(&connCnt, 1)
+	connCnt++ // this maybe not accurate, but should be enough
 	if connCnt-nextLogConnCnt >= 0 {
 		// XXX There's no xadd in the atomic package, so it's difficult to log
 		// the message only once with low cost. Also note nextLogConnCnt maybe
@@ -108,7 +107,7 @@ func handleConnection(conn *ss.Conn) {
 		if debug {
 			debug.Printf("closed pipe %s<->%s\n", conn.RemoteAddr(), host)
 		}
-		atomic.AddInt32(&connCnt, -1)
+		connCnt--
 		if !closed {
 			conn.Close()
 		}

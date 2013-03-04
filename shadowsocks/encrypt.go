@@ -8,6 +8,8 @@ import (
 	"errors"
 )
 
+var errEmptyKey = errors.New("empty key")
+
 type Cipher interface {
 	// Some ciphers maintains context (e.g. RC4), which means different
 	// connections need to use their own ciphers. Copy() will create an copy
@@ -27,6 +29,9 @@ type TableCipher struct {
 
 // Creates a new table based cipher. err is always nil.
 func NewTableCipher(key string) (c Cipher, err error) {
+	if key == "" {
+		return nil, errEmptyKey
+	}
 	const tbl_size = 256
 	tbl := TableCipher{
 		make([]byte, tbl_size),
@@ -83,6 +88,9 @@ type RC4Cipher struct {
 }
 
 func NewRC4Cipher(key string) (c Cipher, err error) {
+	if key == "" {
+		return nil, errEmptyKey
+	}
 	h := md5.New()
 	h.Write([]byte(key))
 	enc, err := rc4.NewCipher(h.Sum(nil))
