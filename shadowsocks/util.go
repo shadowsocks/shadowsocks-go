@@ -7,7 +7,7 @@ import (
 )
 
 func PrintVersion() {
-	const version = "0.6"
+	const version = "0.6.1"
 	fmt.Println("shadowsocks-go version", version)
 }
 
