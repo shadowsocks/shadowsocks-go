@@ -24,7 +24,7 @@ build() {
     if [[ $1 == "windows" ]]; then
         mv $prog.exe $ROOT/script/
         pushd $ROOT/script/
-        zip $name.zip $prog.exe shadowsocks-tray.exe
+        zip $name.zip $prog.exe shadowsocks.exe
         rm -f $prog.exe
         mv $name.zip $bindir
         popd
