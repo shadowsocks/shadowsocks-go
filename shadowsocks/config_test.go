@@ -51,10 +51,10 @@ func TestDeprecatedClientMultiServerArray(t *testing.T) {
 		t.Error("server option is not set correctly")
 	}
 	if srvArr[0] != "127.0.0.1" {
-		t.Error("1st server wrong, got %v", srvArr[0])
+		t.Errorf("1st server wrong, got %v", srvArr[0])
 	}
 	if srvArr[1] != "127.0.1.1" {
-		t.Error("2nd server wrong, got %v", srvArr[0])
+		t.Errorf("2nd server wrong, got %v", srvArr[0])
 	}
 }
 

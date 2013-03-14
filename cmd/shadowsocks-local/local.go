@@ -177,7 +177,7 @@ func initServers(config *ss.Config) {
 		i := 0
 		for s, passwd := range config.ServerPassword {
 			if !ss.HasPort(s) {
-				log.Fatal("no port for server %s, please specify port in the form of %s:port", s, s)
+				log.Fatalf("no port for server %s, please specify port in the form of %s:port\n", s, s)
 			}
 			cipher, ok := cipherCache[passwd]
 			if !ok {

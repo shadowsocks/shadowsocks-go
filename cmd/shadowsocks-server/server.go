@@ -19,8 +19,6 @@ import (
 
 var debug ss.DebugLog
 
-var errAddrType = errors.New("addr type not supported")
-
 const dnsGoroutineNum = 64
 
 func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
@@ -54,7 +52,7 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	if buf[idType] == typeDm {
 		reqLen = int(buf[idDmLen]) + lenDmBase
 	} else if buf[idType] != typeIPv4 {
-		err = errAddrType
+		err = errors.New(fmt.Sprintf("addr type %d not supported", buf[idType]))
 		return
 	}
 
@@ -115,7 +113,7 @@ func handleConnection(conn *ss.Conn) {
 
 	host, extra, err := getRequest(conn)
 	if err != nil {
-		log.Println("error getting request from", conn.RemoteAddr(), err)
+		log.Println("error getting request", conn.RemoteAddr(), conn.LocalAddr(), err)
 		return
 	}
 	debug.Println("connecting", host)
