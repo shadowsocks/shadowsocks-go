@@ -115,7 +115,7 @@ func handleConnection(conn *ss.Conn) {
 
 	host, extra, err := getRequest(conn)
 	if err != nil {
-		log.Println("error getting request:", err)
+		log.Println("error getting request from", conn.RemoteAddr(), err)
 		return
 	}
 	debug.Println("connecting", host)
@@ -126,7 +126,7 @@ func handleConnection(conn *ss.Conn) {
 			// EMFILE is process reaches open file limits, ENFILE is system limit
 			log.Println("dial error:", err)
 		} else {
-			debug.Println("error connecting to:", host, err)
+			log.Println("error connecting to:", host, err)
 		}
 		return
 	}
@@ -252,7 +252,7 @@ func waitSignal() {
 func run(port, password string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		log.Printf("try listening port %v: %v\n", port, err)
+		log.Printf("error listening port %v: %v\n", port, err)
 		return
 	}
 	passwdManager.add(port, password, ln)
@@ -267,7 +267,7 @@ func run(port, password string) {
 		}
 		// Creating cipher upon first connection.
 		if cipher == nil {
-			debug.Println("creating cipher for port:", port)
+			log.Println("creating cipher for port:", port)
 			cipher, err = ss.NewCipher(password)
 			if err != nil {
 				log.Printf("Error generating cipher for port: %s password: %s\n", port, password)
