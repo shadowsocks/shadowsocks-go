@@ -3,7 +3,7 @@
 PREFIX := shadowsocks
 LOCAL := $(GOPATH)/bin/$(PREFIX)-local
 SERVER := $(GOPATH)/bin/$(PREFIX)-server
-CGO := CGO_ENABLED=0
+CGO := CGO_ENABLED=1
 
 all: $(LOCAL) $(SERVER) $(TEST)
 
@@ -14,10 +14,10 @@ clean:
 
 # -a option is needed to ensure we disabled CGO
 $(LOCAL): shadowsocks/*.go cmd/$(PREFIX)-local/*.go
-	cd cmd/$(PREFIX)-local; $(CGO) go install -a
+	cd cmd/$(PREFIX)-local; $(CGO) go install
 
 $(SERVER): shadowsocks/*.go cmd/$(PREFIX)-server/*.go
-	cd cmd/$(PREFIX)-server; $(CGO) go install -a
+	cd cmd/$(PREFIX)-server; $(CGO) go install
 
 local: $(LOCAL)
 
