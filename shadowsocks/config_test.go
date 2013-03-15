@@ -64,9 +64,29 @@ func TestClientMultiServerArray(t *testing.T) {
 		t.Fatal("error parsing client-multi-server.json:", err)
 	}
 
-	if config.ServerPassword["127.0.0.1:8387"] != "foobar" ||
-		config.ServerPassword["127.0.0.1:8388"] != "barfoo" {
-		t.Error("server_password parse error")
+	sv := config.ServerPassword[0]
+	if len(sv) != 2 {
+		t.Fatalf("server_password 1st server wrong, have %d items\n", len(sv[0]))
+	}
+	if sv[0] != "127.0.0.1:8387" {
+		t.Error("server_password 1st server wrong")
+	}
+	if sv[1] != "foobar" {
+		t.Error("server_password 1st server passwd wrong")
+	}
+
+	sv = config.ServerPassword[1]
+	if len(sv) != 3 {
+		t.Fatalf("server_password 2nd server wrong, have %d items\n", len(sv[0]))
+	}
+	if sv[0] != "127.0.0.1:8388" {
+		t.Error("server_password 2nd server wrong")
+	}
+	if sv[1] != "barfoo" {
+		t.Error("server_password 2nd server passwd wrong")
+	}
+	if sv[2] != "rc4" {
+		t.Error("server_password 2nd server enc method wrong")
 	}
 }
 
