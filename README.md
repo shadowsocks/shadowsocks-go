@@ -66,7 +66,7 @@ server_password    specify multiple server and password, server should be in the
 
 Here's a sample configuration [`client-multi-server.json`](https://github.com/shadowsocks/shadowsocks-go/blob/master/sample-config/client-multi-server.json). Given `server_password`, client program will ignore `server_port`, `server` and `password` options.
 
-Servers are chosen in round robin fasion. If a server can't be connected, the client will try the next one. The client does not try to detect connection problems caused by incorrect password, this is intended for the user to notice the error.
+Servers are chosen in the order specified in the config. If a server can't be connected (connection failure), the client will try the next one. (Client will retry failed server with some probability to discover server recovery.)
 
 ## Multiple users with different passwords on server
 
