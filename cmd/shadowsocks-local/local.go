@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"time"
 )
 
 var debug ss.DebugLog
@@ -30,6 +31,10 @@ const (
 	socksVer5       = 5
 	socksCmdConnect = 1
 )
+
+func init() {
+	rand.Seed(time.Now().Unix())
+}
 
 func handShake(conn net.Conn) (err error) {
 	const (
@@ -215,7 +220,7 @@ func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn
 	remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
 	if err != nil {
 		log.Println("error connecting to shadowsocks server:", err)
-		const maxFailCnt = 50
+		const maxFailCnt = 30
 		if servers.failCnt[serverId] < maxFailCnt {
 			servers.failCnt[serverId]++
 		}
@@ -231,11 +236,12 @@ func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn
 // some probability according to its fail count, so we can discover recovered
 // servers.
 func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) {
+	const baseFailCnt = 20
 	n := len(servers.srvCipher)
 	skipped := make([]int, 0)
 	for i := 0; i < n; i++ {
 		// skip failed server, but try it with some probability
-		if servers.failCnt[i] > 0 && rand.Intn(servers.failCnt[i]+1) != 0 {
+		if servers.failCnt[i] > 0 && rand.Intn(servers.failCnt[i]+baseFailCnt) != 0 {
 			skipped = append(skipped, i)
 			continue
 		}
