@@ -23,7 +23,7 @@ func TestConfigJson(t *testing.T) {
 }
 
 func TestServerMultiPort(t *testing.T) {
-	config, err := ParseConfig("testdata/server-multi-port.json")
+	config, err := ParseConfig("../sample-config/server-multi-port.json")
 	if err != nil {
 		t.Fatal("error parsing multi server-multi-port.json:", err)
 	}
@@ -59,7 +59,7 @@ func TestDeprecatedClientMultiServerArray(t *testing.T) {
 }
 
 func TestClientMultiServerArray(t *testing.T) {
-	config, err := ParseConfig("testdata/client-multi-server.json")
+	config, err := ParseConfig("../sample-config/client-multi-server.json")
 	if err != nil {
 		t.Fatal("error parsing client-multi-server.json:", err)
 	}
