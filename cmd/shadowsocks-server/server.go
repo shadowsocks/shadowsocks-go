@@ -266,7 +266,7 @@ func run(port, password string) {
 		// Creating cipher upon first connection.
 		if cipher == nil {
 			log.Println("creating cipher for port:", port)
-			cipher, err = ss.NewCipher(password)
+			cipher, err = ss.NewCipher(config.Method, password)
 			if err != nil {
 				log.Printf("Error generating cipher for port: %s password: %s\n", port, password)
 				return
@@ -336,10 +336,6 @@ func main() {
 		ss.UpdateConfig(config, &cmdConfig)
 	}
 	if err = unifyPortPassword(config); err != nil {
-		os.Exit(1)
-	}
-	if err = ss.SetDefaultCipher(config.Method); err != nil {
-		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	if core > 0 {

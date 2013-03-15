@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
+	// "log"
 	"os"
 	"reflect"
 	"time"
@@ -29,7 +29,10 @@ type Config struct {
 	Timeout      int               `json:"timeout"`
 
 	// following options are only used by client
-	ServerPassword map[string]string `json:"server_password"`
+
+	// The order of servers in the client config is significant, so use array
+	// instead of map to preserve the order.
+	ServerPassword [][]string `json:"server_password"`
 }
 
 var readTimeout time.Duration
@@ -46,10 +49,12 @@ func (config *Config) GetServerArray() []string {
 	}
 	arr, ok := config.Server.([]interface{})
 	if ok {
-		if len(arr) > 1 {
-			log.Println("Multiple servers in \"server\" option is deprecated. " +
-				"Please use \"server_password\" instead.")
-		}
+		/*
+			if len(arr) > 1 {
+				log.Println("Multiple servers in \"server\" option is deprecated. " +
+					"Please use \"server_password\" instead.")
+			}
+		*/
 		serverArr := make([]string, len(arr), len(arr))
 		for i, s := range arr {
 			serverArr[i], ok = s.(string)

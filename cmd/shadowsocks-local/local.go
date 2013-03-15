@@ -8,6 +8,7 @@ import (
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"path"
@@ -146,13 +147,13 @@ type ServerCipher struct {
 
 var servers struct {
 	srvCipher []*ServerCipher
-	idx       uint8
+	failCnt   []int // failed connection count
 }
 
-func initServers(config *ss.Config) {
+func parseServerConfig(config *ss.Config) {
 	if len(config.ServerPassword) == 0 {
 		// only one encryption table
-		cipher, err := ss.NewCipher(config.Password)
+		cipher, err := ss.NewCipher(config.Method, config.Password)
 		if err != nil {
 			log.Fatal("Failed generating ciphers:", err)
 		}
@@ -170,56 +171,87 @@ func initServers(config *ss.Config) {
 			}
 		}
 	} else {
+		// multiple servers
 		n := len(config.ServerPassword)
 		servers.srvCipher = make([]*ServerCipher, n)
 
 		cipherCache := make(map[string]ss.Cipher)
 		i := 0
-		for s, passwd := range config.ServerPassword {
-			if !ss.HasPort(s) {
-				log.Fatalf("no port for server %s, please specify port in the form of %s:port\n", s, s)
+		for _, serverInfo := range config.ServerPassword {
+			if len(serverInfo) < 2 || len(serverInfo) > 3 {
+				log.Fatalf("server %v syntax error\n", serverInfo)
+			}
+			server := serverInfo[0]
+			passwd := serverInfo[1]
+			encmethod := ""
+			if len(serverInfo) == 3 {
+				encmethod = serverInfo[2]
+			}
+			if !ss.HasPort(server) {
+				log.Fatalf("no port for server %s, please specify port in the form of %s:port\n", server, server)
 			}
 			cipher, ok := cipherCache[passwd]
 			if !ok {
 				var err error
-				cipher, err = ss.NewCipher(passwd)
+				cipher, err = ss.NewCipher(encmethod, passwd)
 				if err != nil {
 					log.Fatal("Failed generating ciphers:", err)
 				}
 				cipherCache[passwd] = cipher
 			}
-			servers.srvCipher[i] = &ServerCipher{s, cipher}
+			servers.srvCipher[i] = &ServerCipher{server, cipher}
 			i++
 		}
 	}
+	servers.failCnt = make([]int, len(servers.srvCipher))
 	for _, se := range servers.srvCipher {
 		log.Println("available remote server", se.server)
 	}
 	return
 }
 
-// select one server to connect in round robin order
+func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn, err error) {
+	se := servers.srvCipher[serverId]
+	remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
+	if err != nil {
+		log.Println("error connecting to shadowsocks server:", err)
+		const maxFailCnt = 50
+		if servers.failCnt[serverId] < maxFailCnt {
+			servers.failCnt[serverId]++
+		}
+		return nil, err
+	}
+	debug.Printf("connected to %s via %s\n", addr, se.server)
+	servers.failCnt[serverId] = 0
+	return
+}
+
+// Connection to the server in the order specified in the config. On
+// connection failure, try the next server. A failed server will be tried with
+// some probability according to its fail count, so we can discover recovered
+// servers.
 func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) {
 	n := len(servers.srvCipher)
-	if n == 1 {
-		se := servers.srvCipher[0]
-		debug.Printf("connecting to %s via %s\n", addr, se.server)
-		return ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
-	}
-
-	id := servers.idx
-	servers.idx++ // it's ok for concurrent update
+	skipped := make([]int, 0)
 	for i := 0; i < n; i++ {
-		se := servers.srvCipher[(int(id)+i)%n]
-		remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
+		// skip failed server, but try it with some probability
+		if servers.failCnt[i] > 0 && rand.Intn(servers.failCnt[i]+1) != 0 {
+			skipped = append(skipped, i)
+			continue
+		}
+		remote, err = connectToServer(i, rawaddr, addr)
 		if err == nil {
-			debug.Printf("connected to %s via %s\n", addr, se.server)
 			return
-		} else {
-			log.Println("error connecting to shadowsocks server:", err)
 		}
 	}
-	return
+	// last resort, try skipped servers, not likely to succeed
+	for _, i := range skipped {
+		remote, err = connectToServer(i, rawaddr, addr)
+		if err == nil {
+			return
+		}
+	}
+	return nil, err
 }
 
 func handleConnection(conn net.Conn) {
@@ -338,10 +370,6 @@ func main() {
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}
-	if err = ss.SetDefaultCipher(config.Method); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
 
 	if len(config.ServerPassword) == 0 {
 		if !enoughOptions(config) {
@@ -358,7 +386,7 @@ func main() {
 		}
 	}
 
-	initServers(config)
+	parseServerConfig(config)
 
 	run(strconv.Itoa(config.LocalPort))
 }
