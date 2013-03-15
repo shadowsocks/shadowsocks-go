@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"time"
 )
 
 var debug ss.DebugLog
@@ -30,6 +31,10 @@ const (
 	socksVer5       = 5
 	socksCmdConnect = 1
 )
+
+func init() {
+	rand.Seed(time.Now().Unix())
+}
 
 func handShake(conn net.Conn) (err error) {
 	const (
