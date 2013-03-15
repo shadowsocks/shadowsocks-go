@@ -20,7 +20,7 @@ upload() {
 upload "$version OS X Client 64bit" bin/shadowsocks-local-mac64-$version.gz
 upload "$version Linux Client 32bit" bin/shadowsocks-local-linux32-$version.gz
 upload "$version Linux Client 64bit" bin/shadowsocks-local-linux64-$version.gz
-upload "$version Windows Client 32bit" bin/shadowsocks-local-win64-$version.zip
+upload "$version Windows Client 64bit" bin/shadowsocks-local-win64-$version.zip
 upload "$version Windows Client 32bit" bin/shadowsocks-local-win32-$version.zip
 
 upload "$version Linux Server 32bit" bin/shadowsocks-server-linux32-$version.gz
