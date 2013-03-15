@@ -28,7 +28,7 @@ type TableCipher struct {
 }
 
 // Creates a new table based cipher. err is always nil.
-func NewTableCipher(key string) (c Cipher, err error) {
+func NewTableCipher(key string) (c *TableCipher, err error) {
 	if key == "" {
 		return nil, errEmptyKey
 	}
@@ -87,7 +87,7 @@ type RC4Cipher struct {
 	enc *rc4.Cipher
 }
 
-func NewRC4Cipher(key string) (c Cipher, err error) {
+func NewRC4Cipher(key string) (c *RC4Cipher, err error) {
 	if key == "" {
 		return nil, errEmptyKey
 	}
@@ -117,19 +117,13 @@ func (c RC4Cipher) Copy() Cipher {
 	return &RC4Cipher{&dec, &enc}
 }
 
-// Function to get default cipher
-var NewCipher = NewTableCipher
-
-// Set default cipher. Empty string of cipher name uses the simple table
-// cipher.
-func SetDefaultCipher(cipherName string) (err error) {
+// Create cipher based on name
+func NewCipher(cipherName, key string) (Cipher, error) {
 	switch cipherName {
 	case "":
-		NewCipher = NewTableCipher
+		return NewTableCipher(key)
 	case "rc4":
-		NewCipher = NewRC4Cipher
-	default:
-		return errors.New("encryption method " + cipherName + " not supported")
+		return NewRC4Cipher(key)
 	}
-	return
+	return nil, errors.New("encryption method " + cipherName + " not supported")
 }

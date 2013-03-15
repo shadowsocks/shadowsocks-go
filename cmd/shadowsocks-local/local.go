@@ -152,7 +152,7 @@ var servers struct {
 func initServers(config *ss.Config) {
 	if len(config.ServerPassword) == 0 {
 		// only one encryption table
-		cipher, err := ss.NewCipher(config.Password)
+		cipher, err := ss.NewCipher(config.Method, config.Password)
 		if err != nil {
 			log.Fatal("Failed generating ciphers:", err)
 		}
@@ -182,7 +182,7 @@ func initServers(config *ss.Config) {
 			cipher, ok := cipherCache[passwd]
 			if !ok {
 				var err error
-				cipher, err = ss.NewCipher(passwd)
+				cipher, err = ss.NewCipher(config.Method, passwd)
 				if err != nil {
 					log.Fatal("Failed generating ciphers:", err)
 				}
@@ -337,10 +337,6 @@ func main() {
 		}
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
-	}
-	if err = ss.SetDefaultCipher(config.Method); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
 	}
 
 	if len(config.ServerPassword) == 0 {
