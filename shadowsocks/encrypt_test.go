@@ -65,6 +65,7 @@ func TestRC4Cipher(t *testing.T) {
 		t.Error("Should get error for empty key creating rc4 cipher")
 	}
 	cipher, err = NewCipher("rc4", "Alibaba")
+	ciphercopy := cipher.Copy()
 	if err != nil {
 		t.Error("Should not error creating rc4 cipher with key Alibaba")
 	}
@@ -72,5 +73,6 @@ func TestRC4Cipher(t *testing.T) {
 		t.Error("Should get rc4 cipher")
 	} else {
 		testCiphter(t, cipher, "RC4Cipher")
+		testCiphter(t, ciphercopy, "RC4Cipher copy")
 	}
 }
