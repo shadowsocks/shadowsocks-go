@@ -139,7 +139,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 			host = addrIp.String()
 		}
 		port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
-		host += ":" + strconv.Itoa(int(port))
+		host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 	}
 
 	return
@@ -156,6 +156,14 @@ var servers struct {
 }
 
 func parseServerConfig(config *ss.Config) {
+	hasPort := func(s string) bool {
+		_, port, err := net.SplitHostPort(s)
+		if err != nil {
+			return false
+		}
+		return port != ""
+	}
+
 	if len(config.ServerPassword) == 0 {
 		// only one encryption table
 		cipher, err := ss.NewCipher(config.Method, config.Password)
@@ -168,11 +176,11 @@ func parseServerConfig(config *ss.Config) {
 		servers.srvCipher = make([]*ServerCipher, n)
 
 		for i, s := range srvArr {
-			if ss.HasPort(s) {
+			if hasPort(s) {
 				log.Println("ignore server_port option for server", s)
 				servers.srvCipher[i] = &ServerCipher{s, cipher}
 			} else {
-				servers.srvCipher[i] = &ServerCipher{s + ":" + srvPort, cipher}
+				servers.srvCipher[i] = &ServerCipher{net.JoinHostPort(s, srvPort), cipher}
 			}
 		}
 	} else {
@@ -192,8 +200,8 @@ func parseServerConfig(config *ss.Config) {
 			if len(serverInfo) == 3 {
 				encmethod = serverInfo[2]
 			}
-			if !ss.HasPort(server) {
-				log.Fatalf("no port for server %s, please specify port in the form of %s:port\n", server, server)
+			if !hasPort(server) {
+				log.Fatalf("no port for server %s\n", server)
 			}
 			cipher, ok := cipherCache[passwd]
 			if !ok {
