@@ -1,4 +1,7 @@
-0.6.1 (2013-03-15)
+0.6.3 (not released)
+    * Support IPv6 server
+
+0.6.2 (2013-03-15)
     * Connect to multiple servers in the order specified in config
     * More information in server error log to help error diagnosing
 

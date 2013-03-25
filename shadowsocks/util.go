@@ -24,12 +24,3 @@ func IsFileExists(path string) (bool, error) {
 	}
 	return false, err
 }
-
-func HasPort(s string) bool {
-	for i := len(s) - 1; i > 0; i-- {
-		if s[i] == ':' {
-			return true
-		}
-	}
-	return false
-}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"strings"
 )
 
 type Conn struct {
@@ -19,12 +18,11 @@ func NewConn(cn net.Conn, cipher Cipher) *Conn {
 }
 
 func RawAddr(addr string) (buf []byte, err error) {
-	arr := strings.Split(addr, ":")
-	if len(arr) != 2 {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
 		return nil, errors.New(
-			fmt.Sprintf("shadowsocks: malformed address %s", addr))
+			fmt.Sprintf("shadowsocks: address error %s %v", addr, err))
 	}
-	host, portStr := arr[0], arr[1]
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
 		return nil, errors.New(
