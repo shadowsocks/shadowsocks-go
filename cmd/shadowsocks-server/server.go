@@ -11,6 +11,8 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"sync"
@@ -305,9 +307,13 @@ func main() {
 	var cmdConfig ss.Config
 	var printVer bool
 	var core int
-
+	
+	// Get absolute file path of config file.
+	file, _ := exec.LookPath(os.Args[0])
+	path_full, _ := filepath.Abs(file)
+	path, _ := filepath.Split(path_full)
 	flag.BoolVar(&printVer, "version", false, "print version")
-	flag.StringVar(&configFile, "c", "config.json", "specify config file")
+	flag.StringVar(&configFile, "c", path + "config.json", "specify config file")
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.Timeout, "t", 60, "connection timeout (in seconds)")
