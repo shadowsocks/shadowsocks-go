@@ -85,8 +85,9 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 		typeDm   = 3 // type is domain address
 		typeIPv6 = 4 // type is ipv6 address
 
-		lenIP     = 3 + 1 + 4 + 2 // 3(ver+cmd+rsv) + 1addrType + 4ip + 2port
-		lenDmBase = 3 + 1 + 1 + 2 // 3 + 1addrType + 1addrLen + 2port, plus addrLen
+		lenIPv4   = 3 + 1 + net.IPv4len + 2 // 3(ver+cmd+rsv) + 1addrType + ipv4 + 2port
+		lenIPv6   = 3 + 1 + net.IPv6len + 2 // 3(ver+cmd+rsv) + 1addrType + ipv6 + 2port
+		lenDmBase = 3 + 1 + 1 + 2           // 3 + 1addrType + 1addrLen + 2port, plus addrLen
 	)
 	// refer to getRequest in server.go for why set buffer size to 263
 	buf := make([]byte, 263)
@@ -105,15 +106,15 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 		return
 	}
 
-	// Browsers seems always using domain name, so it's not urgent to support
-	// IPv6 address in the local socks server.
-	reqLen := lenIP
-	if buf[idType] == typeDm {
+	reqLen := -1
+	switch buf[idType] {
+	case typeIPv4:
+		reqLen = lenIPv4
+	case typeIPv6:
+		reqLen = lenIPv6
+	case typeDm:
 		reqLen = int(buf[idDmLen]) + lenDmBase
-	} else if buf[idType] != typeIPv4 {
-		if buf[idType] == typeIPv6 {
-			log.Println("IPv6 address type not supported in socks request")
-		}
+	default:
 		err = errAddrType
 		return
 	}
@@ -132,11 +133,13 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 	rawaddr = buf[idType:reqLen]
 
 	if debug {
-		if buf[idType] == typeDm {
+		switch buf[idType] {
+		case typeIPv4:
+			host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
+		case typeIPv6:
+			host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
+		case typeDm:
 			host = string(buf[idDm0 : idDm0+buf[idDmLen]])
-		} else if buf[idType] == typeIPv4 {
-			addrIp := net.IPv4(buf[idIP0], buf[idIP0+1], buf[idIP0+2], buf[idIP0+3])
-			host = addrIp.String()
 		}
 		port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
 		host = net.JoinHostPort(host, strconv.Itoa(int(port)))
