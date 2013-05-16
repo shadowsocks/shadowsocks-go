@@ -35,10 +35,11 @@ DEBDIR=shadowsocks-go_$ver-1-$arch
 rm -rf $DEBDIR
 cp -r deb $DEBDIR
 
+sed -i -e "s/VER/$ver/" $DEBDIR/DEBIAN/control || exit 1
 sed -i -e "s/^Architecture.*$/Architecture: $arch/" $DEBDIR/DEBIAN/control || exit 1
 
 mkdir -p $DEBDIR/usr/bin
-cp cmd/shadowsocks-server/shadowsocks-server $DEBDIR/usr/bin/shadowsocks
+cp cmd/shadowsocks-server/shadowsocks-server $DEBDIR/usr/bin/
 rm -f cmd/shadowsocks-server/shadowsocks-server
 
 fakeroot dpkg-deb --build $DEBDIR
