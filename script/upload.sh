@@ -26,6 +26,6 @@ upload "$version Windows Client 32bit" bin/shadowsocks-local-win32-$version.zip
 upload "$version Linux Server 32bit" bin/shadowsocks-server-linux32-$version.gz
 upload "$version Linux Server 64bit" bin/shadowsocks-server-linux64-$version.gz
 
-upload "$version Linux Server deb 32bit" bin/shadowsocks-go_0.6.1-1-i386.deb
-upload "$version Linux Server deb 64bit" bin/shadowsocks-go_0.6.1-1-amd64.deb
+upload "$version Linux Server deb 32bit" bin/shadowsocks-go_$version-1-i386.deb
+upload "$version Linux Server deb 64bit" bin/shadowsocks-go_$version-1-amd64.deb
 

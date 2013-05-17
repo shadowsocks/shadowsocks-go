@@ -24,8 +24,10 @@ build() {
     if [[ $1 == "windows" ]]; then
         mv $prog.exe $ROOT/script/
         pushd $ROOT/script/
-        zip $name.zip $prog.exe shadowsocks.exe
-        rm -f $prog.exe
+        cp $ROOT/config.json sample-config.json
+        cp $ROOT/sample-config/client-multi-server.json multi-server.json
+        zip $name.zip $prog.exe shadowsocks.exe sample-config.json multi-server.json
+        rm -f $prog.exe sample-config.json multi-server.json
         mv $name.zip $bindir
         popd
     else
@@ -48,3 +50,7 @@ build linux 386 linux32 server
 #build windows amd64 win64 server
 #build windows 386 win32 server
 
+script/createdeb.sh amd64
+script/createdeb.sh 386
+mv shadowsocks-go_$version-1-*.deb bin/
+rm -rf shadowsocks-go_$version-1*
