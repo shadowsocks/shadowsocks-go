@@ -1,5 +1,5 @@
 Package: shadowsocks-go
-Version: 0.6.1-1
+Version: VER-1
 Section: net
 Priority: optional
 Architecture: any

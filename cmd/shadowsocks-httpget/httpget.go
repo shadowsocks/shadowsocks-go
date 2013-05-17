@@ -93,10 +93,6 @@ func main() {
 		fmt.Printf("Usage: %s -s <server> -p <port> -k <password> <url>\n", os.Args[0])
 		os.Exit(1)
 	}
-	if err := ss.SetDefaultCipher(config.method); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
 
 	runtime.GOMAXPROCS(config.core)
 	uri := flag.Arg(0)
@@ -104,7 +100,7 @@ func main() {
 		uri = "http://" + uri
 	}
 
-	cipher, err := ss.NewCipher(config.passwd)
+	cipher, err := ss.NewCipher(config.method, config.passwd)
 	if err != nil {
 		fmt.Println("Error creating cipher:", err)
 		os.Exit(1)

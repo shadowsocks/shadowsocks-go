@@ -32,8 +32,9 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 		typeDm   = 3 // type is domain address
 		typeIPv6 = 4 // type is ipv6 address
 
-		lenIP     = 1 + 4 + 2 // 1addrType + 4ip + 2port
-		lenDmBase = 1 + 1 + 2 // 1addrType + 1addrLen + 2port, plus addrLen
+		lenIPv4   = 1 + net.IPv4len + 2 // 1addrType + ipv4 + 2port
+		lenIPv6   = 1 + net.IPv6len + 2 // 1addrType + ipv6 + 2port
+		lenDmBase = 1 + 1 + 2           // 1addrType + 1addrLen + 2port, plus addrLen
 	)
 
 	// buf size should at least have the same size with the largest possible
@@ -47,11 +48,15 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 		return
 	}
 
-	// Currently the client will not send request with ipv6 address.
-	reqLen := lenIP
-	if buf[idType] == typeDm {
+	reqLen := -1
+	switch buf[idType] {
+	case typeIPv4:
+		reqLen = lenIPv4
+	case typeIPv6:
+		reqLen = lenIPv6
+	case typeDm:
 		reqLen = int(buf[idDmLen]) + lenDmBase
-	} else if buf[idType] != typeIPv4 {
+	default:
 		err = errors.New(fmt.Sprintf("addr type %d not supported", buf[idType]))
 		return
 	}
@@ -66,11 +71,16 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 		extra = buf[reqLen:n]
 	}
 
-	if buf[idType] == typeDm {
+	// Return string for typeIP is not most efficient, but browsers (Chrome,
+	// Safari, Firefox) all seems using typeDm exclusively. So this is not a
+	// big problem.
+	switch buf[idType] {
+	case typeIPv4:
+		host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
+	case typeIPv6:
+		host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
+	case typeDm:
 		host = string(buf[idDm0 : idDm0+buf[idDmLen]])
-	} else if buf[idType] == typeIPv4 {
-		addrIp := net.IPv4(buf[idIP0], buf[idIP0+1], buf[idIP0+2], buf[idIP0+3])
-		host = addrIp.String()
 	}
 	// parse port
 	port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
