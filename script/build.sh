@@ -5,8 +5,6 @@ cd "$( dirname "${BASH_SOURCE[0]}" )/.."
 version=`grep 'const version = ' ./shadowsocks/util.go | sed -e 's/.*= //' | sed -e 's/"//g'`
 echo "creating shadowsocks binary version $version"
 
-export CGO_ENABLED=0
-
 ROOT=`pwd`
 bindir=$ROOT/bin
 mkdir -p $bindir
@@ -15,6 +13,13 @@ build() {
     local name
     local GOOS
     local GOARCH
+
+    if [[ $1 == "darwin" ]]; then
+        # Enable CGO for OS X so change network location will not cause problem.
+        export CGO_ENABLED=1
+    else
+        export CGO_ENABLED=0
+    fi
 
     prog=shadowsocks-$4
     pushd cmd/$prog
