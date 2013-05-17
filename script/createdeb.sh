@@ -13,7 +13,7 @@ export GOOS=linux
 
 arch=$1
 case $arch in
-    i386)
+    386)
         export GOARCH=386
         ;;
     amd64)
