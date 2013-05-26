@@ -10,10 +10,10 @@ import (
 
 type Conn struct {
 	net.Conn
-	Cipher
+	*Cipher
 }
 
-func NewConn(cn net.Conn, cipher Cipher) *Conn {
+func NewConn(cn net.Conn, cipher *Cipher) *Conn {
 	return &Conn{cn, cipher}
 }
 
@@ -42,7 +42,7 @@ func RawAddr(addr string) (buf []byte, err error) {
 // This is intended for use by users implementing a local socks proxy.
 // rawaddr shoud contain part of the data in socks request, starting from the
 // ATYP field. (Refer to rfc1928 for more information.)
-func DialWithRawAddr(rawaddr []byte, server string, cipher Cipher) (c *Conn, err error) {
+func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, err error) {
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
 		return
@@ -56,7 +56,7 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher Cipher) (c *Conn, err
 }
 
 // addr should be in the form of host:port
-func Dial(addr, server string, cipher Cipher) (c *Conn, err error) {
+func Dial(addr, server string, cipher *Cipher) (c *Conn, err error) {
 	ra, err := RawAddr(addr)
 	if err != nil {
 		return

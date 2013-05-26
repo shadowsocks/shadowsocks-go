@@ -2,6 +2,7 @@ package shadowsocks
 
 import (
 	"bytes"
+	"crypto/cipher"
 	"crypto/md5"
 	"crypto/rc4"
 	"encoding/binary"
@@ -10,38 +11,23 @@ import (
 
 var errEmptyKey = errors.New("empty key")
 
-type Cipher interface {
-	// Some ciphers maintains context (e.g. RC4), which means different
-	// connections need to use their own ciphers. Copy() will create an copy
-	// of the cipher in the current state. Use this before calling
-	// Encrypt/Decrypt to avoid initialization cost of of creating a new
-	// cipher.
-	Copy() Cipher
-	// dst should have at least the same length as src
-	Encrypt(dst, src []byte)
-	Decrypt(dst, src []byte)
-}
+type tableCipher []byte
 
-type TableCipher struct {
-	encTbl []byte
-	decTbl []byte
-}
-
-// Creates a new table based cipher. err is always nil.
-func NewTableCipher(key string) (c *TableCipher, err error) {
-	if key == "" {
-		return nil, errEmptyKey
+func (tbl tableCipher) XORKeyStream(dst, src []byte) {
+	for i := 0; i < len(src); i++ {
+		dst[i] = tbl[src[i]]
 	}
+}
+
+// NewTableCipher creates a new table based cipher.
+func newTableCipher(key string) (enc, dec tableCipher) {
 	const tbl_size = 256
-	tbl := TableCipher{
-		make([]byte, tbl_size),
-		make([]byte, tbl_size),
-	}
+	enc = make([]byte, tbl_size)
+	dec = make([]byte, tbl_size)
 	table := make([]uint64, tbl_size)
 
 	h := md5.New()
 	h.Write([]byte(key))
-
 	s := h.Sum(nil)
 
 	var a uint64
@@ -57,73 +43,77 @@ func NewTableCipher(key string) (c *TableCipher, err error) {
 		})
 	}
 	for i = 0; i < tbl_size; i++ {
-		tbl.encTbl[i] = byte(table[i])
+		enc[i] = byte(table[i])
 	}
 	for i = 0; i < tbl_size; i++ {
-		tbl.decTbl[tbl.encTbl[i]] = byte(i)
+		dec[enc[i]] = byte(i)
 	}
-	return &tbl, nil
+	return enc, dec
 }
 
-func (c *TableCipher) Encrypt(dst, src []byte) {
-	for i := 0; i < len(src); i++ {
-		dst[i] = c.encTbl[src[i]]
-	}
-}
-
-func (c *TableCipher) Decrypt(dst, src []byte) {
-	for i := 0; i < len(src); i++ {
-		dst[i] = c.decTbl[src[i]]
-	}
-}
-
-// Table cipher has no state, so can return itself.
-func (c *TableCipher) Copy() Cipher {
-	return c
-}
-
-type RC4Cipher struct {
-	dec *rc4.Cipher
-	enc *rc4.Cipher
-}
-
-func NewRC4Cipher(key string) (c *RC4Cipher, err error) {
-	if key == "" {
-		return nil, errEmptyKey
-	}
+func newRC4Cipher(key string) (enc, dec cipher.Stream, err error) {
 	h := md5.New()
 	h.Write([]byte(key))
-	enc, err := rc4.NewCipher(h.Sum(nil))
+	rc4Enc, err := rc4.NewCipher(h.Sum(nil))
 	if err != nil {
 		return
 	}
-	dec := *enc // create a copy
-	c = &RC4Cipher{&dec, enc}
-	return
+	// create a copy, as RC4 encrypt and decrypt uses the same keystream
+	rc4Dec := *rc4Enc
+	return rc4Enc, &rc4Dec, nil
 }
 
-func (c RC4Cipher) Encrypt(dst, src []byte) {
+type Cipher struct {
+	enc    cipher.Stream
+	dec    cipher.Stream
+	key    string
+	method string
+}
+
+// NewCipher creates a cipher that can be used in Dial() etc.
+// Use cipher.Copy() to create a new cipher with the same method and password
+// to avoid the cost of repeated cipher initialization.
+func NewCipher(method, password string) (*Cipher, error) {
+	if password == "" {
+		return nil, errEmptyKey
+	}
+
+	cipher := Cipher{method: method, key: password}
+	var err error
+
+	if method == "" || method == "table" {
+		cipher.enc, cipher.dec = newTableCipher(password)
+	} else if method == "rc4" {
+		cipher.enc, cipher.dec, err = newRC4Cipher(password)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &cipher, nil
+}
+
+func (c *Cipher) Encrypt(dst, src []byte) {
 	c.enc.XORKeyStream(dst, src)
 }
 
-func (c RC4Cipher) Decrypt(dst, src []byte) {
+func (c *Cipher) Decrypt(dst, src []byte) {
 	c.dec.XORKeyStream(dst, src)
 }
 
-// Create a new RC4 cipher with the same keystream.
-func (c RC4Cipher) Copy() Cipher {
-	dec := *c.dec
-	enc := *c.enc
-	return &RC4Cipher{&dec, &enc}
-}
-
-// Create cipher based on name
-func NewCipher(cipherName, key string) (Cipher, error) {
-	switch cipherName {
-	case "":
-		return NewTableCipher(key)
-	case "rc4":
-		return NewRC4Cipher(key)
+func (c *Cipher) Copy() *Cipher {
+	// This optimization maybe not necessary. But without this function, we
+	// need to maintain a table cache for newTableCipher and use lock to
+	// protect concurrent access to that cache.
+	switch c.enc.(type) {
+	case tableCipher:
+		return c
+	case *rc4.Cipher:
+		enc, _ := c.enc.(*rc4.Cipher)
+		encCpy := *enc
+		decCpy := *enc
+		return &Cipher{enc: &encCpy, dec: &decCpy}
+	default:
+		nc, _ := NewCipher(c.method, c.key)
+		return nc
 	}
-	return nil, errors.New("encryption method " + cipherName + " not supported")
 }
