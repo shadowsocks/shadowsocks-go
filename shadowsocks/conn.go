@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 )
@@ -65,17 +66,36 @@ func Dial(addr, server string, cipher *Cipher) (c *Conn, err error) {
 }
 
 func (c Conn) Read(b []byte) (n int, err error) {
-	cipherData := make([]byte, len(b), len(b))
+	if c.dec == nil {
+		iv := make([]byte, c.info.ivLen)
+		if _, err = io.ReadFull(c.Conn, iv); err != nil {
+			return
+		}
+		if err = c.initDecrypt(iv); err != nil {
+			return
+		}
+	}
+	cipherData := make([]byte, len(b))
 	n, err = c.Conn.Read(cipherData)
 	if n > 0 {
-		c.Decrypt(b[0:n], cipherData[0:n])
+		c.decrypt(b[0:n], cipherData[0:n])
 	}
 	return
 }
 
 func (c Conn) Write(b []byte) (n int, err error) {
-	cipherData := make([]byte, len(b), len(b))
-	c.Encrypt(cipherData, b)
+	if c.enc == nil {
+		var iv []byte
+		iv, err = c.initEncrypt()
+		if err != nil {
+			return
+		}
+		if _, err = c.Conn.Write(iv); err != nil {
+			return
+		}
+	}
+	cipherData := make([]byte, len(b))
+	c.encrypt(cipherData, b)
 	n, err = c.Conn.Write(cipherData)
 	return
 }

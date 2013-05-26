@@ -48,8 +48,7 @@ test_shadowsocks() {
     # wait server and client finish startup
     sleep 1
 
-    # get 5 times
-    for i in {1..2}; do
+    for i in {1..3}; do
         if ! test_get $url "<html"; then
             kill -SIGTERM $server_pid
             kill -SIGTERM $local_pid
@@ -71,6 +70,10 @@ test_server_local_pair() {
     echo "============================================================"
     test_shadowsocks baidu.com table
     test_shadowsocks baidu.com rc4
+    test_shadowsocks baidu.com aes-128-cfb
+    test_shadowsocks baidu.com aes-192-cfb
+    test_shadowsocks baidu.com aes-256-cfb
+    test_shadowsocks baidu.com des-cfb
 }
 
 SERVER="shadowsocks-server"

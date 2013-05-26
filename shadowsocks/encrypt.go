@@ -2,14 +2,18 @@ package shadowsocks
 
 import (
 	"bytes"
+	"crypto/aes"
 	"crypto/cipher"
+	"crypto/des"
 	"crypto/md5"
+	"crypto/rand"
 	"crypto/rc4"
 	"encoding/binary"
 	"errors"
+	"io"
 )
 
-var errEmptyKey = errors.New("empty key")
+var errEmptyPassword = errors.New("empty key")
 
 type tableCipher []byte
 
@@ -46,13 +50,11 @@ func (tbl tableCipher) XORKeyStream(dst, src []byte) {
 }
 
 // NewTableCipher creates a new table based cipher.
-func newTableCipher(password string) (enc, dec tableCipher) {
+func newTableCipher(s []byte) (enc, dec tableCipher) {
 	const tbl_size = 256
 	enc = make([]byte, tbl_size)
 	dec = make([]byte, tbl_size)
 	table := make([]uint64, tbl_size)
-
-	s := md5sum([]byte(password))
 
 	var a uint64
 	buf := bytes.NewBuffer(s)
@@ -75,8 +77,7 @@ func newTableCipher(password string) (enc, dec tableCipher) {
 	return enc, dec
 }
 
-func newRC4Cipher(password string) (enc, dec cipher.Stream, err error) {
-	key := md5sum([]byte(password))
+func newRC4Cipher(key []byte) (enc, dec cipher.Stream, err error) {
 	rc4Enc, err := rc4.NewCipher(key)
 	if err != nil {
 		return
@@ -86,43 +87,97 @@ func newRC4Cipher(password string) (enc, dec cipher.Stream, err error) {
 	return rc4Enc, &rc4Dec, nil
 }
 
+type cipherInfo struct {
+	keyLen   int
+	ivLen    int
+	newBlock func([]byte) (cipher.Block, error)
+}
+
+var cipherMethod = map[string]cipherInfo{
+	"aes-128-cfb": {16, 16, aes.NewCipher},
+	"aes-192-cfb": {24, 16, aes.NewCipher},
+	"aes-256-cfb": {32, 16, aes.NewCipher},
+	"des-cfb":     {8, 8, des.NewCipher},
+	"rc4":         {16, 0, nil},
+	"":            {16, 0, nil}, // table encryption
+}
+
+func CheckCipherMethod(method string) error {
+	_, ok := cipherMethod[method]
+	if !ok {
+		return errors.New("Unsupported encryption method: " + method)
+	}
+	return nil
+}
+
 type Cipher struct {
-	enc    cipher.Stream
-	dec    cipher.Stream
-	key    string
-	method string
+	enc  cipher.Stream
+	dec  cipher.Stream
+	key  []byte
+	info *cipherInfo
 }
 
 // NewCipher creates a cipher that can be used in Dial() etc.
 // Use cipher.Copy() to create a new cipher with the same method and password
 // to avoid the cost of repeated cipher initialization.
-func NewCipher(method, password string) (*Cipher, error) {
+func NewCipher(method, password string) (c *Cipher, err error) {
 	if password == "" {
-		return nil, errEmptyKey
+		return nil, errEmptyPassword
+	}
+	mi, ok := cipherMethod[method]
+	if !ok {
+		return nil, errors.New("Unsupported encryption method: " + method)
 	}
 
-	cipher := Cipher{method: method, key: password}
-	var err error
+	key := evpBytesToKey(password, mi.keyLen)
 
-	if method == "" || method == "table" {
-		cipher.enc, cipher.dec = newTableCipher(password)
-	} else if method == "rc4" {
-		cipher.enc, cipher.dec, err = newRC4Cipher(password)
+	c = &Cipher{key: key, info: &mi}
+
+	if mi.newBlock == nil {
+		if method == "" {
+			c.enc, c.dec = newTableCipher(key)
+		} else if method == "rc4" {
+			c.enc, c.dec, err = newRC4Cipher(key)
+		}
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &cipher, nil
+	return c, nil
 }
 
-func (c *Cipher) Encrypt(dst, src []byte) {
+// Initializes the block cipher with CFB mode, returns IV.
+func (c *Cipher) initEncrypt() ([]byte, error) {
+	iv := make([]byte, c.info.ivLen)
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return nil, err
+	}
+	block, err := c.info.newBlock(c.key)
+	if err != nil {
+		return nil, err
+	}
+	c.enc = cipher.NewCFBEncrypter(block, iv)
+	return iv, nil
+}
+
+func (c *Cipher) initDecrypt(iv []byte) error {
+	block, err := c.info.newBlock(c.key)
+	if err != nil {
+		return err
+	}
+	c.dec = cipher.NewCFBDecrypter(block, iv)
+	return nil
+}
+
+func (c *Cipher) encrypt(dst, src []byte) {
 	c.enc.XORKeyStream(dst, src)
 }
 
-func (c *Cipher) Decrypt(dst, src []byte) {
+func (c *Cipher) decrypt(dst, src []byte) {
 	c.dec.XORKeyStream(dst, src)
 }
 
+// Copy creates a new cipher at it's initial state.
 func (c *Cipher) Copy() *Cipher {
 	// This optimization maybe not necessary. But without this function, we
 	// need to maintain a table cache for newTableCipher and use lock to
@@ -136,7 +191,9 @@ func (c *Cipher) Copy() *Cipher {
 		decCpy := *enc
 		return &Cipher{enc: &encCpy, dec: &decCpy}
 	default:
-		nc, _ := NewCipher(c.method, c.key)
-		return nc
+		nc := *c
+		nc.enc = nil
+		nc.dec = nil
+		return &nc
 	}
 }

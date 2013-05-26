@@ -120,4 +120,7 @@ func UpdateConfig(old, new *Config) {
 			}
 		}
 	}
+	if old.Method == "table" {
+		old.Method = ""
+	}
 }
