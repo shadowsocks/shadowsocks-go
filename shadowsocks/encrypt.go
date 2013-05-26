@@ -19,10 +19,10 @@ func md5sum(d []byte) []byte {
 	return h.Sum(nil)
 }
 
-func evpBytesToKey(password string, keyLen, ivLen int) (key, iv []byte) {
+func evpBytesToKey(password string, keyLen int) (key []byte) {
 	const md5Len = 16
 
-	cnt := (keyLen+ivLen-1)/md5Len + 1
+	cnt := (keyLen-1)/md5Len + 1
 	m := make([]byte, cnt*md5Len)
 	copy(m, md5sum([]byte(password)))
 
@@ -36,7 +36,7 @@ func evpBytesToKey(password string, keyLen, ivLen int) (key, iv []byte) {
 		copy(d[md5Len:], password)
 		copy(m[start:], md5sum(d))
 	}
-	return m[:keyLen], m[keyLen : keyLen+ivLen]
+	return m[:keyLen]
 }
 
 func (tbl tableCipher) XORKeyStream(dst, src []byte) {
