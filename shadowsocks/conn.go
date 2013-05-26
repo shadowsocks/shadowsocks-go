@@ -4,16 +4,17 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 )
 
 type Conn struct {
 	net.Conn
-	Cipher
+	*Cipher
 }
 
-func NewConn(cn net.Conn, cipher Cipher) *Conn {
+func NewConn(cn net.Conn, cipher *Cipher) *Conn {
 	return &Conn{cn, cipher}
 }
 
@@ -42,7 +43,7 @@ func RawAddr(addr string) (buf []byte, err error) {
 // This is intended for use by users implementing a local socks proxy.
 // rawaddr shoud contain part of the data in socks request, starting from the
 // ATYP field. (Refer to rfc1928 for more information.)
-func DialWithRawAddr(rawaddr []byte, server string, cipher Cipher) (c *Conn, err error) {
+func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, err error) {
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
 		return
@@ -56,7 +57,7 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher Cipher) (c *Conn, err
 }
 
 // addr should be in the form of host:port
-func Dial(addr, server string, cipher Cipher) (c *Conn, err error) {
+func Dial(addr, server string, cipher *Cipher) (c *Conn, err error) {
 	ra, err := RawAddr(addr)
 	if err != nil {
 		return
@@ -65,17 +66,36 @@ func Dial(addr, server string, cipher Cipher) (c *Conn, err error) {
 }
 
 func (c Conn) Read(b []byte) (n int, err error) {
-	cipherData := make([]byte, len(b), len(b))
+	if c.dec == nil {
+		iv := make([]byte, c.info.ivLen)
+		if _, err = io.ReadFull(c.Conn, iv); err != nil {
+			return
+		}
+		if err = c.initDecrypt(iv); err != nil {
+			return
+		}
+	}
+	cipherData := make([]byte, len(b))
 	n, err = c.Conn.Read(cipherData)
 	if n > 0 {
-		c.Decrypt(b[0:n], cipherData[0:n])
+		c.decrypt(b[0:n], cipherData[0:n])
 	}
 	return
 }
 
 func (c Conn) Write(b []byte) (n int, err error) {
-	cipherData := make([]byte, len(b), len(b))
-	c.Encrypt(cipherData, b)
+	if c.enc == nil {
+		var iv []byte
+		iv, err = c.initEncrypt()
+		if err != nil {
+			return
+		}
+		if _, err = c.Conn.Write(iv); err != nil {
+			return
+		}
+	}
+	cipherData := make([]byte, len(b))
+	c.encrypt(cipherData, b)
 	n, err = c.Conn.Write(cipherData)
 	return
 }
