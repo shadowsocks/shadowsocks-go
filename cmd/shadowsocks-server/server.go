@@ -264,7 +264,7 @@ func run(port, password string) {
 		return
 	}
 	passwdManager.add(port, password, ln)
-	var cipher ss.Cipher
+	var cipher *ss.Cipher
 	log.Printf("server listening port %v ...\n", port)
 	for {
 		conn, err := ln.Accept()
@@ -278,8 +278,9 @@ func run(port, password string) {
 			log.Println("creating cipher for port:", port)
 			cipher, err = ss.NewCipher(config.Method, password)
 			if err != nil {
-				log.Printf("Error generating cipher for port: %s password: %s\n", port, password)
-				return
+				log.Printf("Error generating cipher for port: %s %v\n", port, err)
+				conn.Close()
+				continue
 			}
 		}
 		go handleConnection(ss.NewConn(conn, cipher.Copy()))
@@ -344,6 +345,10 @@ func main() {
 		config = &cmdConfig
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
+	}
+	if err = ss.CheckCipherMethod(config.Method); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 	if err = unifyPortPassword(config); err != nil {
 		os.Exit(1)

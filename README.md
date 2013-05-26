@@ -1,6 +1,6 @@
 # shadowsocks-go
 
-Current version: 1.0 [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go)
+Current version: 1.1 [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go)
 
 shadowsocks-go is a lightweight tunnel proxy which can help you get through firewalls. It is a port of [shadowsocks](https://github.com/clowwindy/shadowsocks).
 
@@ -33,7 +33,8 @@ Configuration file is in json format and has the same syntax with [shadowsocks-n
 server          your server ip or hostname
 server_port     server port
 local_port      local socks5 proxy port
-method          encryption method, null by default, or use "rc4"
+method          encryption method, null by default, or use any of the following:
+                    aes-128-cfb, aes-192-cfb, aes-256-cfb, bf-cfb, cast5-cfb, des-cfb, rc4
 password        a password used to encrypt transfer
 timeout         server option, in seconds
 ```
