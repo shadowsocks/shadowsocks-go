@@ -2,6 +2,8 @@ package shadowsocks
 
 import (
 	"bytes"
+	"code.google.com/p/go.crypto/blowfish"
+	"code.google.com/p/go.crypto/cast5"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/des"
@@ -93,10 +95,26 @@ type cipherInfo struct {
 	newBlock func([]byte) (cipher.Block, error)
 }
 
+// Ciphers from go.crypto has NewCipher returning specific type of cipher
+// instead of cipher.Block, so we need to have the following adapter
+// functions.
+// The specific cipher types makes it possible to use Copy to optimize cipher
+// initialization, but do this AFTER evaluation.
+
+func newBlowFishCipher(key []byte) (cipher.Block, error) {
+	return blowfish.NewCipher(key)
+}
+
+func newCast5Cipher(key []byte) (cipher.Block, error) {
+	return cast5.NewCipher(key)
+}
+
 var cipherMethod = map[string]cipherInfo{
 	"aes-128-cfb": {16, 16, aes.NewCipher},
 	"aes-192-cfb": {24, 16, aes.NewCipher},
 	"aes-256-cfb": {32, 16, aes.NewCipher},
+	"bf-cfb":      {16, 8, newBlowFishCipher},
+	"cast5-cfb":   {16, 8, newCast5Cipher},
 	"des-cfb":     {8, 8, des.NewCipher},
 	"rc4":         {16, 0, nil},
 	"":            {16, 0, nil}, // table encryption

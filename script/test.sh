@@ -52,7 +52,7 @@ test_shadowsocks() {
         if ! test_get $url "<html"; then
             kill -SIGTERM $server_pid
             kill -SIGTERM $local_pid
-            return 1
+            exit 1
         fi
         sleep 0.3
     done
@@ -73,7 +73,9 @@ test_server_local_pair() {
     test_shadowsocks baidu.com aes-128-cfb
     test_shadowsocks baidu.com aes-192-cfb
     test_shadowsocks baidu.com aes-256-cfb
+    test_shadowsocks baidu.com bf-cfb
     test_shadowsocks baidu.com des-cfb
+    test_shadowsocks baidu.com cast5-cfb
 }
 
 SERVER="shadowsocks-server"
