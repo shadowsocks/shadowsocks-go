@@ -33,7 +33,8 @@ Configuration file is in json format and has the same syntax with [shadowsocks-n
 server          your server ip or hostname
 server_port     server port
 local_port      local socks5 proxy port
-method          encryption method, null by default, or use "rc4"
+method          encryption method, null by default, or use any of the following:
+                    aes-128-cfb, aes-192-cfb, aes-256-cfb, bf-cfb, cast5-cfb, des-cfb, rc4
 password        a password used to encrypt transfer
 timeout         server option, in seconds
 ```
