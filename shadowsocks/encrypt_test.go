@@ -138,3 +138,55 @@ func TestAES256(t *testing.T) {
 func TestDES(t *testing.T) {
 	testBlockCipher(t, "des-cfb")
 }
+
+var cipherKey = make([]byte, 64)
+
+func init() {
+	for i := 0; i < len(cipherKey); i++ {
+		cipherKey[i] = byte(i)
+	}
+}
+
+func BenchmarkRC4Init(b *testing.B) {
+	key := cipherKey[:16]
+	for i := 0; i < b.N; i++ {
+		rc4.NewCipher(key)
+	}
+}
+
+func benchmarkCipherInit(b *testing.B, ci *cipherInfo) {
+	key := cipherKey[:ci.keyLen]
+	for i := 0; i < b.N; i++ {
+		ci.newBlock(key)
+	}
+}
+
+func BenchmarkAES128Init(b *testing.B) {
+	ci := cipherMethod["aes-128-cfb"]
+	benchmarkCipherInit(b, &ci)
+}
+
+func BenchmarkAES192Init(b *testing.B) {
+	ci := cipherMethod["aes-192-cfb"]
+	benchmarkCipherInit(b, &ci)
+}
+
+func BenchmarkAES256Init(b *testing.B) {
+	ci := cipherMethod["aes-256-cfb"]
+	benchmarkCipherInit(b, &ci)
+}
+
+func BenchmarkBlowFishInit(b *testing.B) {
+	ci := cipherMethod["bf-cfb"]
+	benchmarkCipherInit(b, &ci)
+}
+
+func BenchmarkCast5Init(b *testing.B) {
+	ci := cipherMethod["bf-cfb"]
+	benchmarkCipherInit(b, &ci)
+}
+
+func BenchmarkDESInit(b *testing.B) {
+	ci := cipherMethod["des-cfb"]
+	benchmarkCipherInit(b, &ci)
+}

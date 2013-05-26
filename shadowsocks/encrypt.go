@@ -99,7 +99,7 @@ type cipherInfo struct {
 // instead of cipher.Block, so we need to have the following adapter
 // functions.
 // The specific cipher types makes it possible to use Copy to optimize cipher
-// initialization, but do this AFTER evaluation.
+// initialization.
 
 func newBlowFishCipher(key []byte) (cipher.Block, error) {
 	return blowfish.NewCipher(key)
@@ -200,6 +200,16 @@ func (c *Cipher) Copy() *Cipher {
 	// This optimization maybe not necessary. But without this function, we
 	// need to maintain a table cache for newTableCipher and use lock to
 	// protect concurrent access to that cache.
+
+	// AES and DES ciphers does not return specific types, so it's difficult
+	// to create copy. But their initizliation time is less than 4000ns on my
+	// 2.26 GHz Intel Core 2 Duo processor. So no need to worry.
+
+	// Currently, blow-fish and cast5 initialization cost is an order of
+	// maganitude slower than other ciphers. (I'm not sure whether this is
+	// because the current implementation is not highly optimized, or this is
+	// the nature of the algorithm.)
+
 	switch c.enc.(type) {
 	case tableCipher:
 		return c
