@@ -13,6 +13,32 @@ var errEmptyKey = errors.New("empty key")
 
 type tableCipher []byte
 
+func md5sum(d []byte) []byte {
+	h := md5.New()
+	h.Write(d)
+	return h.Sum(nil)
+}
+
+func evpBytesToKey(password string, keyLen, ivLen int) (key, iv []byte) {
+	const md5Len = 16
+
+	cnt := (keyLen+ivLen-1)/md5Len + 1
+	m := make([]byte, cnt*md5Len)
+	copy(m, md5sum([]byte(password)))
+
+	// Repeatedly call md5 until bytes generated is enough.
+	// Each call to md5 uses data: prev md5 sum + password.
+	d := make([]byte, md5Len+len(password))
+	start := 0
+	for i := 1; i < cnt; i++ {
+		start += md5Len
+		copy(d, m[start-md5Len:start])
+		copy(d[md5Len:], password)
+		copy(m[start:], md5sum(d))
+	}
+	return m[:keyLen], m[keyLen : keyLen+ivLen]
+}
+
 func (tbl tableCipher) XORKeyStream(dst, src []byte) {
 	for i := 0; i < len(src); i++ {
 		dst[i] = tbl[src[i]]
@@ -20,15 +46,13 @@ func (tbl tableCipher) XORKeyStream(dst, src []byte) {
 }
 
 // NewTableCipher creates a new table based cipher.
-func newTableCipher(key string) (enc, dec tableCipher) {
+func newTableCipher(password string) (enc, dec tableCipher) {
 	const tbl_size = 256
 	enc = make([]byte, tbl_size)
 	dec = make([]byte, tbl_size)
 	table := make([]uint64, tbl_size)
 
-	h := md5.New()
-	h.Write([]byte(key))
-	s := h.Sum(nil)
+	s := md5sum([]byte(password))
 
 	var a uint64
 	buf := bytes.NewBuffer(s)
@@ -51,10 +75,9 @@ func newTableCipher(key string) (enc, dec tableCipher) {
 	return enc, dec
 }
 
-func newRC4Cipher(key string) (enc, dec cipher.Stream, err error) {
-	h := md5.New()
-	h.Write([]byte(key))
-	rc4Enc, err := rc4.NewCipher(h.Sum(nil))
+func newRC4Cipher(password string) (enc, dec cipher.Stream, err error) {
+	key := md5sum([]byte(password))
+	rc4Enc, err := rc4.NewCipher(key)
 	if err != nil {
 		return
 	}
