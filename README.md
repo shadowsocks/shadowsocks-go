@@ -10,7 +10,7 @@ The protocol is compatible with the origin shadowsocks (if both have been upgrad
 
 # Install
 
-Compiled client binaries are provided on [google code](http://code.google.com/p/shadowsocks-go/downloads/list). (Compiled with cgo disabled.)
+Compiled client binaries can be download [here](http://dl.chenyufei.info/shadowsocks/). (All compiled with cgo disabled, except the mac version.)
 
 You can also install from source (assume you have go installed):
 
