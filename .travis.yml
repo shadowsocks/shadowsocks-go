@@ -1,9 +1,9 @@
 language: go
 install:
   - go get github.com/cyfdecyf/leakybuf
-  - mkdir -p $GOPATH/src/github.com/shadowsocks/shadowsocks-go/shadowsocks
-  - mv * $GOPATH/src/github.com/shadowsocks/shadowsocks-go
-  - pushd $GOPATH/src/github.com/shadowsocks/shadowsocks-go
+  - go get code.google.com/p/go.crypto/blowfish
+  - go get code.google.com/p/go.crypto/cast5
+  - pushd $TRAVIS_BUILD_DIR
   - go install ./cmd/shadowsocks-local
   - go install ./cmd/shadowsocks-server
   - popd
