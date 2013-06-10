@@ -89,12 +89,6 @@ func newRC4Cipher(key []byte) (enc, dec cipher.Stream, err error) {
 	return rc4Enc, &rc4Dec, nil
 }
 
-type cipherInfo struct {
-	keyLen   int
-	ivLen    int
-	newBlock func([]byte) (cipher.Block, error)
-}
-
 // Ciphers from go.crypto has NewCipher returning specific type of cipher
 // instead of cipher.Block, so we need to have the following adapter
 // functions.
@@ -109,7 +103,13 @@ func newCast5Cipher(key []byte) (cipher.Block, error) {
 	return cast5.NewCipher(key)
 }
 
-var cipherMethod = map[string]cipherInfo{
+type cipherInfo struct {
+	keyLen   int
+	ivLen    int
+	newBlock func([]byte) (cipher.Block, error)
+}
+
+var cipherMethod = map[string]*cipherInfo{
 	"aes-128-cfb": {16, 16, aes.NewCipher},
 	"aes-192-cfb": {24, 16, aes.NewCipher},
 	"aes-256-cfb": {32, 16, aes.NewCipher},
@@ -149,7 +149,7 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 
 	key := evpBytesToKey(password, mi.keyLen)
 
-	c = &Cipher{key: key, info: &mi}
+	c = &Cipher{key: key, info: mi}
 
 	if mi.newBlock == nil {
 		if method == "" {
