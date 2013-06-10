@@ -8,6 +8,6 @@ install:
   - go install ./cmd/shadowsocks-server
   - popd
 script:
-  - pushd $GOPATH/src/github.com/shadowsocks/shadowsocks-go
-  - PATH=$PATH:$GOPATH/bin/ bash -x ./script/test.sh
+  - pushd $TRAVIS_BUILD_DIR
+  - PATH=$PATH:$HOME/gopath/bin bash -x ./script/test.sh
   - popd
