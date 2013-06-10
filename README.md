@@ -8,6 +8,8 @@ The protocol is compatible with the origin shadowsocks (if both have been upgrad
 
 **Note `server_password` option syntax changed in 0.6.2, the client now connects to servers in the order specified in the config.**
 
+**Please develop on the latest develop branch if you want to send pull request.**
+
 # Install
 
 Compiled client binaries can be download [here](http://dl.chenyufei.info/shadowsocks/). (All compiled with cgo disabled, except the mac version.)
