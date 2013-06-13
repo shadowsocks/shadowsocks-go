@@ -224,6 +224,4 @@ func (c *Cipher) Copy() *Cipher {
 		nc.dec = nil
 		return &nc
 	}
-	// should not reach here, keep it to make go 1.0.x compiler happy
-	return nil
 }

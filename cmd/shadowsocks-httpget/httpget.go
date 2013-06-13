@@ -49,7 +49,7 @@ func doOneRequest(client *http.Client, uri string, buf []byte) (err error) {
 	return
 }
 
-func get(connid int, uri, serverAddr string, rawAddr []byte, cipher ss.Cipher, done chan []time.Duration) {
+func get(connid int, uri, serverAddr string, rawAddr []byte, cipher *ss.Cipher, done chan []time.Duration) {
 	reqDone := 0
 	reqTime := make([]time.Duration, config.nreq)
 	defer func() {
@@ -96,6 +96,10 @@ func main() {
 
 	runtime.GOMAXPROCS(config.core)
 	uri := flag.Arg(0)
+	if strings.HasPrefix(uri, "https://") {
+		fmt.Println("https not supported")
+		os.Exit(1)
+	}
 	if !strings.HasPrefix(uri, "http://") {
 		uri = "http://" + uri
 	}
@@ -122,7 +126,6 @@ func main() {
 	rawAddr, err := ss.RawAddr(host)
 	if err != nil {
 		panic("Error getting raw address.")
-		return
 	}
 
 	done := make(chan []time.Duration)
