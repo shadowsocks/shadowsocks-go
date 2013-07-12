@@ -68,6 +68,14 @@ test_server_local_pair() {
     echo "============================================================"
     echo "server: $SERVER, local: $LOCAL"
     echo "============================================================"
+
+    local url
+    if [[ -z "$TRAVIS" ]]; then
+        url="www.baidu.com"
+    else
+        # on travis
+        url="www.google.com"
+    fi
     test_shadowsocks baidu.com table
     test_shadowsocks baidu.com rc4
     test_shadowsocks baidu.com aes-128-cfb

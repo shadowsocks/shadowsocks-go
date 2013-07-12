@@ -1,6 +1,6 @@
 # shadowsocks-go
 
-Current version: 1.1 [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go)
+Current version: 1.1.1 [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go)
 
 shadowsocks-go is a lightweight tunnel proxy which can help you get through firewalls. It is a port of [shadowsocks](https://github.com/clowwindy/shadowsocks).
 
@@ -35,7 +35,7 @@ Configuration file is in json format and has the same syntax with [shadowsocks-n
 server          your server ip or hostname
 server_port     server port
 local_port      local socks5 proxy port
-method          encryption method, null by default, or use any of the following:
+method          encryption method, null by default, the following methods are supported:
                     aes-128-cfb, aes-192-cfb, aes-256-cfb, bf-cfb, cast5-cfb, des-cfb, rc4
 password        a password used to encrypt transfer
 timeout         server option, in seconds
@@ -49,17 +49,26 @@ On client, run `shadowsocks-local`. Change proxy settings of your browser to
 SOCKS5 127.0.0.1:local_port
 ```
 
+## About encryption methods
+
+AES is recommended for shadowsocks-go. ([Intel AES Instruction Set](http://en.wikipedia.org/wiki/AES_instruction_set) will be used if available and can make encryption/decryption fast.)
+
+**rc4 and table encryption methods are deprecated because they are not secure**.
+
 ## Command line options
 
 Command line options can override settings from configuration files. Use `-h` option to see all available options.
 
 ```
-shadowsocks-local -s server_name -p server_port -l local_port -k password -m rc4 -c config.json
-shadowsocks-server -p server_port -k password -t timeout -m rc4 -c config.json
+shadowsocks-local -s server_address -p server_port -k password
+    -m rc4 -c config.json
+    -b local_address -l local_port
+shadowsocks-server -p server_port -k password
+    -m rc4 -c config.json
+    -t timeout
 ```
 
 Use `-d` option to enable debug message.
-
 
 ## Use multiple servers on client
 

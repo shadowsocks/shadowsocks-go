@@ -1,4 +1,6 @@
 language: go
+go:
+  - 1.1
 install:
   - go get github.com/cyfdecyf/leakybuf
   - go get code.google.com/p/go.crypto/blowfish

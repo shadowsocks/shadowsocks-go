@@ -3,6 +3,5 @@
 		"8387": "foobar",
 		"8388": "barfoo"
 	},
-	"timeout": 60,
-	"cache_enctable": true
+	"timeout": 600,
 }
