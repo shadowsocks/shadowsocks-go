@@ -320,12 +320,12 @@ func handleConnection(conn net.Conn) {
 	debug.Println("closed connection to", addr)
 }
 
-func run(port string) {
-	ln, err := net.Listen("tcp", ":"+port)
+func run(listenAddr string) {
+	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("starting local socks5 server at port %v ...\n", port)
+	log.Printf("starting local socks5 server at %v ...\n", listenAddr)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -344,13 +344,14 @@ func enoughOptions(config *ss.Config) bool {
 func main() {
 	log.SetOutput(os.Stdout)
 
-	var configFile, cmdServer string
+	var configFile, cmdServer, cmdLocal string
 	var cmdConfig ss.Config
 	var printVer bool
 
 	flag.BoolVar(&printVer, "version", false, "print version")
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
 	flag.StringVar(&cmdServer, "s", "", "server address")
+	flag.StringVar(&cmdLocal, "b", "", "local address, listen only to this address if specified")
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
@@ -405,5 +406,5 @@ func main() {
 
 	parseServerConfig(config)
 
-	run(strconv.Itoa(config.LocalPort))
+	run(cmdLocal + ":" + strconv.Itoa(config.LocalPort))
 }
