@@ -5,7 +5,7 @@ import (
 )
 
 func TestConfigJson(t *testing.T) {
-	config, err := ParseConfig("testdata/config.json")
+	config, err := ParseConfig("../config.json")
 	if err != nil {
 		t.Fatal("error parsing config.json:", err)
 	}
@@ -13,8 +13,11 @@ func TestConfigJson(t *testing.T) {
 	if config.Password != "barfoo!" {
 		t.Error("wrong password from config")
 	}
-	if config.Timeout != 0 {
-		t.Error("tiemout should default to 0")
+	if config.Timeout != 600 {
+		t.Error("timeout should be 600")
+	}
+	if config.Method != "aes-256-cfb" {
+		t.Error("method should be aes-256-cfb")
 	}
 	srvArr := config.GetServerArray()
 	if len(srvArr) != 1 || srvArr[0] != "127.0.0.1" {
@@ -85,7 +88,7 @@ func TestClientMultiServerArray(t *testing.T) {
 	if sv[1] != "barfoo" {
 		t.Error("server_password 2nd server passwd wrong")
 	}
-	if sv[2] != "rc4" {
+	if sv[2] != "aes-256-cfb" {
 		t.Error("server_password 2nd server enc method wrong")
 	}
 }
