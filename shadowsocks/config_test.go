@@ -25,7 +25,7 @@ func TestConfigJson(t *testing.T) {
 func TestServerMultiPort(t *testing.T) {
 	config, err := ParseConfig("../sample-config/server-multi-port.json")
 	if err != nil {
-		t.Fatal("error parsing multi server-multi-port.json:", err)
+		t.Fatal("error parsing ../sample-config/server-multi-port.json:", err)
 	}
 
 	if config.PortPassword["8387"] != "foobar" {
