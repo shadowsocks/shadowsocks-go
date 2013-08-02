@@ -91,16 +91,12 @@ LOCAL="shadowsocks-local"
 test_server_local_pair
 
 if [[ -n $SS_NODEJS ]]; then
-    pushd $SS_NODEJS
-
-    SERVER="node server.js"
+    SERVER="ssserver"
     LOCAL="shadowsocks-local"
     test_server_local_pair
 
     SERVER="shadowsocks-server"
-    LOCAL="node local.js"
+    LOCAL="sslocal"
     test_server_local_pair
-
-    popd $SS_NODEJS
 fi
 

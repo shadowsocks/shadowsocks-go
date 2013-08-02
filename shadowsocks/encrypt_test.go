@@ -163,30 +163,30 @@ func benchmarkCipherInit(b *testing.B, ci *cipherInfo) {
 
 func BenchmarkAES128Init(b *testing.B) {
 	ci := cipherMethod["aes-128-cfb"]
-	benchmarkCipherInit(b, &ci)
+	benchmarkCipherInit(b, ci)
 }
 
 func BenchmarkAES192Init(b *testing.B) {
 	ci := cipherMethod["aes-192-cfb"]
-	benchmarkCipherInit(b, &ci)
+	benchmarkCipherInit(b, ci)
 }
 
 func BenchmarkAES256Init(b *testing.B) {
 	ci := cipherMethod["aes-256-cfb"]
-	benchmarkCipherInit(b, &ci)
+	benchmarkCipherInit(b, ci)
 }
 
 func BenchmarkBlowFishInit(b *testing.B) {
 	ci := cipherMethod["bf-cfb"]
-	benchmarkCipherInit(b, &ci)
+	benchmarkCipherInit(b, ci)
 }
 
 func BenchmarkCast5Init(b *testing.B) {
 	ci := cipherMethod["bf-cfb"]
-	benchmarkCipherInit(b, &ci)
+	benchmarkCipherInit(b, ci)
 }
 
 func BenchmarkDESInit(b *testing.B) {
 	ci := cipherMethod["des-cfb"]
-	benchmarkCipherInit(b, &ci)
+	benchmarkCipherInit(b, ci)
 }
