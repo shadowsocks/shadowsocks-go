@@ -84,18 +84,23 @@ func (c Conn) Read(b []byte) (n int, err error) {
 }
 
 func (c Conn) Write(b []byte) (n int, err error) {
+	var cipherData []byte
+	dataStart := 0
 	if c.enc == nil {
 		var iv []byte
 		iv, err = c.initEncrypt()
 		if err != nil {
 			return
 		}
-		if _, err = c.Conn.Write(iv); err != nil {
-			return
-		}
+		// Put initialization vector in buffer, do a single write to send both
+		// iv and data.
+		cipherData = make([]byte, len(b)+len(iv))
+		copy(cipherData, iv)
+		dataStart = len(iv)
+	} else {
+		cipherData = make([]byte, len(b))
 	}
-	cipherData := make([]byte, len(b))
-	c.encrypt(cipherData, b)
+	c.encrypt(cipherData[dataStart:], b)
 	n, err = c.Conn.Write(cipherData)
 	return
 }
