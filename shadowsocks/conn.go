@@ -65,7 +65,7 @@ func Dial(addr, server string, cipher *Cipher) (c *Conn, err error) {
 	return DialWithRawAddr(ra, server, cipher)
 }
 
-func (c Conn) Read(b []byte) (n int, err error) {
+func (c *Conn) Read(b []byte) (n int, err error) {
 	if c.dec == nil {
 		iv := make([]byte, c.info.ivLen)
 		if _, err = io.ReadFull(c.Conn, iv); err != nil {
@@ -83,7 +83,7 @@ func (c Conn) Read(b []byte) (n int, err error) {
 	return
 }
 
-func (c Conn) Write(b []byte) (n int, err error) {
+func (c *Conn) Write(b []byte) (n int, err error) {
 	var cipherData []byte
 	dataStart := 0
 	if c.enc == nil {
