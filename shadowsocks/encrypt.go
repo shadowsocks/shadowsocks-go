@@ -117,10 +117,13 @@ var cipherMethod = map[string]*cipherInfo{
 	"cast5-cfb":   {16, 8, newCast5Cipher},
 	"des-cfb":     {8, 8, des.NewCipher},
 	"rc4":         {16, 0, nil},
-	"":            {16, 0, nil}, // table encryption
+	"table":       {16, 0, nil},
 }
 
 func CheckCipherMethod(method string) error {
+	if method == "" {
+		method = "table"
+	}
 	_, ok := cipherMethod[method]
 	if !ok {
 		return errors.New("Unsupported encryption method: " + method)
@@ -142,6 +145,9 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 	if password == "" {
 		return nil, errEmptyPassword
 	}
+	if method == "" {
+		method = "table"
+	}
 	mi, ok := cipherMethod[method]
 	if !ok {
 		return nil, errors.New("Unsupported encryption method: " + method)
@@ -152,7 +158,7 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 	c = &Cipher{key: key, info: mi}
 
 	if mi.newBlock == nil {
-		if method == "" {
+		if method == "table" {
 			c.enc, c.dec = newTableCipher(key)
 		} else if method == "rc4" {
 			c.enc, c.dec, err = newRC4Cipher(key)
