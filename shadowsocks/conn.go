@@ -2,7 +2,6 @@ package shadowsocks
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -21,13 +20,11 @@ func NewConn(cn net.Conn, cipher *Cipher) *Conn {
 func RawAddr(addr string) (buf []byte, err error) {
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
-		return nil, errors.New(
-			fmt.Sprintf("shadowsocks: address error %s %v", addr, err))
+		return nil, fmt.Errorf("shadowsocks: address error %s %v", addr, err)
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return nil, errors.New(
-			fmt.Sprintf("shadowsocks: invalid port %s", addr))
+		return nil, fmt.Errorf("shadowsocks: invalid port %s", addr)
 	}
 
 	hostLen := len(host)
