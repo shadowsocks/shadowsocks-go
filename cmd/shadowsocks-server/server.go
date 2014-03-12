@@ -57,7 +57,7 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	case typeDm:
 		reqLen = int(buf[idDmLen]) + lenDmBase
 	default:
-		err = errors.New(fmt.Sprintf("addr type %d not supported", buf[idType]))
+		err = fmt.Errorf("addr type %d not supported", buf[idType])
 		return
 	}
 
