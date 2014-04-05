@@ -51,9 +51,9 @@ SOCKS5 127.0.0.1:local_port
 
 ## About encryption methods
 
-AES is recommended for shadowsocks-go. ([Intel AES Instruction Set](http://en.wikipedia.org/wiki/AES_instruction_set) will be used if available and can make encryption/decryption fast.)
+AES is recommended for shadowsocks-go. [Intel AES Instruction Set](http://en.wikipedia.org/wiki/AES_instruction_set) will be used if available and can make encryption/decryption very fast. To be more specific, **`aes-128-cfb` is recommended as it is faster and [secure enough](https://www.schneier.com/blog/archives/2009/07/another_new_aes.html)**.
 
-**rc4 and table encryption methods are deprecated because they are not secure**.
+**rc4 and table encryption methods are deprecated because they are not secure.**
 
 ## Command line options
 

@@ -1,7 +1,7 @@
 {
-	"local_port":1081,
+	"local_port": 1081,
 	"server_password": [
 		["127.0.0.1:8387", "foobar"],
-		["127.0.0.1:8388", "barfoo", "aes-256-cfb"]
+		["127.0.0.1:8388", "barfoo", "aes-128-cfb"]
 	]
 }

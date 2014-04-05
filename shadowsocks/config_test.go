@@ -16,8 +16,8 @@ func TestConfigJson(t *testing.T) {
 	if config.Timeout != 600 {
 		t.Error("timeout should be 600")
 	}
-	if config.Method != "aes-256-cfb" {
-		t.Error("method should be aes-256-cfb")
+	if config.Method != "aes-128-cfb" {
+		t.Error("method should be aes-128-cfb")
 	}
 	srvArr := config.GetServerArray()
 	if len(srvArr) != 1 || srvArr[0] != "127.0.0.1" {
@@ -88,7 +88,7 @@ func TestClientMultiServerArray(t *testing.T) {
 	if sv[1] != "barfoo" {
 		t.Error("server_password 2nd server passwd wrong")
 	}
-	if sv[2] != "aes-256-cfb" {
+	if sv[2] != "aes-128-cfb" {
 		t.Error("server_password 2nd server enc method wrong")
 	}
 }
