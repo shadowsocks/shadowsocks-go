@@ -61,7 +61,10 @@ test_shadowsocks() {
 
     # Wait server and client finish startup.
     sleeptime=0.1
-    if echo $SERVER $LOCAL | grep 'py'; then
+    if [ -n "$TRAVIS" ]; then
+        # On Travis we need to wait a little longer.
+        sleeptime=1
+    elif echo $SERVER $LOCAL | grep 'py'; then
         # The python version is slow to start.
         if [[ $method == "table" ]]; then
             sleeptime=2
@@ -69,6 +72,7 @@ test_shadowsocks() {
             sleeptime=0.5
         fi
     fi
+    echo $sleeptime
     sleep $sleeptime
 
     for i in {1..3}; do
