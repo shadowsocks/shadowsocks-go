@@ -43,19 +43,19 @@ build() {
     popd
 }
 
-#build darwin amd64 mac64 local
-#build linux amd64 linux64 local
-#build linux 386 linux32 local
-#build windows amd64 win64 local
-#build windows 386 win32 local
+build darwin amd64 mac64 local
+build linux amd64 linux64 local
+build linux 386 linux32 local
+build windows amd64 win64 local
+build windows 386 win32 local
 
-#build linux amd64 linux64 server
-#build linux 386 linux32 server
-#build darwin amd64 mac64 server
-#build windows amd64 win64 server
-#build windows 386 win32 server
+build linux amd64 linux64 server
+build linux 386 linux32 server
+build darwin amd64 mac64 server
+build windows amd64 win64 server
+build windows 386 win32 server
 
-script/createdeb.sh amd64
-script/createdeb.sh i386
-mv shadowsocks-go_$version-1-*.deb bin/
-rm -rf shadowsocks-go_$version-1*
+#script/createdeb.sh amd64
+#script/createdeb.sh i386
+#mv shadowsocks-go_$version-1-*.deb bin/
+#rm -rf shadowsocks-go_$version-1*
