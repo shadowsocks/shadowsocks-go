@@ -96,7 +96,8 @@ const (
 	Encrypt
 )
 
-func newStream(block cipher.Block, err error, key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
+func newStream(block cipher.Block, err error, key, iv []byte,
+	doe DecOrEnc) (cipher.Stream, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +128,15 @@ func newCast5Stream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
 	return newStream(block, err, key, iv, doe)
 }
 
+func newRC4MD5Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
+	h := md5.New()
+	h.Write(key)
+	h.Write(iv)
+	rc4key := h.Sum(nil)
+
+	return rc4.NewCipher(rc4key)
+}
+
 type cipherInfo struct {
 	keyLen    int
 	ivLen     int
@@ -137,9 +147,10 @@ var cipherMethod = map[string]*cipherInfo{
 	"aes-128-cfb": {16, 16, newAESStream},
 	"aes-192-cfb": {24, 16, newAESStream},
 	"aes-256-cfb": {32, 16, newAESStream},
+	"des-cfb":     {8, 8, newDESStream},
 	"bf-cfb":      {16, 8, newBlowFishStream},
 	"cast5-cfb":   {16, 8, newCast5Stream},
-	"des-cfb":     {8, 8, newDESStream},
+	"rc4-md5":     {16, 16, newRC4MD5Stream},
 	"rc4":         {16, 0, nil},
 	"table":       {16, 0, nil},
 }
