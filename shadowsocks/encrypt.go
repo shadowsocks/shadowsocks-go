@@ -89,38 +89,76 @@ func newRC4Cipher(key []byte) (enc, dec cipher.Stream, err error) {
 	return rc4Enc, &rc4Dec, nil
 }
 
-// Ciphers from go.crypto has NewCipher returning specific type of cipher
-// instead of cipher.Block, so we need to have the following adapter
-// functions.
-// The specific cipher types makes it possible to use Copy to optimize cipher
-// initialization.
+type DecOrEnc int
 
-func newBlowFishCipher(key []byte) (cipher.Block, error) {
-	return blowfish.NewCipher(key)
+const (
+	Decrypt DecOrEnc = iota
+	Encrypt
+)
+
+func newStream(block cipher.Block, err error, key, iv []byte,
+	doe DecOrEnc) (cipher.Stream, error) {
+	if err != nil {
+		return nil, err
+	}
+	if doe == Encrypt {
+		return cipher.NewCFBEncrypter(block, iv), nil
+	} else {
+		return cipher.NewCFBDecrypter(block, iv), nil
+	}
 }
 
-func newCast5Cipher(key []byte) (cipher.Block, error) {
-	return cast5.NewCipher(key)
+func newAESStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
+	block, err := aes.NewCipher(key)
+	return newStream(block, err, key, iv, doe)
+}
+
+func newDESStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
+	block, err := des.NewCipher(key)
+	return newStream(block, err, key, iv, doe)
+}
+
+func newBlowFishStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
+	block, err := blowfish.NewCipher(key)
+	return newStream(block, err, key, iv, doe)
+}
+
+func newCast5Stream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
+	block, err := cast5.NewCipher(key)
+	return newStream(block, err, key, iv, doe)
+}
+
+func newRC4MD5Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
+	h := md5.New()
+	h.Write(key)
+	h.Write(iv)
+	rc4key := h.Sum(nil)
+
+	return rc4.NewCipher(rc4key)
 }
 
 type cipherInfo struct {
-	keyLen   int
-	ivLen    int
-	newBlock func([]byte) (cipher.Block, error)
+	keyLen    int
+	ivLen     int
+	newStream func(key, iv []byte, doe DecOrEnc) (cipher.Stream, error)
 }
 
 var cipherMethod = map[string]*cipherInfo{
-	"aes-128-cfb": {16, 16, aes.NewCipher},
-	"aes-192-cfb": {24, 16, aes.NewCipher},
-	"aes-256-cfb": {32, 16, aes.NewCipher},
-	"bf-cfb":      {16, 8, newBlowFishCipher},
-	"cast5-cfb":   {16, 8, newCast5Cipher},
-	"des-cfb":     {8, 8, des.NewCipher},
+	"aes-128-cfb": {16, 16, newAESStream},
+	"aes-192-cfb": {24, 16, newAESStream},
+	"aes-256-cfb": {32, 16, newAESStream},
+	"des-cfb":     {8, 8, newDESStream},
+	"bf-cfb":      {16, 8, newBlowFishStream},
+	"cast5-cfb":   {16, 8, newCast5Stream},
+	"rc4-md5":     {16, 16, newRC4MD5Stream},
 	"rc4":         {16, 0, nil},
-	"":            {16, 0, nil}, // table encryption
+	"table":       {16, 0, nil},
 }
 
 func CheckCipherMethod(method string) error {
+	if method == "" {
+		method = "table"
+	}
 	_, ok := cipherMethod[method]
 	if !ok {
 		return errors.New("Unsupported encryption method: " + method)
@@ -142,6 +180,9 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 	if password == "" {
 		return nil, errEmptyPassword
 	}
+	if method == "" {
+		method = "table"
+	}
 	mi, ok := cipherMethod[method]
 	if !ok {
 		return nil, errors.New("Unsupported encryption method: " + method)
@@ -151,8 +192,8 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 
 	c = &Cipher{key: key, info: mi}
 
-	if mi.newBlock == nil {
-		if method == "" {
+	if mi.newStream == nil {
+		if method == "table" {
 			c.enc, c.dec = newTableCipher(key)
 		} else if method == "rc4" {
 			c.enc, c.dec, err = newRC4Cipher(key)
@@ -165,26 +206,21 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 }
 
 // Initializes the block cipher with CFB mode, returns IV.
-func (c *Cipher) initEncrypt() ([]byte, error) {
-	iv := make([]byte, c.info.ivLen)
+func (c *Cipher) initEncrypt() (iv []byte, err error) {
+	iv = make([]byte, c.info.ivLen)
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		return nil, err
 	}
-	block, err := c.info.newBlock(c.key)
+	c.enc, err = c.info.newStream(c.key, iv, Encrypt)
 	if err != nil {
 		return nil, err
 	}
-	c.enc = cipher.NewCFBEncrypter(block, iv)
-	return iv, nil
+	return
 }
 
-func (c *Cipher) initDecrypt(iv []byte) error {
-	block, err := c.info.newBlock(c.key)
-	if err != nil {
-		return err
-	}
-	c.dec = cipher.NewCFBDecrypter(block, iv)
-	return nil
+func (c *Cipher) initDecrypt(iv []byte) (err error) {
+	c.dec, err = c.info.newStream(c.key, iv, Decrypt)
+	return
 }
 
 func (c *Cipher) encrypt(dst, src []byte) {

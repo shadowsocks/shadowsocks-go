@@ -1,6 +1,6 @@
 # shadowsocks-go
 
-Current version: 1.1.1 [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go)
+Current version: 1.1.2 [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go)
 
 shadowsocks-go is a lightweight tunnel proxy which can help you get through firewalls. It is a port of [shadowsocks](https://github.com/clowwindy/shadowsocks).
 
@@ -23,7 +23,7 @@ go get github.com/shadowsocks/shadowsocks-go/cmd/shadowsocks-server
 go get github.com/shadowsocks/shadowsocks-go/cmd/shadowsocks-local
 ```
 
-It's recommend to disable cgo when compiling shadowsocks-go. This will prevent the go runtime from creating too many threads for dns lookup.
+It's recommended to disable cgo when compiling shadowsocks-go. This will prevent the go runtime from creating too many threads for dns lookup.
 
 # Usage
 
@@ -35,8 +35,8 @@ Configuration file is in json format and has the same syntax with [shadowsocks-n
 server          your server ip or hostname
 server_port     server port
 local_port      local socks5 proxy port
-method          encryption method, null by default, the following methods are supported:
-                    aes-128-cfb, aes-192-cfb, aes-256-cfb, bf-cfb, cast5-cfb, des-cfb, rc4
+method          encryption method, null by default (table), the following methods are supported:
+                    aes-128-cfb, aes-192-cfb, aes-256-cfb, bf-cfb, cast5-cfb, des-cfb, rc4-md5, rc4, table
 password        a password used to encrypt transfer
 timeout         server option, in seconds
 ```
@@ -51,9 +51,9 @@ SOCKS5 127.0.0.1:local_port
 
 ## About encryption methods
 
-AES is recommended for shadowsocks-go. ([Intel AES Instruction Set](http://en.wikipedia.org/wiki/AES_instruction_set) will be used if available and can make encryption/decryption fast.)
+AES is recommended for shadowsocks-go. [Intel AES Instruction Set](http://en.wikipedia.org/wiki/AES_instruction_set) will be used if available and can make encryption/decryption very fast. To be more specific, **`aes-128-cfb` is recommended as it is faster and [secure enough](https://www.schneier.com/blog/archives/2009/07/another_new_aes.html)**.
 
-**rc4 and table encryption methods are deprecated because they are not secure**.
+**rc4 and table encryption methods are deprecated because they are not secure.**
 
 ## Command line options
 
@@ -61,10 +61,10 @@ Command line options can override settings from configuration files. Use `-h` op
 
 ```
 shadowsocks-local -s server_address -p server_port -k password
-    -m rc4 -c config.json
+    -m aes-128-cfb -c config.json
     -b local_address -l local_port
 shadowsocks-server -p server_port -k password
-    -m rc4 -c config.json
+    -m aes-128-cfb -c config.json
     -t timeout
 ```
 

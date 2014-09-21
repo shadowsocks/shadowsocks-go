@@ -2,7 +2,6 @@ package shadowsocks
 
 import (
 	// "io"
-	"github.com/cyfdecyf/leakybuf"
 	"net"
 	"time"
 )
@@ -21,7 +20,7 @@ func SetReadTimeout(c net.Conn) {
 const bufSize = 4096
 const nBuf = 2048
 
-var pipeBuf = leakybuf.NewLeakyBuf(nBuf, bufSize)
+var pipeBuf = NewLeakyBuf(nBuf, bufSize)
 
 // PipeThenClose copies data from src to dst, closes dst when done.
 func PipeThenClose(src, dst net.Conn, timeoutOpt int) {

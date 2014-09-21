@@ -2,7 +2,6 @@ package shadowsocks
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -21,13 +20,11 @@ func NewConn(cn net.Conn, cipher *Cipher) *Conn {
 func RawAddr(addr string) (buf []byte, err error) {
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
-		return nil, errors.New(
-			fmt.Sprintf("shadowsocks: address error %s %v", addr, err))
+		return nil, fmt.Errorf("shadowsocks: address error %s %v", addr, err)
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return nil, errors.New(
-			fmt.Sprintf("shadowsocks: invalid port %s", addr))
+		return nil, fmt.Errorf("shadowsocks: invalid port %s", addr)
 	}
 
 	hostLen := len(host)
@@ -65,7 +62,7 @@ func Dial(addr, server string, cipher *Cipher) (c *Conn, err error) {
 	return DialWithRawAddr(ra, server, cipher)
 }
 
-func (c Conn) Read(b []byte) (n int, err error) {
+func (c *Conn) Read(b []byte) (n int, err error) {
 	if c.dec == nil {
 		iv := make([]byte, c.info.ivLen)
 		if _, err = io.ReadFull(c.Conn, iv); err != nil {
@@ -83,19 +80,24 @@ func (c Conn) Read(b []byte) (n int, err error) {
 	return
 }
 
-func (c Conn) Write(b []byte) (n int, err error) {
+func (c *Conn) Write(b []byte) (n int, err error) {
+	var cipherData []byte
+	dataStart := 0
 	if c.enc == nil {
 		var iv []byte
 		iv, err = c.initEncrypt()
 		if err != nil {
 			return
 		}
-		if _, err = c.Conn.Write(iv); err != nil {
-			return
-		}
+		// Put initialization vector in buffer, do a single write to send both
+		// iv and data.
+		cipherData = make([]byte, len(b)+len(iv))
+		copy(cipherData, iv)
+		dataStart = len(iv)
+	} else {
+		cipherData = make([]byte, len(b))
 	}
-	cipherData := make([]byte, len(b))
-	c.encrypt(cipherData, b)
+	c.encrypt(cipherData[dataStart:], b)
 	n, err = c.Conn.Write(cipherData)
 	return
 }

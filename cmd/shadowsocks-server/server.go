@@ -57,7 +57,7 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	case typeDm:
 		reqLen = int(buf[idDmLen]) + lenDmBase
 	default:
-		err = errors.New(fmt.Sprintf("addr type %d not supported", buf[idType]))
+		err = fmt.Errorf("addr type %d not supported", buf[idType])
 		return
 	}
 
@@ -322,7 +322,7 @@ func main() {
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.Timeout, "t", 60, "connection timeout (in seconds)")
-	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, use empty string or rc4")
+	flag.StringVar(&cmdConfig.Method, "m", "aes-256-cfb", "encryption method")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 

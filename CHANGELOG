@@ -1,3 +1,7 @@
+1.1.2 (2014-09-21)
+    * Support new encryption method "rc4-md5"
+    * Use aes-256-cfb as default encryption method for command line app
+
 1.1.1 (2013-07-12)
     * Add -b option to limit listen address for client
     * Fix can't override server address on command line

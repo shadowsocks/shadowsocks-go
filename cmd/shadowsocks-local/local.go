@@ -355,7 +355,7 @@ func main() {
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
-	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, use empty string or rc4")
+	flag.StringVar(&cmdConfig.Method, "m", "aes-256-cfb", "encryption method")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
 	flag.Parse()
