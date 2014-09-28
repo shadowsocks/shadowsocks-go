@@ -1,16 +1,30 @@
 #!/bin/bash
 
+# Use [ -n "$TRAVIS" ] to test for running on Travis-CI.
+
 # Run in the scripts directory.
 cd "$( dirname "${BASH_SOURCE[0]}" )"
 
-OPTION="-p 8389 -k foobar"
 LOCAL_PORT="1090"
+SERVER_PORT="8389"
+OPTION="-p $SERVER_PORT -k foobar"
 SOCKS="127.0.0.1:$LOCAL_PORT"
 HTTP_PORT="8123"
+
+wait_server() {
+    local port
+    port=$1
+    for i in {1..20}; do
+        # sleep first because this maybe called immediately after server start
+        sleep 0.1
+        nc -z -w 4 127.0.0.1 $port && break
+    done
+}
 
 start_http_server() {
     go build http.go
     ./http $HTTP_PORT &
+    wait_server $HTTP_PORT
     http_pid=$!
 }
 
@@ -20,6 +34,8 @@ stop_http_server() {
 
 test_get() {
     local url
+    local target
+    local code
     url=$1
     target=$2
     code=$3
@@ -56,24 +72,11 @@ test_shadowsocks() {
 
     $SERVER $OPTION -m "$method" &
     server_pid=$!
+    wait_server $SERVER_PORT
+
     $LOCAL $OPTION -s 127.0.0.1 -l $LOCAL_PORT -m "$method" &
     local_pid=$!
-
-    # Wait server and client finish startup.
-    sleeptime=0.1
-    if [ -n "$TRAVIS" ]; then
-        # On Travis we need to wait a little longer.
-        sleeptime=1
-    elif echo $SERVER $LOCAL | grep 'py'; then
-        # The python version is slow to start.
-        if [[ $method == "table" ]]; then
-            sleeptime=2
-        else
-            sleeptime=0.5
-        fi
-    fi
-    echo $sleeptime
-    sleep $sleeptime
+    wait_server $LOCAL_PORT
 
     for i in {1..3}; do
         if ! test_get $url "shadowsocks-go"; then
