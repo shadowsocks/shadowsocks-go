@@ -322,7 +322,7 @@ func main() {
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.Timeout, "t", 60, "connection timeout (in seconds)")
-	flag.StringVar(&cmdConfig.Method, "m", "aes-256-cfb", "encryption method")
+	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
@@ -345,6 +345,9 @@ func main() {
 		config = &cmdConfig
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
+	}
+	if config.Method == "" {
+		config.Method = "aes-256-cfb"
 	}
 	if err = ss.CheckCipherMethod(config.Method); err != nil {
 		fmt.Fprintln(os.Stderr, err)
