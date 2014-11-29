@@ -65,8 +65,13 @@ func Dial(addr, server string, cipher *Cipher) (c *Conn, err error) {
 func (c *Conn) Read(b []byte) (n int, err error) {
 	if c.dec == nil {
 		iv := make([]byte, c.info.ivLen)
-		if _, err = io.ReadFull(c.Conn, iv); err != nil {
-			return
+		var len int
+		if len, err = io.ReadFull(c.Conn, iv); err != nil {
+			if err == ErrUnexpectedEOF {
+				iv = iv[:len]
+			} else {
+				return
+			}
 		}
 		if err = c.initDecrypt(iv); err != nil {
 			return
