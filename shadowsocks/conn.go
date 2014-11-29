@@ -67,7 +67,7 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 		iv := make([]byte, c.info.ivLen)
 		var len int
 		if len, err = io.ReadFull(c.Conn, iv); err != nil {
-			if err == ErrUnexpectedEOF {
+			if err == io.ErrUnexpectedEOF {
 				iv = iv[:len]
 			} else {
 				return
