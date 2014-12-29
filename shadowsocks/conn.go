@@ -17,6 +17,109 @@ func NewConn(cn net.Conn, cipher *Cipher) *Conn {
 	return &Conn{cn, cipher}
 }
 
+type UDPConn struct {
+	net.UDPConn
+	*Cipher
+}
+
+func NewUDPConn(cn net.UDPConn, cipher *Cipher) *UDPConn {
+	return &UDPConn{cn, cipher}
+}
+
+func (c *UDPConn) getRequest() (src, dst *net.UDPAddr, extra []byte, reqLen int, req []byte, err error) {
+	var dstIP net.IP
+	const (
+		idType  = 0 // address type index
+		idIP0   = 1 // ip addres start index
+		idDmLen = 1 // domain address length index
+		idDm0   = 2 // domain address start index
+
+		typeIPv4 = 1 // type is ipv4 address
+		typeDm   = 3 // type is domain address
+		typeIPv6 = 4 // type is ipv6 address
+
+		lenIPv4   = 1 + net.IPv4len + 2 // 1addrType + ipv4 + 2port
+		lenIPv6   = 1 + net.IPv6len + 2 // 1addrType + ipv6 + 2port
+		lenDmBase = 1 + 1 + 2           // 1addrType + 1addrLen + 2port, plus addrLen
+	)
+	buf := make([]byte, 512)
+	n, src, err := c.ReadFromUDP(buf[0:])
+	if err != nil {
+		return
+	}
+	iv := buf[:c.info.ivLen]
+	if err = c.initDecrypt(iv); err != nil {
+		return
+	}
+	data := make([]byte, n - c.info.ivLen)
+	c.decrypt(data, buf[c.info.ivLen:n])
+
+	switch data[idType] {
+	case typeIPv4:
+		reqLen = lenIPv4
+	case typeIPv6:
+		reqLen = lenIPv6
+	case typeDm:
+		reqLen = int(data[idDmLen]) + lenDmBase
+	default:
+		fmt.Sprintf("addr type %d not supported", data[idType])
+		return
+	}
+	extra = data[reqLen:n - c.info.ivLen]
+	switch data[idType] {
+	case typeIPv4:
+		dstIP = net.IP(data[idIP0 : idIP0+net.IPv4len])
+	case typeIPv6:
+		dstIP = net.IP(data[idIP0 : idIP0+net.IPv6len])
+	case typeDm:
+		dstIP = net.ParseIP(string(data[idDm0 : idDm0+data[idDmLen]]))
+	}
+	dst = &net.UDPAddr{
+		IP:   dstIP,
+		Port: int(binary.BigEndian.Uint16(data[reqLen-2 : reqLen])),
+	}
+	req = data[:reqLen]
+	return
+}
+
+func (c *UDPConn) resRequest(src, dst *net.UDPAddr, extra []byte, reqLen int, req []byte) {
+	var buf [512]byte
+	remote, err := net.DialUDP("udp", nil, dst)
+	if err != nil {
+		return
+	}
+	_, err = remote.Write([]byte(extra))
+	if err != nil {
+		return
+	}
+	n, err := remote.Read(buf[0:])
+	if err != nil {
+		return
+	}
+	send := append(req, buf[0:n]...)
+	
+	var cipherData []byte
+	var iv []byte
+	iv, err = c.initEncrypt()
+	dataStart := c.info.ivLen
+	cipherData = make([]byte, n + reqLen + c.info.ivLen)
+	copy(cipherData, iv)
+	c.encrypt(cipherData[dataStart:], send)
+	_, err = c.WriteToUDP(cipherData, src)
+	if err != nil {
+		return
+	}
+	return
+}
+
+func (c *UDPConn) HandleUDPConnection()  {
+	src, dst, extra, reqLen, req, err := c.getRequest()
+	if err != nil {
+		return
+	}
+	go c.resRequest(src, dst, extra, reqLen, req)
+}
+
 func RawAddr(addr string) (buf []byte, err error) {
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
