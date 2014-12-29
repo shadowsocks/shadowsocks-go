@@ -6,6 +6,9 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"time"
+	"syscall"
+	"log"
 )
 
 type Conn struct {
@@ -26,8 +29,10 @@ func NewUDPConn(cn net.UDPConn, cipher *Cipher) *UDPConn {
 	return &UDPConn{cn, cipher}
 }
 
-func (c *UDPConn) getRequest() (src, dst *net.UDPAddr, extra []byte, reqLen int, req []byte, err error) {
+func (c *UDPConn) resRequest(n int, src *net.UDPAddr, receive []byte) {
+
 	var dstIP net.IP
+	var reqLen int
 	const (
 		idType  = 0 // address type index
 		idIP0   = 1 // ip addres start index
@@ -42,17 +47,14 @@ func (c *UDPConn) getRequest() (src, dst *net.UDPAddr, extra []byte, reqLen int,
 		lenIPv6   = 1 + net.IPv6len + 2 // 1addrType + ipv6 + 2port
 		lenDmBase = 1 + 1 + 2           // 1addrType + 1addrLen + 2port, plus addrLen
 	)
-	buf := make([]byte, 512)
-	n, src, err := c.ReadFromUDP(buf[0:])
-	if err != nil {
-		return
-	}
-	iv := buf[:c.info.ivLen]
-	if err = c.initDecrypt(iv); err != nil {
+	
+
+	iv := receive[:c.info.ivLen]
+	if err := c.initDecrypt(iv); err != nil {
 		return
 	}
 	data := make([]byte, n - c.info.ivLen)
-	c.decrypt(data, buf[c.info.ivLen:n])
+	c.decrypt(data, receive[c.info.ivLen:n])
 
 	switch data[idType] {
 	case typeIPv4:
@@ -65,42 +67,61 @@ func (c *UDPConn) getRequest() (src, dst *net.UDPAddr, extra []byte, reqLen int,
 		fmt.Sprintf("addr type %d not supported", data[idType])
 		return
 	}
-	extra = data[reqLen:n - c.info.ivLen]
+	extra := data[reqLen:n - c.info.ivLen]
 	switch data[idType] {
 	case typeIPv4:
 		dstIP = net.IP(data[idIP0 : idIP0+net.IPv4len])
 	case typeIPv6:
 		dstIP = net.IP(data[idIP0 : idIP0+net.IPv6len])
 	case typeDm:
-		dstIP = net.ParseIP(string(data[idDm0 : idDm0+data[idDmLen]]))
+		dIP, err := net.ResolveIPAddr("ip" ,string(data[idDm0 : idDm0+data[idDmLen]]))
+		if err != nil{
+			fmt.Sprintf("failed to resolve domain name: %s\n", string(data[idDm0 : idDm0+data[idDmLen]]))
+			return
+		}
+		dstIP = dIP.IP
 	}
-	dst = &net.UDPAddr{
+	req := data[:reqLen]
+	var buf [256]byte
+	remote, err := net.DialUDP("udp", nil, &net.UDPAddr{
 		IP:   dstIP,
 		Port: int(binary.BigEndian.Uint16(data[reqLen-2 : reqLen])),
-	}
-	req = data[:reqLen]
-	return
-}
-
-func (c *UDPConn) resRequest(src, dst *net.UDPAddr, extra []byte, reqLen int, req []byte) {
-	var buf [512]byte
-	remote, err := net.DialUDP("udp", nil, dst)
+	})
+	defer remote.Close()
 	if err != nil {
 		return
 	}
+	remote.SetWriteDeadline(time.Now().Add(10*time.Second))
 	_, err = remote.Write([]byte(extra))
 	if err != nil {
+		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
+			// log too many open file error
+			// EMFILE is process reaches open file limits, ENFILE is system limit
+			log.Println("write error:", err)
+		} else {
+			log.Println("error connecting to:", dstIP, err)
+		}
 		return
 	}
-	n, err := remote.Read(buf[0:])
+	remote.SetReadDeadline(time.Now().Add(10*time.Second))
+	n, err = remote.Read(buf[0:])
 	if err != nil {
+		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
+			// log too many open file error
+			// EMFILE is process reaches open file limits, ENFILE is system limit
+			log.Println("read error:", err)
+		} else {
+			log.Println("error connecting to:", dstIP, err)
+		}
 		return
 	}
 	send := append(req, buf[0:n]...)
 	
 	var cipherData []byte
-	var iv []byte
 	iv, err = c.initEncrypt()
+	if err != nil {
+		return
+	}
 	dataStart := c.info.ivLen
 	cipherData = make([]byte, n + reqLen + c.info.ivLen)
 	copy(cipherData, iv)
@@ -113,11 +134,12 @@ func (c *UDPConn) resRequest(src, dst *net.UDPAddr, extra []byte, reqLen int, re
 }
 
 func (c *UDPConn) HandleUDPConnection()  {
-	src, dst, extra, reqLen, req, err := c.getRequest()
+	buf := make([]byte, 256)
+	n, src, err := c.ReadFromUDP(buf[0:])
 	if err != nil {
 		return
 	}
-	go c.resRequest(src, dst, extra, reqLen, req)
+	go c.resRequest(n, src, buf[:n])
 }
 
 func RawAddr(addr string) (buf []byte, err error) {
