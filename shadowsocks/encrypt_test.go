@@ -155,9 +155,10 @@ func BenchmarkRC4Init(b *testing.B) {
 }
 
 func benchmarkCipherInit(b *testing.B, ci *cipherInfo) {
+	buf := make([]byte, ci.ivLen)
 	key := cipherKey[:ci.keyLen]
 	for i := 0; i < b.N; i++ {
-		ci.newBlock(key)
+		ci.newStream(key, buf, Encrypt)
 	}
 }
 
@@ -188,5 +189,10 @@ func BenchmarkCast5Init(b *testing.B) {
 
 func BenchmarkDESInit(b *testing.B) {
 	ci := cipherMethod["des-cfb"]
+	benchmarkCipherInit(b, ci)
+}
+
+func BenchmarkRC4MD5Init(b *testing.B) {
+	ci := cipherMethod["rc4-md5"]
 	benchmarkCipherInit(b, ci)
 }
