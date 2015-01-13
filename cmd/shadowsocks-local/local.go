@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
 	"math/rand"
@@ -14,6 +13,8 @@ import (
 	"path"
 	"strconv"
 	"time"
+
+	ss "github.com/tw4452852/shadowsocks-go/shadowsocks"
 )
 
 var debug ss.DebugLog
