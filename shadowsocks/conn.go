@@ -99,5 +99,8 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 	}
 	c.encrypt(cipherData[dataStart:], b)
 	n, err = c.Conn.Write(cipherData)
+	// we should deduct the initialization vecotr to prevent encounter the fake
+	// io.ErrShortWrite
+	n -= dataStart
 	return
 }
