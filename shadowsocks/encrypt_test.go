@@ -139,6 +139,10 @@ func TestDES(t *testing.T) {
 	testBlockCipher(t, "des-cfb")
 }
 
+func TestRC4MD5(t *testing.T) {
+	testBlockCipher(t, "rc4-md5")
+}
+
 var cipherKey = make([]byte, 64)
 
 func init() {
@@ -156,8 +160,9 @@ func BenchmarkRC4Init(b *testing.B) {
 
 func benchmarkCipherInit(b *testing.B, ci *cipherInfo) {
 	key := cipherKey[:ci.keyLen]
+	buf := make([]byte, ci.ivLen)
 	for i := 0; i < b.N; i++ {
-		ci.newBlock(key)
+		ci.newStream(key, buf, Encrypt)
 	}
 }
 
@@ -188,5 +193,10 @@ func BenchmarkCast5Init(b *testing.B) {
 
 func BenchmarkDESInit(b *testing.B) {
 	ci := cipherMethod["des-cfb"]
+	benchmarkCipherInit(b, ci)
+}
+
+func BenchmarkRC4MD5Init(b *testing.B) {
+	ci := cipherMethod["rc4-md5"]
 	benchmarkCipherInit(b, ci)
 }
