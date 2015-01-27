@@ -257,6 +257,30 @@ func waitSignal() {
 	}
 }
 
+func runUDP(port, password string) {
+	var cipher *ss.Cipher
+	port_i, _ := strconv.Atoi(port)
+	log.Printf("listening udp port %v\n", port)
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{
+		IP:   net.IPv6zero,
+		Port: port_i,
+	})
+	if err != nil {
+		log.Printf("error listening udp port %v: %v\n", port, err)
+		return
+	}
+	defer conn.Close()
+	cipher, err = ss.NewCipher(config.Method, password)
+	if err != nil {
+		log.Printf("Error generating cipher for udp port: %s %v\n", port, err)
+		conn.Close()
+	}
+	UDPConn := ss.NewUDPConn(*conn, cipher.Copy())
+	for {
+		UDPConn.HandleUDPConnection()
+	}
+}
+
 func run(port, password string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
@@ -316,6 +340,7 @@ func main() {
 	var cmdConfig ss.Config
 	var printVer bool
 	var core int
+	var udp bool
 
 	flag.BoolVar(&printVer, "version", false, "print version")
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
@@ -325,6 +350,7 @@ func main() {
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
+	flag.BoolVar(&udp, "u", false, "UDP Relay")
 
 	flag.Parse()
 
@@ -361,6 +387,9 @@ func main() {
 	}
 	for port, password := range config.PortPassword {
 		go run(port, password)
+		if udp == true {
+			go runUDP(port, password)
+		}
 	}
 
 	waitSignal()
