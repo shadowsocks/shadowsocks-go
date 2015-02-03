@@ -143,6 +143,10 @@ func TestRC4MD5(t *testing.T) {
 	testBlockCipher(t, "rc4-md5")
 }
 
+func TestChaCha20(t *testing.T) {
+	testBlockCipher(t, "chacha20")
+}
+
 var cipherKey = make([]byte, 64)
 
 func init() {
@@ -198,5 +202,10 @@ func BenchmarkDESInit(b *testing.B) {
 
 func BenchmarkRC4MD5Init(b *testing.B) {
 	ci := cipherMethod["rc4-md5"]
+	benchmarkCipherInit(b, ci)
+}
+
+func BenchmarkChaCha20Init(b *testing.B) {
+	ci := cipherMethod["chacha20"]
 	benchmarkCipherInit(b, ci)
 }
