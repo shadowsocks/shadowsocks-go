@@ -35,7 +35,8 @@ func PipeThenClose(src, dst net.Conn, timeoutOpt int) {
 		// read may return EOF with n > 0
 		// should always process n > 0 bytes before handling error
 		if n > 0 {
-			if _, err = dst.Write(buf[0:n]); err != nil {
+			// Note: avoid overwrite err returned by Read.
+			if _, err := dst.Write(buf[0:n]); err != nil {
 				Debug.Println("write:", err)
 				break
 			}
