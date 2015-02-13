@@ -261,7 +261,7 @@ func run(port, password string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		log.Printf("error listening port %v: %v\n", port, err)
-		return
+		os.Exit(1)
 	}
 	passwdManager.add(port, password, ln)
 	var cipher *ss.Cipher
