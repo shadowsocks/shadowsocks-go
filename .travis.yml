@@ -4,6 +4,7 @@ go:
 install:
   - go get golang.org/x/crypto/blowfish
   - go get golang.org/x/crypto/cast5
+  - go get golang.org/x/crypto/salsa20
   - go install ./cmd/shadowsocks-local
   - go install ./cmd/shadowsocks-server
 script:
