@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"golang.org/x/crypto/blowfish"
 	"golang.org/x/crypto/cast5"
+	"golang.org/x/crypto/salsa20/salsa"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/des"
@@ -137,6 +138,31 @@ func newRC4MD5Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
 	return rc4.NewCipher(rc4key)
 }
 
+type salsaStreamCipher struct {
+	nonce [8]byte
+	key [32]byte
+	counter int
+}
+
+func (c *salsaStreamCipher) XORKeyStream(dst, src []byte) {
+	var subNonce [16]byte
+	padlen := c.counter % 64
+	buf := make([]byte, padlen+len(src))
+	copy(buf[padlen:], src[:])
+	copy(subNonce[:], c.nonce[:])
+	binary.LittleEndian.PutUint64(subNonce[len(c.nonce):], uint64(c.counter / 64))
+	salsa.XORKeyStream(buf, buf, &subNonce, &c.key)
+	copy(dst, buf[padlen:])
+	c.counter += len(src)
+}
+
+func newSalsa20Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
+	var c salsaStreamCipher
+	copy(c.nonce[:], iv[:8])
+	copy(c.key[:], key[:32])
+	return &c, nil
+}
+
 type cipherInfo struct {
 	keyLen    int
 	ivLen     int
@@ -153,6 +179,7 @@ var cipherMethod = map[string]*cipherInfo{
 	"rc4-md5":     {16, 16, newRC4MD5Stream},
 	"rc4":         {16, 0, nil},
 	"table":       {16, 0, nil},
+	"salsa20":     {32, 8, newSalsa20Stream},
 }
 
 func CheckCipherMethod(method string) error {
