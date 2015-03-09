@@ -141,6 +141,10 @@ func TestDES(t *testing.T) {
 	testBlockCipher(t, "des-cfb")
 }
 
+func TestSalsa20(t *testing.T) {
+	testBlockCipher(t, "salsa20")
+}
+
 var cipherKey = make([]byte, 64)
 var cipherIv = make([]byte, 64)
 
@@ -193,5 +197,10 @@ func BenchmarkCast5Init(b *testing.B) {
 
 func BenchmarkDESInit(b *testing.B) {
 	ci := cipherMethod["des-cfb"]
+	benchmarkCipherInit(b, ci)
+}
+
+func BenchmarkSalsa20Init(b *testing.B) {
+	ci := cipherMethod["salsa20"]
 	benchmarkCipherInit(b, ci)
 }
