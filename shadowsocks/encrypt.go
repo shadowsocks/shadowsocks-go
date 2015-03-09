@@ -139,26 +139,24 @@ func newRC4MD5Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
 }
 
 type salsaStreamCipher struct {
-	nonce [8]byte
+	subNonce [16]byte
 	key [32]byte
 	counter int
 }
 
 func (c *salsaStreamCipher) XORKeyStream(dst, src []byte) {
-	var subNonce [16]byte
 	padlen := c.counter % 64
 	buf := make([]byte, padlen+len(src))
 	copy(buf[padlen:], src[:])
-	copy(subNonce[:], c.nonce[:])
-	binary.LittleEndian.PutUint64(subNonce[len(c.nonce):], uint64(c.counter / 64))
-	salsa.XORKeyStream(buf, buf, &subNonce, &c.key)
+	binary.LittleEndian.PutUint64(c.subNonce[8:], uint64(c.counter / 64))
+	salsa.XORKeyStream(buf, buf, &c.subNonce, &c.key)
 	copy(dst, buf[padlen:])
 	c.counter += len(src)
 }
 
 func newSalsa20Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
 	var c salsaStreamCipher
-	copy(c.nonce[:], iv[:8])
+	copy(c.subNonce[:8], iv[:8])
 	copy(c.key[:], key[:32])
 	return &c, nil
 }
