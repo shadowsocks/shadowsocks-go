@@ -146,10 +146,12 @@ type salsaStreamCipher struct {
 
 func (c *salsaStreamCipher) XORKeyStream(dst, src []byte) {
 	padlen := c.counter % 64
+	var nonce [16]byte
 	buf := make([]byte, padlen+len(src))
 	copy(buf[padlen:], src[:])
 	binary.LittleEndian.PutUint64(c.subNonce[8:], uint64(c.counter / 64))
-	salsa.XORKeyStream(buf, buf, &c.subNonce, &c.key)
+	copy(nonce[:], c.subNonce[:])
+	salsa.XORKeyStream(buf, buf, &nonce, &c.key)
 	copy(dst, buf[padlen:])
 	c.counter += len(src)
 }
