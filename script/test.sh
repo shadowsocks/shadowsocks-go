@@ -119,7 +119,7 @@ LOCAL="shadowsocks-local"
 test_server_local_pair
 
 if [[ -n $SS_PYTHON ]]; then
-    SERVER="$SS_PYTHON/server.py"
+    SERVER="$SS_PYTHON/server.py --forbidden-ip="
     LOCAL="shadowsocks-local"
     test_server_local_pair
 
