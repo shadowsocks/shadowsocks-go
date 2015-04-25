@@ -1,10 +1,10 @@
 package shadowsocks
 
 import (
-	"crypto/rc4"
-	"reflect"
-	"io"
 	"crypto/rand"
+	"crypto/rc4"
+	"io"
+	"reflect"
 	"testing"
 )
 
@@ -164,7 +164,8 @@ func BenchmarkRC4Init(b *testing.B) {
 	}
 }
 
-func benchmarkCipherInit(b *testing.B, ci *cipherInfo) {
+func benchmarkCipherInit(b *testing.B, method string) {
+	ci := cipherMethod[method]
 	key := cipherKey[:ci.keyLen]
 	buf := make([]byte, ci.ivLen)
 	for i := 0; i < b.N; i++ {
@@ -173,46 +174,39 @@ func benchmarkCipherInit(b *testing.B, ci *cipherInfo) {
 }
 
 func BenchmarkAES128Init(b *testing.B) {
-	ci := cipherMethod["aes-128-cfb"]
-	benchmarkCipherInit(b, ci)
+	benchmarkCipherInit(b, "aes-128-cfb")
 }
 
 func BenchmarkAES192Init(b *testing.B) {
-	ci := cipherMethod["aes-192-cfb"]
-	benchmarkCipherInit(b, ci)
+	benchmarkCipherInit(b, "aes-192-cfb")
 }
 
 func BenchmarkAES256Init(b *testing.B) {
-	ci := cipherMethod["aes-256-cfb"]
-	benchmarkCipherInit(b, ci)
+	benchmarkCipherInit(b, "aes-256-cfb")
 }
 
 func BenchmarkBlowFishInit(b *testing.B) {
-	ci := cipherMethod["bf-cfb"]
-	benchmarkCipherInit(b, ci)
+	benchmarkCipherInit(b, "bf-cfb")
 }
 
 func BenchmarkCast5Init(b *testing.B) {
-	ci := cipherMethod["bf-cfb"]
-	benchmarkCipherInit(b, ci)
+	benchmarkCipherInit(b, "cast5-cfb")
 }
 
 func BenchmarkDESInit(b *testing.B) {
-	ci := cipherMethod["des-cfb"]
-	benchmarkCipherInit(b, ci)
+	benchmarkCipherInit(b, "des-cfb")
 }
 
 func BenchmarkRC4MD5Init(b *testing.B) {
-	ci := cipherMethod["rc4-md5"]
-	benchmarkCipherInit(b, ci)
+	benchmarkCipherInit(b, "rc4-md5")
 }
 
 func BenchmarkSalsa20Init(b *testing.B) {
-	ci := cipherMethod["salsa20"]
-	benchmarkCipherInit(b, ci)
+	benchmarkCipherInit(b, "salsa20")
 }
 
-func benchmarkCipherEncrypt(b *testing.B, ci *cipherInfo) {
+func benchmarkCipherEncrypt(b *testing.B, method string) {
+	ci := cipherMethod[method]
 	key := cipherKey[:ci.keyLen]
 	iv := cipherIv[:ci.ivLen]
 	enc, err := ci.newStream(key, iv, Encrypt)
@@ -228,46 +222,39 @@ func benchmarkCipherEncrypt(b *testing.B, ci *cipherInfo) {
 }
 
 func BenchmarkAES128Encrypt(b *testing.B) {
-	ci := cipherMethod["aes-128-cfb"]
-	benchmarkCipherEncrypt(b, ci)
+	benchmarkCipherEncrypt(b, "aes-128-cfb")
 }
 
 func BenchmarkAES192Encrypt(b *testing.B) {
-	ci := cipherMethod["aes-192-cfb"]
-	benchmarkCipherEncrypt(b, ci)
+	benchmarkCipherEncrypt(b, "aes-192-cfb")
 }
 
 func BenchmarkAES256Encrypt(b *testing.B) {
-	ci := cipherMethod["aes-256-cfb"]
-	benchmarkCipherEncrypt(b, ci)
+	benchmarkCipherEncrypt(b, "aes-256-cfb")
 }
 
 func BenchmarkBlowFishEncrypt(b *testing.B) {
-	ci := cipherMethod["bf-cfb"]
-	benchmarkCipherEncrypt(b, ci)
+	benchmarkCipherEncrypt(b, "bf-cfb")
 }
 
 func BenchmarkCast5Encrypt(b *testing.B) {
-	ci := cipherMethod["bf-cfb"]
-	benchmarkCipherEncrypt(b, ci)
+	benchmarkCipherEncrypt(b, "bf-cfb")
 }
 
 func BenchmarkDESEncrypt(b *testing.B) {
-	ci := cipherMethod["des-cfb"]
-	benchmarkCipherEncrypt(b, ci)
+	benchmarkCipherEncrypt(b, "des-cfb")
 }
 
 func BenchmarkRC4MD5Encrypt(b *testing.B) {
-	ci := cipherMethod["rc4-md5"]
-	benchmarkCipherEncrypt(b, ci)
+	benchmarkCipherEncrypt(b, "rc4-md5")
 }
 
 func BenchmarkSalsa20Encrypt(b *testing.B) {
-	ci := cipherMethod["salsa20"]
-	benchmarkCipherEncrypt(b, ci)
+	benchmarkCipherEncrypt(b, "salsa20")
 }
 
-func benchmarkCipherDecrypt(b *testing.B, ci *cipherInfo) {
+func benchmarkCipherDecrypt(b *testing.B, method string) {
+	ci := cipherMethod[method]
 	key := cipherKey[:ci.keyLen]
 	iv := cipherIv[:ci.ivLen]
 	enc, err := ci.newStream(key, iv, Encrypt)
@@ -288,42 +275,33 @@ func benchmarkCipherDecrypt(b *testing.B, ci *cipherInfo) {
 }
 
 func BenchmarkAES128Decrypt(b *testing.B) {
-	ci := cipherMethod["aes-128-cfb"]
-	benchmarkCipherDecrypt(b, ci)
+	benchmarkCipherDecrypt(b, "aes-128-cfb")
 }
 
 func BenchmarkAES192Decrypt(b *testing.B) {
-	ci := cipherMethod["aes-192-cfb"]
-	benchmarkCipherDecrypt(b, ci)
+	benchmarkCipherDecrypt(b, "aes-192-cfb")
 }
 
 func BenchmarkAES256Decrypt(b *testing.B) {
-	ci := cipherMethod["aes-256-cfb"]
-	benchmarkCipherDecrypt(b, ci)
+	benchmarkCipherDecrypt(b, "aes-256-cfb")
 }
 
 func BenchmarkBlowFishDecrypt(b *testing.B) {
-	ci := cipherMethod["bf-cfb"]
-	benchmarkCipherDecrypt(b, ci)
+	benchmarkCipherDecrypt(b, "bf-cfb")
 }
 
 func BenchmarkCast5Decrypt(b *testing.B) {
-	ci := cipherMethod["bf-cfb"]
-	benchmarkCipherDecrypt(b, ci)
+	benchmarkCipherDecrypt(b, "bf-cfb")
 }
 
 func BenchmarkDESDecrypt(b *testing.B) {
-	ci := cipherMethod["des-cfb"]
-	benchmarkCipherDecrypt(b, ci)
+	benchmarkCipherDecrypt(b, "des-cfb")
 }
 
 func BenchmarkRC4MD5Decrypt(b *testing.B) {
-	ci := cipherMethod["rc4-md5"]
-	benchmarkCipherDecrypt(b, ci)
+	benchmarkCipherDecrypt(b, "rc4-md5")
 }
 
 func BenchmarkSalsa20Decrypt(b *testing.B) {
-	ci := cipherMethod["salsa20"]
-	benchmarkCipherDecrypt(b, ci)
+	benchmarkCipherDecrypt(b, "salsa20")
 }
-
