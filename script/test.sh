@@ -110,6 +110,7 @@ test_server_local_pair() {
     test_shadowsocks $url bf-cfb
     test_shadowsocks $url des-cfb
     test_shadowsocks $url cast5-cfb
+    test_shadowsocks $url salsa20
 }
 
 start_http_server
