@@ -17,16 +17,11 @@ func SetReadTimeout(c net.Conn) {
 	}
 }
 
-const bufSize = 4096
-const nBuf = 2048
-
-var pipeBuf = NewLeakyBuf(nBuf, bufSize)
-
 // PipeThenClose copies data from src to dst, closes dst when done.
 func PipeThenClose(src, dst net.Conn, timeoutOpt int) {
 	defer dst.Close()
-	buf := pipeBuf.Get()
-	defer pipeBuf.Put(buf)
+	buf := leakyBuf.Get()
+	defer leakyBuf.Put(buf)
 	for {
 		if timeoutOpt == SET_TIMEOUT {
 			SetReadTimeout(src)
