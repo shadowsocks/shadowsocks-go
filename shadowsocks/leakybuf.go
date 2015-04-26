@@ -6,10 +6,10 @@ type LeakyBuf struct {
 	freeList chan []byte
 }
 
-const bufSize = 4096
+const leakyBufSize = 4096
 const maxNBuf = 2048
 
-var leakyBuf = NewLeakyBuf(maxNBuf, bufSize)
+var leakyBuf = NewLeakyBuf(maxNBuf, leakyBufSize)
 
 // NewLeakyBuf creates a leaky buffer which can hold at most n buffer, each
 // with bufSize bytes.

@@ -2,9 +2,6 @@ package shadowsocks
 
 import (
 	"bytes"
-	"golang.org/x/crypto/blowfish"
-	"golang.org/x/crypto/cast5"
-	"golang.org/x/crypto/salsa20/salsa"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/des"
@@ -13,6 +10,9 @@ import (
 	"crypto/rc4"
 	"encoding/binary"
 	"errors"
+	"golang.org/x/crypto/blowfish"
+	"golang.org/x/crypto/cast5"
+	"golang.org/x/crypto/salsa20/salsa"
 	"io"
 )
 
@@ -139,20 +139,35 @@ func newRC4MD5Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
 }
 
 type salsaStreamCipher struct {
-	nonce [8]byte
-	key [32]byte
+	nonce   [8]byte
+	key     [32]byte
 	counter int
 }
 
 func (c *salsaStreamCipher) XORKeyStream(dst, src []byte) {
+	var buf []byte
+	padLen := c.counter % 64
+	dataSize := len(src) + padLen
+	if cap(dst) >= dataSize {
+		buf = dst[:dataSize]
+	} else if leakyBufSize >= dataSize {
+		buf = leakyBuf.Get()
+		defer leakyBuf.Put(buf)
+		buf = buf[:dataSize]
+	} else {
+		buf = make([]byte, dataSize)
+	}
+
 	var subNonce [16]byte
-	padlen := c.counter % 64
-	buf := make([]byte, padlen+len(src))
-	copy(buf[padlen:], src[:])
 	copy(subNonce[:], c.nonce[:])
-	binary.LittleEndian.PutUint64(subNonce[len(c.nonce):], uint64(c.counter / 64))
+	binary.LittleEndian.PutUint64(subNonce[len(c.nonce):], uint64(c.counter/64))
+
+	// It's difficult to avoid data copy here. src or dst maybe slice from
+	// Conn.Read/Write, which can't have padding.
+	copy(buf[padLen:], src[:])
 	salsa.XORKeyStream(buf, buf, &subNonce, &c.key)
-	copy(dst, buf[padlen:])
+	copy(dst, buf[padLen:])
+
 	c.counter += len(src)
 }
 
