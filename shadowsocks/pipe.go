@@ -6,11 +6,6 @@ import (
 	"time"
 )
 
-const (
-	NO_TIMEOUT = iota
-	SET_TIMEOUT
-)
-
 func SetReadTimeout(c net.Conn) {
 	if readTimeout != 0 {
 		c.SetReadDeadline(time.Now().Add(readTimeout))
@@ -18,14 +13,12 @@ func SetReadTimeout(c net.Conn) {
 }
 
 // PipeThenClose copies data from src to dst, closes dst when done.
-func PipeThenClose(src, dst net.Conn, timeoutOpt int) {
+func PipeThenClose(src, dst net.Conn) {
 	defer dst.Close()
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
 	for {
-		if timeoutOpt == SET_TIMEOUT {
-			SetReadTimeout(src)
-		}
+		SetReadTimeout(src)
 		n, err := src.Read(buf)
 		// read may return EOF with n > 0
 		// should always process n > 0 bytes before handling error
