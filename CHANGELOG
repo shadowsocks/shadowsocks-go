@@ -3,6 +3,7 @@
     * Support "salsa20" encryption method, thanks to @genzj
     * Fix go 1.4 canonical import paths, thanks to @ddatsh
     * Exit if port not bindable, thanks to @thomasf
+    * Always set timeout for data transfer
     * More buffer reuse
 
 1.1.3 (2014-09-28)
