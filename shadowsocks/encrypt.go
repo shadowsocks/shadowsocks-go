@@ -10,6 +10,7 @@ import (
 	"crypto/rc4"
 	"encoding/binary"
 	"errors"
+	"github.com/codahale/chacha20"
 	"golang.org/x/crypto/blowfish"
 	"golang.org/x/crypto/cast5"
 	"golang.org/x/crypto/salsa20/salsa"
@@ -138,6 +139,10 @@ func newRC4MD5Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
 	return rc4.NewCipher(rc4key)
 }
 
+func newChaCha20Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
+	return chacha20.New(key, iv)
+}
+
 type salsaStreamCipher struct {
 	nonce   [8]byte
 	key     [32]byte
@@ -185,6 +190,8 @@ type cipherInfo struct {
 }
 
 var cipherMethod = map[string]*cipherInfo{
+	"rc4":         {16, 0, nil},
+	"table":       {16, 0, nil},
 	"aes-128-cfb": {16, 16, newAESStream},
 	"aes-192-cfb": {24, 16, newAESStream},
 	"aes-256-cfb": {32, 16, newAESStream},
@@ -192,8 +199,7 @@ var cipherMethod = map[string]*cipherInfo{
 	"bf-cfb":      {16, 8, newBlowFishStream},
 	"cast5-cfb":   {16, 8, newCast5Stream},
 	"rc4-md5":     {16, 16, newRC4MD5Stream},
-	"rc4":         {16, 0, nil},
-	"table":       {16, 0, nil},
+	"chacha20":    {32, 8, newChaCha20Stream},
 	"salsa20":     {32, 8, newSalsa20Stream},
 }
 
