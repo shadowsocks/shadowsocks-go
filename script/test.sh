@@ -110,6 +110,8 @@ test_server_local_pair() {
     test_shadowsocks $url bf-cfb
     test_shadowsocks $url des-cfb
     test_shadowsocks $url cast5-cfb
+    test_shadowsocks $url chacha20
+    test_shadowsocks $url salsa20
 }
 
 start_http_server
@@ -119,7 +121,7 @@ LOCAL="shadowsocks-local"
 test_server_local_pair
 
 if [[ -n $SS_PYTHON ]]; then
-    SERVER="$SS_PYTHON/server.py"
+    SERVER="$SS_PYTHON/server.py --forbidden-ip="
     LOCAL="shadowsocks-local"
     test_server_local_pair
 

@@ -1,3 +1,10 @@
+1.1.4 (2015-05-10)
+    * Support "chacha20" encryption method, thanks to @defia
+    * Support "salsa20" encryption method, thanks to @genzj
+    * Fix go 1.4 canonical import paths, thanks to @ddatsh
+    * Exit if port not bindable, thanks to @thomasf
+    * More buffer reuse
+
 1.1.3 (2014-09-28)
     * Fix can't specify encryption method in config file
 
