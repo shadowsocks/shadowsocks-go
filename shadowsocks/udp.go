@@ -3,7 +3,6 @@ package shadowsocks
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 	"net"
 	"strconv"
 	"time"
@@ -12,18 +11,24 @@ import (
 )
 
 const (
-	idType  = 0 // address type index
-	idIP0   = 1 // ip addres start index
-	idDmLen = 1 // domain address length index
-	idDm0   = 2 // domain address start index
+	idType    = 0 // address type index
+	idIP0     = 1 // ip addres start index
+	idDmLen   = 1 // domain address length index
+	idDm0     = 2 // domain address start index
 
-	typeIPv4 = 1 // type is ipv4 address
-	typeDm   = 3 // type is domain address
-	typeIPv6 = 4 // type is ipv6 address
+	typeIPv4  = 1 // type is ipv4 address
+	typeDm    = 3 // type is domain address
+	typeIPv6  = 4 // type is ipv6 address
 
 	lenIPv4   = 1 + net.IPv4len + 2 // 1addrType + ipv4 + 2port
 	lenIPv6   = 1 + net.IPv6len + 2 // 1addrType + ipv6 + 2port
 	lenDmBase = 1 + 1 + 2           // 1addrType + 1addrLen + 2port, plus addrLen
+)
+
+var (
+	reqList   = ReqList{List:map[string]*ReqNode{}}
+	nl        = NATlist{Conns: map[string]*CachedUDPConn{}}
+	udpBuf    = NewLeakyBuf(nBuf, bufSize)
 )
 
 type UDP interface {
@@ -51,7 +56,7 @@ func NewUDPConn(cn UDP, cipher *Cipher) *UDPConn {
 type CachedUDPConn struct {
 	timer *time.Timer
 	UDP
-	i string
+	i string // scraddr
 }
 
 func NewCachedUDPConn(cn UDP) *CachedUDPConn {
@@ -90,9 +95,7 @@ func (nl *NATlist) Delete(srcaddr string) {
 		delete(nl.Conns, srcaddr)
 		nl.AliveConns -= 1
 	}
-	for k, _  := range ReqList {
-		delete(ReqList, k)
-	}
+	reqList.Refresh()
 	defer nl.Unlock()
 }
 
@@ -124,6 +127,38 @@ func (nl *NATlist) Get(srcaddr *net.UDPAddr, ss *UDPConn) (c *CachedUDPConn, ok 
 		c.Refresh()
 	}
 	err = nil
+	return
+}
+
+type ReqNode struct {
+	Req []byte
+	ReqLen int
+}
+
+type ReqList struct {
+	List map[string]*ReqNode
+	sync.Mutex
+}
+
+func (r *ReqList) Refresh() {
+	r.Lock()
+	defer r.Unlock()
+	for k, _  := range r.List {
+		delete(r.List, k)
+	}
+}
+
+func (r *ReqList) Get(dstaddr string) (req *ReqNode, ok bool) {
+	r.Lock()
+	defer r.Unlock()
+	req, ok = r.List[dstaddr]
+	return
+}
+
+func (r *ReqList) Put(dstaddr string, req *ReqNode) {
+	r.Lock()
+	defer r.Unlock()
+	r.List[dstaddr] = req
 	return
 }
 
@@ -171,7 +206,7 @@ func Pipeloop(ss *UDPConn, srcaddr *net.UDPAddr, remote UDP) {
 			return
 		}
 		// need improvement here
-		if N, ok := ReqList[raddr.String()]; ok {
+		if N, ok := reqList.Get(raddr.String()); ok {
 			go ss.WriteToUDP(append(N.Req[:N.ReqLen], buf[:n]...), srcaddr)
 		}	else {
 			header, hlen := ParseHeader(raddr)
@@ -179,17 +214,6 @@ func Pipeloop(ss *UDPConn, srcaddr *net.UDPAddr, remote UDP) {
 		}
 	}
 }
-
-type ReqNode struct {
-	Req []byte
-	ReqLen int
-}
-
-var ReqList = map[string]*ReqNode{}
-
-var nl = NATlist{Conns: map[string]*CachedUDPConn{}}
-
-var udpBuf = NewLeakyBuf(nBuf, bufSize)
 
 func (c *UDPConn) handleUDPConnection(n int, src *net.UDPAddr, receive []byte) {
 	var dstIP net.IP
@@ -219,12 +243,12 @@ func (c *UDPConn) handleUDPConnection(n int, src *net.UDPAddr, receive []byte) {
 		IP:   dstIP,
 		Port: int(binary.BigEndian.Uint16(receive[reqLen-2 : reqLen])),
 	}
-	if _, ok := ReqList[dst.String()]; !ok {
+	if _, ok := reqList.Get(dst.String()); !ok {
 		req := make([]byte, reqLen)
 		for i:=0;i<reqLen;i++ {
 			req[i] = receive[i]
 		}
-		ReqList[dst.String()] = &ReqNode{req, reqLen}
+		reqList.Put(dst.String(), &ReqNode{req, reqLen})
 	}
 
 	remote, _, err := nl.Get(src, c)
