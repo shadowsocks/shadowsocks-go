@@ -293,6 +293,9 @@ func (c *UDPConn) ReadFromUDP(b []byte) (n int, src *net.UDPAddr, err error) {
 	if err = c.initDecrypt(iv); err != nil {
 		return
 	}
+	if n < c.info.ivLen {
+		return 0, nil, fmt.Errorf("[udp]write error: cannot decrypt")
+	}
 	c.decrypt(b[0:n - c.info.ivLen], buf[c.info.ivLen : n])
 	n = n - c.info.ivLen
 	return
