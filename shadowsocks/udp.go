@@ -28,7 +28,6 @@ const (
 var (
 	reqList   = ReqList{List:map[string]*ReqNode{}}
 	nl        = NATlist{Conns: map[string]*CachedUDPConn{}}
-	udpBuf    = NewLeakyBuf(nBuf, bufSize)
 )
 
 type UDP interface {
@@ -187,8 +186,8 @@ func ParseHeader(addr net.Addr) ([]byte, int) {
 }
 
 func Pipeloop(ss *UDPConn, srcaddr *net.UDPAddr, remote UDP) {
-	buf := udpBuf.Get()
-	defer udpBuf.Put(buf)
+	buf := leakyBuf.Get()
+	defer leakyBuf.Put(buf)
 	defer nl.Delete(srcaddr.String())
 	for{
 		remote.SetReadDeadline(time.Now().Add(readTimeout))
@@ -218,7 +217,7 @@ func Pipeloop(ss *UDPConn, srcaddr *net.UDPAddr, remote UDP) {
 func (c *UDPConn) handleUDPConnection(n int, src *net.UDPAddr, receive []byte) {
 	var dstIP net.IP
 	var reqLen int
-	defer udpBuf.Put(receive)
+	defer leakyBuf.Put(receive)
 
 	switch receive[idType] {
 	case typeIPv4:
@@ -272,7 +271,7 @@ func (c *UDPConn) handleUDPConnection(n int, src *net.UDPAddr, receive []byte) {
 }
 
 func (c *UDPConn) ReadAndHandleUDPReq()  {
-	buf := udpBuf.Get()
+	buf := leakyBuf.Get()
 	n, src, err := c.ReadFromUDP(buf[0:])
 	if err != nil {
 		return
@@ -282,12 +281,12 @@ func (c *UDPConn) ReadAndHandleUDPReq()  {
 
 //n is the size of the payload
 func (c *UDPConn) ReadFromUDP(b []byte) (n int, src *net.UDPAddr, err error) {
-	buf := udpBuf.Get()
+	buf := leakyBuf.Get()
 	n, src, err = c.UDP.ReadFromUDP(buf[0:])
 	if err != nil {
 		return
 	}
-	defer udpBuf.Put(buf)
+	defer leakyBuf.Put(buf)
 
 	iv := buf[:c.info.ivLen]
 	if err = c.initDecrypt(iv); err != nil {
@@ -302,12 +301,12 @@ func (c *UDPConn) ReadFromUDP(b []byte) (n int, src *net.UDPAddr, err error) {
 }
 
 func (c *UDPConn) Read(b []byte) (n int, err error) {
-	buf := udpBuf.Get()
+	buf := leakyBuf.Get()
 	n, err = c.UDP.Read(buf[0:])
 	if err != nil {
 		return
 	}
-	defer udpBuf.Put(buf)
+	defer leakyBuf.Put(buf)
 
 	iv := buf[:c.info.ivLen]
 	if err = c.initDecrypt(iv); err != nil {
