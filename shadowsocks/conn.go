@@ -11,10 +11,22 @@ import (
 type Conn struct {
 	net.Conn
 	*Cipher
+	readBuf  []byte
+	writeBuf []byte
 }
 
-func NewConn(cn net.Conn, cipher *Cipher) *Conn {
-	return &Conn{cn, cipher}
+func NewConn(c net.Conn, cipher *Cipher) *Conn {
+	return &Conn{
+		Conn:     c,
+		Cipher:   cipher,
+		readBuf:  leakyBuf.Get(),
+		writeBuf: leakyBuf.Get()}
+}
+
+func (c *Conn) Close() error {
+	leakyBuf.Put(c.readBuf)
+	leakyBuf.Put(c.writeBuf)
+	return c.Conn.Close()
 }
 
 func RawAddr(addr string) (buf []byte, err error) {
@@ -72,7 +84,14 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 			return
 		}
 	}
-	cipherData := make([]byte, len(b))
+
+	cipherData := c.readBuf
+	if len(b) > len(cipherData) {
+		cipherData = make([]byte, len(b))
+	} else {
+		cipherData = cipherData[:len(b)]
+	}
+
 	n, err = c.Conn.Read(cipherData)
 	if n > 0 {
 		c.decrypt(b[0:n], cipherData[0:n])
@@ -81,23 +100,29 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 }
 
 func (c *Conn) Write(b []byte) (n int, err error) {
-	var cipherData []byte
-	dataStart := 0
+	var iv []byte
 	if c.enc == nil {
-		var iv []byte
 		iv, err = c.initEncrypt()
 		if err != nil {
 			return
 		}
+	}
+
+	cipherData := c.writeBuf
+	dataSize := len(b) + len(iv)
+	if dataSize > len(cipherData) {
+		cipherData = make([]byte, dataSize)
+	} else {
+		cipherData = cipherData[:dataSize]
+	}
+
+	if iv != nil {
 		// Put initialization vector in buffer, do a single write to send both
 		// iv and data.
-		cipherData = make([]byte, len(b)+len(iv))
 		copy(cipherData, iv)
-		dataStart = len(iv)
-	} else {
-		cipherData = make([]byte, len(b))
 	}
-	c.encrypt(cipherData[dataStart:], b)
+
+	c.encrypt(cipherData[len(iv):], b)
 	n, err = c.Conn.Write(cipherData)
 	return
 }
