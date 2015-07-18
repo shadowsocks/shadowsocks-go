@@ -252,7 +252,8 @@ func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) 
 	const baseFailCnt = 20
 	n := len(servers.srvCipher)
 	skipped := make([]int, 0)
-	for i := 0; i < n; i++ {
+	loop_order := rand.Perm(n)
+	for _, i := range loop_order {
 		// skip failed server, but try it with some probability
 		if servers.failCnt[i] > 0 && rand.Intn(servers.failCnt[i]+baseFailCnt) != 0 {
 			skipped = append(skipped, i)
