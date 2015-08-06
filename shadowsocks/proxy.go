@@ -40,7 +40,7 @@ func NewDialer(server string, cipher *Cipher) (dialer *Dialer, err error) {
 
 func (d *Dialer) Dial(network, addr string) (c net.Conn, err error) {
 	if strings.HasPrefix(network, "tcp") {
-		conn, err := Dial(addr, d.server, d.cipher)
+		conn, err := Dial(addr, d.server, d.cipher.Copy())
 		if err != nil {
 			return nil, err
 		}
