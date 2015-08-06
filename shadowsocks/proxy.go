@@ -38,7 +38,7 @@ func NewDialer(server string, cipher *Cipher) (dialer *Dialer, err error) {
 	}, nil
 }
 
-func (d *Dialer) Dial(network, addr string) (c *ProxyConn, err error) {
+func (d *Dialer) Dial(network, addr string) (c net.Conn, err error) {
 	if strings.HasPrefix(network, "tcp") {
 		conn, err := Dial(addr, d.server, d.cipher)
 		if err != nil {
