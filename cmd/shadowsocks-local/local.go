@@ -322,13 +322,11 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	debug.Println("1", ", len:", len(rawaddr), ", addr:", addr, "cap:", cap(rawaddr))
 	// If tfo configured, read the client payload first
 	// since most of the time the rtt between client and local
 	// are much smaller than between local and server.
 	// This could save one rtt from local to server
 	// by sending client data to server on the first syn packet.
-
 	if (config.TcpFastOpen & 1) != 0 {
 		ss.SetReadTimeout(conn)
 		n, err := conn.Read(rawaddr[len(rawaddr):cap(rawaddr)])
@@ -337,10 +335,7 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 		rawaddr = rawaddr[:len(rawaddr)+n]
-		debug.Println("2, n:", n, ", len:", len(rawaddr), ", addr:", addr, ", cap:", cap(rawaddr))
 	}
-
-	debug.Println("3", ", len:", len(rawaddr), ", addr:", addr, ", cap:", cap(rawaddr))
 
 	remote, err = createServerConn(rawaddr, addr)
 
