@@ -5,13 +5,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/zxjcarrot/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
 	"math/rand"
 	"net"
 	"os"
 	"path"
+	"runtime"
 	"strconv"
 	"time"
 )
@@ -91,7 +92,12 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 		lenDmBase = 3 + 1 + 1 + 2           // 3 + 1addrType + 1addrLen + 2port, plus addrLen
 	)
 	// refer to getRequest in server.go for why set buffer size to 263
-	buf := make([]byte, 263)
+	var buf []byte
+	if (config.TcpFastOpen & 1) == 0 {
+		buf = make([]byte, 263)
+	} else { // Make the buffer bigger to receive client payload for tfo dialing if tfo configured.
+		buf = make([]byte, 1000)
+	}
 	var n int
 	ss.SetReadTimeout(conn)
 	// read till we get possible domain length field
@@ -230,7 +236,13 @@ func parseServerConfig(config *ss.Config) {
 
 func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn, err error) {
 	se := servers.srvCipher[serverId]
-	remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
+
+	if (config.TcpFastOpen & 1) != 0 { // dial with tfo
+		remote, err = ss.TfoDialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
+	} else {
+		remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
+	}
+
 	if err != nil {
 		log.Println("error connecting to shadowsocks server:", err)
 		const maxFailCnt = 30
@@ -274,6 +286,10 @@ func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) 
 }
 
 func handleConnection(conn net.Conn) {
+	var (
+		remote *ss.Conn
+	)
+
 	if debug {
 		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
 	}
@@ -295,7 +311,7 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 	// Sending connection established message immediately to client.
-	// This some round trip time for creating socks connection with the client.
+	// This could save some round trip time for creating socks connection with the client.
 	// But if connection failed, the client will get connection reset error.
 	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
 	if err != nil {
@@ -303,11 +319,33 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	remote, err := createServerConn(rawaddr, addr)
+	debug.Println("1", ", len:", len(rawaddr), ", addr:", addr, "cap:", cap(rawaddr))
+	// If tfo configured, read the client payload first
+	// since most of the time the rtt between client and local
+	// are much smaller than between local and server.
+	// This could save one rtt from local to server
+	// by sending client data to server on the first syn packet.
+
+	if (config.TcpFastOpen & 1) != 0 {
+		ss.SetReadTimeout(conn)
+		n, err := conn.Read(rawaddr[len(rawaddr):cap(rawaddr)])
+		if err != nil {
+			log.Println("Failed read data from client:", err)
+			return
+		}
+		rawaddr = rawaddr[:len(rawaddr)+n]
+		debug.Println("2, n:", n, ", len:", len(rawaddr), ", addr:", addr, ", cap:", cap(rawaddr))
+	}
+
+	debug.Println("3", ", len:", len(rawaddr), ", addr:", addr, ", cap:", cap(rawaddr))
+
+	remote, err = createServerConn(rawaddr, addr)
+
 	if err != nil {
 		if len(servers.srvCipher) > 1 {
 			log.Println("Failed connect to all avaiable shadowsocks server")
 		}
+		log.Println("Failed connect to all avaiable shadowsocks server", err)
 		return
 	}
 	defer func() {
@@ -343,6 +381,40 @@ func enoughOptions(config *ss.Config) bool {
 		config.LocalPort != 0 && config.Password != ""
 }
 
+// detects tfo capabilities and adjusts configuration appropriately
+// based on OS version and /proc file system.
+func configureTfo() {
+	if runtime.GOOS != "linux" {
+		debug.Println("tcp fast open is only supported on linux kernel 3.7+")
+		return
+	} else if config.TcpFastOpen > 3 {
+		fmt.Printf("invalid value %d for tfo, ignored\n", config.TcpFastOpen)
+		return
+	}
+
+	f, err := os.Open("/proc/sys/net/ipv4/tcp_fastopen")
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	var cap int
+	fmt.Fscanf(f, "%d", &cap)
+
+	if (config.TcpFastOpen&1) != 0 && (cap&1) == 0 {
+		fmt.Println("warning: [tcp fast open] client side capability is disabled, check /proc/sys/net/ipv4/tcp_fastopen.")
+		config.TcpFastOpen &^= 1 // clear bit 0
+	} else if (config.TcpFastOpen&1) != 0 && (cap&1) != 0 {
+		debug.Println("[tcp fast oepn] client side configured.")
+	}
+
+	if (config.TcpFastOpen & 2) != 0 {
+		debug.Println("INFO: [tcp fast open] server side capability is ignored on local side")
+	}
+}
+
+var config *ss.Config
+
 func main() {
 	log.SetOutput(os.Stdout)
 
@@ -359,6 +431,7 @@ func main() {
 	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
+	flag.UintVar(&cmdConfig.TcpFastOpen, "tfo", 0, "TCP Fast Open, 0 disabled (default), 1 enable client side, 2 enable server side, 3 enable both side")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 
 	flag.Parse()
@@ -381,7 +454,7 @@ func main() {
 		log.Printf("%s not found, try config file %s\n", oldConfig, configFile)
 	}
 
-	config, err := ss.ParseConfig(configFile)
+	config, err = ss.ParseConfig(configFile)
 	if err != nil {
 		config = &cmdConfig
 		if !os.IsNotExist(err) {
@@ -410,6 +483,7 @@ func main() {
 	}
 
 	parseServerConfig(config)
+	configureTfo()
 
 	run(cmdLocal + ":" + strconv.Itoa(config.LocalPort))
 }

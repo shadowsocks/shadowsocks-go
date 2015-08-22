@@ -77,8 +77,8 @@ func get(connid int, uri, serverAddr string, rawAddr []byte, cipher *ss.Cipher, 
 }
 
 func main() {
-	flag.StringVar(&config.server, "s", "127.0.0.1", "server:port")
-	flag.IntVar(&config.port, "p", 0, "server:port")
+	flag.StringVar(&config.server, "s", "127.0.0.1", "server address")
+	flag.IntVar(&config.port, "p", 0, "port number")
 	flag.IntVar(&config.core, "core", 1, "number of CPU cores to use")
 	flag.StringVar(&config.passwd, "k", "", "password")
 	flag.StringVar(&config.method, "m", "", "encryption method, use empty string or rc4")

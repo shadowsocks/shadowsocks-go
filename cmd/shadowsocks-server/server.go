@@ -5,7 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/zxjcarrot/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
 	"net"
@@ -34,11 +34,17 @@ func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 		lenIPv6   = 1 + net.IPv6len + 2 // 1addrType + ipv6 + 2port
 		lenDmBase = 1 + 1 + 2           // 1addrType + 1addrLen + 2port, plus addrLen
 	)
-
+	var buf []byte
 	// buf size should at least have the same size with the largest possible
 	// request size (when addrType is 3, domain name has at most 256 bytes)
 	// 1(addrType) + 1(lenByte) + 256(max length address) + 2(port)
-	buf := make([]byte, 260)
+	if (config.TcpFastOpen & 2) == 0 {
+		buf = make([]byte, 260)
+	} else {
+		// server side tfo is configured, read more data(less than a normal ethernet mtu).
+		buf = make([]byte, 1500)
+	}
+
 	var n int
 	// read till we get possible domain length field
 	ss.SetReadTimeout(conn)
@@ -91,7 +97,10 @@ var connCnt int
 var nextLogConnCnt int = logCntDelta
 
 func handleConnection(conn *ss.Conn) {
-	var host string
+	var (
+		host   string
+		remote net.Conn
+	)
 
 	connCnt++ // this maybe not accurate, but should be enough
 	if connCnt-nextLogConnCnt >= 0 {
@@ -124,7 +133,15 @@ func handleConnection(conn *ss.Conn) {
 		return
 	}
 	debug.Println("connecting", host)
-	remote, err := net.Dial("tcp", host)
+
+	if (config.TcpFastOpen & 1) != 0 {
+		// dial with data
+		remote, err = ss.TfoDial("tcp", host, extra)
+		extra = nil
+	} else {
+		remote, err = net.Dial("tcp", host)
+	}
+
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
@@ -142,7 +159,7 @@ func handleConnection(conn *ss.Conn) {
 	}()
 	// write extra bytes read from
 	if extra != nil {
-		// debug.Println("getRequest read extra data, writing to remote, len", len(extra))
+		debug.Println("getRequest read extra data, writing to remote, len", len(extra))
 		if _, err = remote.Write(extra); err != nil {
 			debug.Println("write request extra error:", err)
 			return
@@ -254,8 +271,22 @@ func waitSignal() {
 	}
 }
 
+const (
+	TCP_FASTOPEN = 23
+)
+
 func run(port, password string) {
-	ln, err := net.Listen("tcp", ":"+port)
+	var (
+		ln  net.Listener
+		err error
+	)
+
+	if (config.TcpFastOpen & 2) != 0 {
+		ln, err = ss.TfoListen("tcp", ":"+port)
+	} else {
+		ln, err = net.Listen("tcp", ":"+port)
+	}
+
 	if err != nil {
 		log.Printf("error listening port %v: %v\n", port, err)
 		os.Exit(1)
@@ -304,6 +335,41 @@ func unifyPortPassword(config *ss.Config) (err error) {
 	return
 }
 
+// detects tfo capabilities and adjusts configuration appropriately
+// based on OS version and /proc file system.
+func configureTfo() {
+	if runtime.GOOS != "linux" {
+		debug.Println("tcp fast open is only supported on linux kernel 3.7+")
+		return
+	} else if config.TcpFastOpen > 3 {
+		fmt.Printf("invalid value %d for tfo, ignored\n", config.TcpFastOpen)
+		return
+	}
+
+	f, err := os.Open("/proc/sys/net/ipv4/tcp_fastopen")
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	var cap int
+	fmt.Fscanf(f, "%d", &cap)
+
+	if (config.TcpFastOpen&1) != 0 && (cap&1) == 0 {
+		fmt.Println("warning: [tcp fast open] client side capability is disabled, check /proc/sys/net/ipv4/tcp_fastopen.")
+		config.TcpFastOpen &^= 1 // clear bit 0
+	} else if (config.TcpFastOpen&1) != 0 && (cap&1) != 0 {
+		debug.Println("[tcp fast oepn] client side configured.")
+	}
+
+	if (config.TcpFastOpen&2) != 0 && (cap&2) == 0 {
+		fmt.Println("warning: [tcp fast open] server side capability is disabled, check /proc/sys/net/ipv4/tcp_fastopen.")
+		config.TcpFastOpen &^= 2 // clear bit 1
+	} else if (config.TcpFastOpen&2) != 0 && (cap&2) != 0 {
+		debug.Println("[tcp fast oepn] server side configured.")
+	}
+}
+
 var configFile string
 var config *ss.Config
 
@@ -322,7 +388,7 @@ func main() {
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
-
+	flag.UintVar(&cmdConfig.TcpFastOpen, "tfo", 0, "TCP Fast Open, 0 disabled (default), 1 enable client side, 2 enable server side, 3 enable both side")
 	flag.Parse()
 
 	if printVer {
@@ -356,6 +422,9 @@ func main() {
 	if core > 0 {
 		runtime.GOMAXPROCS(core)
 	}
+
+	configureTfo()
+
 	for port, password := range config.PortPassword {
 		go run(port, password)
 	}

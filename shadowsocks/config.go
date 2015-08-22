@@ -18,11 +18,12 @@ import (
 )
 
 type Config struct {
-	Server     interface{} `json:"server"`
-	ServerPort int         `json:"server_port"`
-	LocalPort  int         `json:"local_port"`
-	Password   string      `json:"password"`
-	Method     string      `json:"method"` // encryption method
+	Server      interface{} `json:"server"`
+	ServerPort  int         `json:"server_port"`
+	LocalPort   int         `json:"local_port"`
+	Password    string      `json:"password"`
+	Method      string      `json:"method"` // encryption method
+	TcpFastOpen uint        `json:"tfo"`
 
 	// following options are only used by server
 	PortPassword map[string]string `json:"port_password"`
