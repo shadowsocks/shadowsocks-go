@@ -1,6 +1,6 @@
 # shadowsocks-go
 
-Current version: 1.1.4 [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=develop)](https://travis-ci.org/shadowsocks/shadowsocks-go)
+Current version: 1.1.4 [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go)
 
 shadowsocks-go is a lightweight tunnel proxy which can help you get through firewalls. It is a port of [shadowsocks](https://github.com/clowwindy/shadowsocks).
 
@@ -66,6 +66,7 @@ shadowsocks-local -s server_address -p server_port -k password
 shadowsocks-server -p server_port -k password
     -m aes-128-cfb -c config.json
     -t timeout
+    -tfo TCP Fast Open, 0 disabled (default), 1 enable client side, 2 enable server side, 3 enable both side
 ```
 
 Use `-d` option to enable debug message.

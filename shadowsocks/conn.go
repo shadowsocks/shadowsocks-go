@@ -26,7 +26,10 @@ func NewConn(c net.Conn, cipher *Cipher) *Conn {
 func (c *Conn) Close() error {
 	leakyBuf.Put(c.readBuf)
 	leakyBuf.Put(c.writeBuf)
-	return c.Conn.Close()
+	if c.Conn != nil {
+		return c.Conn.Close()
+	}
+	return nil
 }
 
 func RawAddr(addr string) (buf []byte, err error) {
@@ -93,22 +96,23 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 	}
 
 	n, err = c.Conn.Read(cipherData)
+	//Debug.Println("read ", n, "encrypted bytes, len(cipherData):", len(cipherData), "err:", err)
 	if n > 0 {
 		c.decrypt(b[0:n], cipherData[0:n])
 	}
 	return
 }
 
-func (c *Conn) Write(b []byte) (n int, err error) {
+func (c *Conn) encryptData(b []byte) (cipherData []byte, err error) {
 	var iv []byte
 	if c.enc == nil {
 		iv, err = c.initEncrypt()
 		if err != nil {
-			return
+			return nil, err
 		}
 	}
 
-	cipherData := c.writeBuf
+	cipherData = c.writeBuf
 	dataSize := len(b) + len(iv)
 	if dataSize > len(cipherData) {
 		cipherData = make([]byte, dataSize)
@@ -123,6 +127,17 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 	}
 
 	c.encrypt(cipherData[len(iv):], b)
+
+	return cipherData, nil
+}
+
+func (c *Conn) Write(b []byte) (n int, err error) {
+	cipherData, err := c.encryptData(b)
+	if err != nil {
+		return
+	}
+
 	n, err = c.Conn.Write(cipherData)
+	//Debug.Println("wrote ", n, "encrypted bytes, len(cipherData):", len(cipherData), " err:", err)
 	return
 }
