@@ -66,7 +66,7 @@ shadowsocks-local -s server_address -p server_port -k password
 shadowsocks-server -p server_port -k password
     -m aes-128-cfb -c config.json
     -t timeout
-    -tfo TCP Fast Open, 0 disabled (default), 1 enable client side, 2 enable server side, 3 enable both side
+    -tfo TCP Fast Open, 0 disabled (default), 1 enable client side, 2 enable server side, 3 enable both side  
 ```
 
 Use `-d` option to enable debug message.
