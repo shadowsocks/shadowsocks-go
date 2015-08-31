@@ -4,6 +4,9 @@ PREFIX := shadowsocks
 LOCAL := $(GOPATH)/bin/$(PREFIX)-local
 SERVER := $(GOPATH)/bin/$(PREFIX)-server
 CGO := CGO_ENABLED=1
+DEPENDENCIES := github.com/golang/crypto/blowfish \
+	github.com/codahale/chacha20 \
+	bitbucket.org/juztin/gocrypto
 
 all: $(LOCAL) $(SERVER) $(TEST)
 
@@ -22,6 +25,9 @@ $(SERVER): shadowsocks/*.go cmd/$(PREFIX)-server/*.go
 local: $(LOCAL)
 
 server: $(SERVER)
+
+deps:
+	go get $(DEPENDENCIES)
 
 test:
 	cd shadowsocks; go test

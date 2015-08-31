@@ -149,6 +149,10 @@ func TestChaCha20(t *testing.T) {
 	testBlockCipher(t, "chacha20")
 }
 
+func TestRc2Cfb(t *testing.T) {
+	testBlockCipher(t, "rc2-cfb")
+}
+
 var cipherKey = make([]byte, 64)
 var cipherIv = make([]byte, 64)
 
