@@ -1,6 +1,7 @@
 package shadowsocks
 
 import (
+	"bitbucket.org/juztin/gocrypto/rc2"
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
@@ -143,6 +144,11 @@ func newChaCha20Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
 	return chacha20.New(key, iv)
 }
 
+func newRc2Stream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
+	block, err := rc2.NewCipher(key)
+	return newStream(block, err, key, iv, doe)
+}
+
 type salsaStreamCipher struct {
 	nonce   [8]byte
 	key     [32]byte
@@ -201,6 +207,7 @@ var cipherMethod = map[string]*cipherInfo{
 	"rc4-md5":     {16, 16, newRC4MD5Stream},
 	"chacha20":    {32, 8, newChaCha20Stream},
 	"salsa20":     {32, 8, newSalsa20Stream},
+	"rc2-cfb":     {16, 8, newRc2Stream},
 }
 
 func CheckCipherMethod(method string) error {
