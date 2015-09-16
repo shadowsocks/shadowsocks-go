@@ -246,7 +246,7 @@ func BenchmarkBlowFishEncrypt(b *testing.B) {
 }
 
 func BenchmarkCast5Encrypt(b *testing.B) {
-	benchmarkCipherEncrypt(b, "bf-cfb")
+	benchmarkCipherEncrypt(b, "cast5-cfb")
 }
 
 func BenchmarkDESEncrypt(b *testing.B) {
@@ -303,7 +303,7 @@ func BenchmarkBlowFishDecrypt(b *testing.B) {
 }
 
 func BenchmarkCast5Decrypt(b *testing.B) {
-	benchmarkCipherDecrypt(b, "bf-cfb")
+	benchmarkCipherDecrypt(b, "cast5-cfb")
 }
 
 func BenchmarkDESDecrypt(b *testing.B) {
