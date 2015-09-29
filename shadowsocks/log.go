@@ -9,7 +9,7 @@ type DebugLog bool
 
 var Debug DebugLog
 
-var dbgLog = log.New(os.Stdout, "[DEBUG] ", log.Ltime)
+var dbgLog = log.New(os.Stdout, "[DEBUG] ", log.Ltime|log.Lmicroseconds)
 
 func (d DebugLog) Printf(format string, args ...interface{}) {
 	if d {
