@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	gping "github.com/tatsushid/go-fastping"
 	"io"
 	"log"
 	"math/rand"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -153,12 +155,18 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 type ServerCipher struct {
 	server string
 	cipher *ss.Cipher
+	rtt    time.Duration
 }
 
 var servers struct {
 	srvCipher []*ServerCipher
 	failCnt   []int // failed connection count
 }
+
+const MaxUint = ^uint(0)
+const MaxRtt = time.Duration(MaxUint >> 1)
+
+var sortServersByRtt bool
 
 func parseServerConfig(config *ss.Config) {
 	hasPort := func(s string) bool {
@@ -183,9 +191,9 @@ func parseServerConfig(config *ss.Config) {
 		for i, s := range srvArr {
 			if hasPort(s) {
 				log.Println("ignore server_port option for server", s)
-				servers.srvCipher[i] = &ServerCipher{s, cipher}
+				servers.srvCipher[i] = &ServerCipher{s, cipher, MaxRtt}
 			} else {
-				servers.srvCipher[i] = &ServerCipher{net.JoinHostPort(s, srvPort), cipher}
+				servers.srvCipher[i] = &ServerCipher{net.JoinHostPort(s, srvPort), cipher, MaxRtt}
 			}
 		}
 	} else {
@@ -217,13 +225,77 @@ func parseServerConfig(config *ss.Config) {
 				}
 				cipherCache[passwd] = cipher
 			}
-			servers.srvCipher[i] = &ServerCipher{server, cipher}
+			servers.srvCipher[i] = &ServerCipher{server, cipher, MaxRtt}
 			i++
+		}
+
+		if sortServersByRtt {
+			if debug {
+				fmt.Fprintf(os.Stderr, "servers before sorting:\n")
+				for _, s := range servers.srvCipher {
+					fmt.Fprintf(os.Stderr, "server: %s, rtt: unknown\n", s.server)
+				}
+			}
+			done := make(chan int)
+			for _, s := range servers.srvCipher {
+				go func(srv *ServerCipher) {
+					p := gping.NewPinger()
+					ra, err := net.ResolveIPAddr("ip4:icmp", strings.Split(srv.server, ":")[0])
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "failed to parse ip address [%s]: %s\n", s.server, err)
+						os.Exit(1)
+					}
+					p.MaxRTT = 5 * time.Second
+					p.AddIPAddr(ra)
+					p.OnRecv = func(addr *net.IPAddr, rtt time.Duration) {
+						if debug {
+							fmt.Fprintf(os.Stderr, "server: %s, rtt: %dms\n", srv.server, rtt/time.Millisecond)
+						}
+						srv.rtt = rtt
+						done <- 1
+						p.Stop()
+					}
+					p.OnIdle = func() {
+						if debug {
+							fmt.Fprintf(os.Stderr, "ping to server: %s timed out\n", srv.server)
+						}
+						done <- 1
+						p.Stop()
+					}
+					err = p.Run()
+					if err != nil {
+						if debug {
+							fmt.Fprintf(os.Stderr, "failed to send icmp packet to ip address [%s]: %s\n", srv.server, err)
+						}
+						done <- 1
+					}
+				}(s)
+			}
+			for i := 0; i < n; i++ {
+				<-done
+			}
+			// bubble sort should be enough
+			for i := 0; i < n-1; i++ {
+				for j := n - 1; j > i; j-- {
+					if servers.srvCipher[j].rtt < servers.srvCipher[j-1].rtt {
+						t := servers.srvCipher[j]
+						servers.srvCipher[j] = servers.srvCipher[j-1]
+						servers.srvCipher[j-1] = t
+					}
+				}
+			}
+
+			if debug {
+				fmt.Fprintf(os.Stderr, "servers  sorted by rtt:\n")
+				for _, s := range servers.srvCipher {
+					fmt.Fprintf(os.Stderr, "server: %s, rtt: %dms\n", s.server, s.rtt/time.Millisecond)
+				}
+			}
 		}
 	}
 	servers.failCnt = make([]int, len(servers.srvCipher))
 	for _, se := range servers.srvCipher {
-		log.Println("available remote server", se.server)
+		log.Println("available remote server", se.server, "rtt", int64(se.rtt/time.Millisecond), "ms")
 	}
 	return
 }
@@ -360,7 +432,7 @@ func main() {
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
-
+	flag.BoolVar(&sortServersByRtt, "S", false, "sort multiple-server config by rtt")
 	flag.Parse()
 
 	if printVer {
