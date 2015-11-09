@@ -228,72 +228,11 @@ func parseServerConfig(config *ss.Config) {
 			servers.srvCipher[i] = &ServerCipher{server, cipher, MaxRtt}
 			i++
 		}
-
-		if sortServersByRtt {
-			if debug {
-				fmt.Fprintf(os.Stderr, "servers before sorting:\n")
-				for _, s := range servers.srvCipher {
-					fmt.Fprintf(os.Stderr, "server: %s, rtt: unknown\n", s.server)
-				}
-			}
-			done := make(chan int)
-			for _, s := range servers.srvCipher {
-				go func(srv *ServerCipher) {
-					p := gping.NewPinger()
-					ra, err := net.ResolveIPAddr("ip4:icmp", strings.Split(srv.server, ":")[0])
-					if err != nil {
-						fmt.Fprintf(os.Stderr, "failed to parse ip address [%s]: %s\n", s.server, err)
-						os.Exit(1)
-					}
-					p.MaxRTT = 5 * time.Second
-					p.AddIPAddr(ra)
-					p.OnRecv = func(addr *net.IPAddr, rtt time.Duration) {
-						if debug {
-							fmt.Fprintf(os.Stderr, "server: %s, rtt: %dms\n", srv.server, rtt/time.Millisecond)
-						}
-						srv.rtt = rtt
-						done <- 1
-						p.Stop()
-					}
-					p.OnIdle = func() {
-						if debug {
-							fmt.Fprintf(os.Stderr, "ping to server: %s timed out\n", srv.server)
-						}
-						done <- 1
-						p.Stop()
-					}
-					err = p.Run()
-					if err != nil {
-						if debug {
-							fmt.Fprintf(os.Stderr, "failed to send icmp packet to ip address [%s]: %s\n", srv.server, err)
-						}
-						done <- 1
-					}
-				}(s)
-			}
-			for i := 0; i < n; i++ {
-				<-done
-			}
-			// bubble sort should be enough
-			for i := 0; i < n-1; i++ {
-				for j := n - 1; j > i; j-- {
-					if servers.srvCipher[j].rtt < servers.srvCipher[j-1].rtt {
-						t := servers.srvCipher[j]
-						servers.srvCipher[j] = servers.srvCipher[j-1]
-						servers.srvCipher[j-1] = t
-					}
-				}
-			}
-
-			if debug {
-				fmt.Fprintf(os.Stderr, "servers  sorted by rtt:\n")
-				for _, s := range servers.srvCipher {
-					fmt.Fprintf(os.Stderr, "server: %s, rtt: %dms\n", s.server, s.rtt/time.Millisecond)
-				}
-			}
-		}
 	}
 	servers.failCnt = make([]int, len(servers.srvCipher))
+	if sortServersByRtt {
+		doSortServersByRtt()
+	}
 	for _, se := range servers.srvCipher {
 		log.Println("available remote server", se.server, "rtt", int64(se.rtt/time.Millisecond), "ms")
 	}
@@ -415,6 +354,74 @@ func enoughOptions(config *ss.Config) bool {
 		config.LocalPort != 0 && config.Password != ""
 }
 
+func doSortServersByRtt() {
+	n := len(servers.srvCipher)
+	if debug {
+		fmt.Fprintf(os.Stderr, "servers before sorting:\n")
+		for _, s := range servers.srvCipher {
+			fmt.Fprintf(os.Stderr, "server: %s, rtt: unknown\n", s.server)
+		}
+		fmt.Fprintf(os.Stderr, "start pining...\n")
+	}
+	done := make(chan int)
+	for _, s := range servers.srvCipher {
+		go func(srv *ServerCipher) {
+			p := gping.NewPinger()
+			ra, err := net.ResolveIPAddr("ip4:icmp", strings.Split(srv.server, ":")[0])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "failed to parse ip address [%s]: %s\n", srv.server, err)
+				os.Exit(1)
+			}
+			p.MaxRTT = 5 * time.Second
+			p.AddIPAddr(ra)
+			p.OnRecv = func(addr *net.IPAddr, rtt time.Duration) {
+				if debug {
+					fmt.Fprintf(os.Stderr, "server: %s, rtt: %dms\n", srv.server, rtt/time.Millisecond)
+				}
+				srv.rtt = rtt
+				done <- 1
+				p.Stop()
+			}
+			p.OnIdle = func() {
+				if debug {
+					fmt.Fprintf(os.Stderr, "ping to server: %s timed out\n", srv.server)
+				}
+				done <- 1
+				p.Stop()
+			}
+			err = p.Run()
+			if err != nil {
+				if debug {
+					fmt.Fprintf(os.Stderr, "failed to send icmp packet to ip address [%s]: %s\n", srv.server, err)
+				}
+				done <- 1
+			}
+		}(s)
+	}
+	for i := 0; i < n; i++ {
+		<-done
+	}
+	if debug {
+		fmt.Fprintf(os.Stderr, "all done...\n")
+	}
+	// bubble sort should be enough
+	for i := 0; i < n-1; i++ {
+		for j := n - 1; j > i; j-- {
+			if servers.srvCipher[j].rtt < servers.srvCipher[j-1].rtt {
+				t := servers.srvCipher[j]
+				servers.srvCipher[j] = servers.srvCipher[j-1]
+				servers.srvCipher[j-1] = t
+			}
+		}
+	}
+
+	if debug {
+		fmt.Fprintf(os.Stderr, "servers  sorted by rtt:\n")
+		for _, s := range servers.srvCipher {
+			fmt.Fprintf(os.Stderr, "server: %s, rtt: %dms\n", s.server, s.rtt/time.Millisecond)
+		}
+	}
+}
 func main() {
 	log.SetOutput(os.Stdout)
 
