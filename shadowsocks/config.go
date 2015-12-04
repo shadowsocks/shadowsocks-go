@@ -124,9 +124,6 @@ func UpdateConfig(old, new *Config) {
 			}
 		}
 	}
-	if old.Method == "table" {
-		old.Method = ""
-	}
 
 	old.Timeout = new.Timeout
 	readTimeout = time.Duration(old.Timeout) * time.Second
