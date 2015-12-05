@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/cast5"
 	"golang.org/x/crypto/salsa20/salsa"
 	"io"
+	"strings"
 )
 
 var errEmptyPassword = errors.New("empty key")
@@ -170,6 +171,8 @@ type Cipher struct {
 	dec  cipher.Stream
 	key  []byte
 	info *cipherInfo
+	ota  bool // one-time auth
+	iv   []byte
 }
 
 // NewCipher creates a cipher that can be used in Dial() etc.
@@ -178,6 +181,13 @@ type Cipher struct {
 func NewCipher(method, password string) (c *Cipher, err error) {
 	if password == "" {
 		return nil, errEmptyPassword
+	}
+	var ota bool
+	if strings.HasSuffix(strings.ToLower(method), "-ota") {
+		method = method[:len(method) - 4] // len("-ota") = 4
+		ota = true
+	} else {
+		ota = false
 	}
 	mi, ok := cipherMethod[method]
 	if !ok {
@@ -191,18 +201,26 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 	if err != nil {
 		return nil, err
 	}
+	c.ota = ota
 	return c, nil
 }
 
 // Initializes the block cipher with CFB mode, returns IV.
 func (c *Cipher) initEncrypt() (iv []byte, err error) {
-	iv = make([]byte, c.info.ivLen)
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return nil, err
+	if c.iv == nil {
+		iv = make([]byte, c.info.ivLen)
+		if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+			return nil, err
+		}
+		c.iv = iv
+	} else {
+		iv = c.iv
 	}
-	c.enc, err = c.info.newStream(c.key, iv, Encrypt)
-	if err != nil {
-		return nil, err
+	if c.enc == nil {
+		c.enc, err = c.info.newStream(c.key, iv, Encrypt)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return
 }

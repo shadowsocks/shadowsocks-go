@@ -170,8 +170,12 @@ func parseServerConfig(config *ss.Config) {
 	}
 
 	if len(config.ServerPassword) == 0 {
+		method := config.Method
+		if config.Auth {
+			method += "-ota"
+		}
 		// only one encryption table
-		cipher, err := ss.NewCipher(config.Method, config.Password)
+		cipher, err := ss.NewCipher(method, config.Password)
 		if err != nil {
 			log.Fatal("Failed generating ciphers:", err)
 		}
