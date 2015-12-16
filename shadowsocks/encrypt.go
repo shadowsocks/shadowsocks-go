@@ -216,12 +216,7 @@ func (c *Cipher) initEncrypt() (iv []byte, err error) {
 	} else {
 		iv = c.iv
 	}
-	if c.enc == nil {
-		c.enc, err = c.info.newStream(c.key, iv, Encrypt)
-		if err != nil {
-			return nil, err
-		}
-	}
+	c.enc, err = c.info.newStream(c.key, iv, Encrypt)
 	return
 }
 

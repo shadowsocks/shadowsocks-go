@@ -105,10 +105,6 @@ const logCntDelta = 100
 var connCnt int
 var nextLogConnCnt int = logCntDelta
 
-type isClosed struct {
-	isClosed bool
-}
-
 func handleConnection(conn *ss.Conn, auth bool) {
 	var host string
 
