@@ -59,9 +59,7 @@ func PipeThenCloseOta(src *Conn, dst net.Conn) {
 	// sometimes it have to fill large block
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
-	i := 0
-	for {
-		i += 1
+	for i := 1; ; i += 1 {
 		SetReadTimeout(src)
 		if n, err := io.ReadFull(src, buf[:dataLenLen+hmacSha1Len]); err != nil {
 			if err == io.EOF {
@@ -77,7 +75,7 @@ func PipeThenCloseOta(src *Conn, dst net.Conn) {
 		if len(buf) < int(idxData0+dataLen) {
 			dataBuf = make([]byte, dataLen)
 		} else {
-			dataBuf = buf[idxData0:idxData0+dataLen]
+			dataBuf = buf[idxData0 : idxData0+dataLen]
 		}
 		if n, err := io.ReadFull(src, dataBuf); err != nil {
 			if err == io.EOF {
