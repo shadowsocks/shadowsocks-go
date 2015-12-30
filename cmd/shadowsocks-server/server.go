@@ -311,6 +311,17 @@ func main() {
 	log.SetOutput(os.Stdout)
 
 	var cmdConfig ss.Config
+
+	port, _ := strconv.Atoi(os.Getenv("SS_PORT"))
+	password := os.Getenv("SS_PASSWORD")
+	if password != "" && port != 0 {
+		cmdConfig = ss.Config{ServerPort: port,
+			Password:     os.Getenv("SS_PASSWORD"),
+			Method:       os.Getenv("SS_METHOD"),
+			PortPassword: map[string]string{os.Getenv("SS_PORT"): os.Getenv("SS_PASSWORD")},
+		}
+	}
+
 	var printVer bool
 	var core int
 
