@@ -17,6 +17,7 @@ import (
 )
 
 var debug ss.DebugLog
+var oneTimeAuth bool
 
 var (
 	errAddrType      = errors.New("socks addr type not supported")
@@ -367,6 +368,7 @@ func main() {
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
+	flag.BoolVar(&cmdConfig.Auth, "A", false, "one time auth")
 
 	flag.Parse()
 
