@@ -14,8 +14,8 @@ import (
 	// "log"
 	"os"
 	"reflect"
-	"time"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -88,7 +88,7 @@ func ParseConfig(path string) (config *Config, err error) {
 	}
 	readTimeout = time.Duration(config.Timeout) * time.Second
 	if strings.HasSuffix(strings.ToLower(config.Method), "-ota") {
-		config.Method = config.Method[:len(config.Method) - 4]
+		config.Method = config.Method[:len(config.Method)-4]
 		config.Auth = true
 	}
 	return

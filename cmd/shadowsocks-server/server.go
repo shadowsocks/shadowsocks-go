@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
 	"net"
@@ -14,8 +13,11 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
+
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
 const (
@@ -342,6 +344,11 @@ func main() {
 	}
 
 	ss.SetDebug(debug)
+
+	if strings.HasSuffix(cmdConfig.Method, "-ota") {
+		cmdConfig.Method = cmdConfig.Method[:len(cmdConfig.Method)-4]
+		cmdConfig.Auth = true
+	}
 
 	var err error
 	config, err = ss.ParseConfig(configFile)

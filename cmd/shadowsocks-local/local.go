@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
 	"math/rand"
@@ -13,11 +12,13 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"time"
+
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
 var debug ss.DebugLog
-var oneTimeAuth bool
 
 var (
 	errAddrType      = errors.New("socks addr type not supported")
@@ -379,6 +380,11 @@ func main() {
 
 	cmdConfig.Server = cmdServer
 	ss.SetDebug(debug)
+
+	if strings.HasSuffix(cmdConfig.Method, "-ota") {
+		cmdConfig.Method = cmdConfig.Method[:len(cmdConfig.Method)-4]
+		cmdConfig.Auth = true
+	}
 
 	exists, err := ss.IsFileExists(configFile)
 	// If no config file in current directory, try search it in the binary directory

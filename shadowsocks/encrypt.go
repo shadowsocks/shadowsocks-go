@@ -9,12 +9,13 @@ import (
 	"crypto/rc4"
 	"encoding/binary"
 	"errors"
+	"io"
+	"strings"
+
 	"github.com/codahale/chacha20"
 	"golang.org/x/crypto/blowfish"
 	"golang.org/x/crypto/cast5"
 	"golang.org/x/crypto/salsa20/salsa"
-	"io"
-	"strings"
 )
 
 var errEmptyPassword = errors.New("empty key")
@@ -184,7 +185,7 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 	}
 	var ota bool
 	if strings.HasSuffix(strings.ToLower(method), "-ota") {
-		method = method[:len(method) - 4] // len("-ota") = 4
+		method = method[:len(method)-4] // len("-ota") = 4
 		ota = true
 	} else {
 		ota = false
