@@ -6,7 +6,7 @@ type LeakyBuf struct {
 	freeList chan []byte
 }
 
-const leakyBufSize = 4096
+const leakyBufSize = 4108 // data.len(2) + hmacsha1(10) + data(4096)
 const maxNBuf = 2048
 
 var leakyBuf = NewLeakyBuf(maxNBuf, leakyBufSize)

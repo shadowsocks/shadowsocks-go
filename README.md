@@ -1,6 +1,6 @@
 # shadowsocks-go
 
-Current version: 1.1.4 [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go)
+Current version: 1.1.5 [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go)
 
 shadowsocks-go is a lightweight tunnel proxy which can help you get through firewalls. It is a port of [shadowsocks](https://github.com/clowwindy/shadowsocks).
 
@@ -12,7 +12,7 @@ The protocol is compatible with the origin shadowsocks (if both have been upgrad
 
 # Install
 
-Compiled client binaries can be download [here](http://dl.chenyufei.info/shadowsocks/). (All compiled with cgo disabled, except the mac version.)
+Download precompiled binarys from the [release page](https://github.com/shadowsocks/shadowsocks-go/releases). (All compiled with cgo disabled, except the mac version.)
 
 You can also install from source (assume you have go installed):
 
@@ -54,6 +54,13 @@ SOCKS5 127.0.0.1:local_port
 AES is recommended for shadowsocks-go. [Intel AES Instruction Set](http://en.wikipedia.org/wiki/AES_instruction_set) will be used if available and can make encryption/decryption very fast. To be more specific, **`aes-128-cfb` is recommended as it is faster and [secure enough](https://www.schneier.com/blog/archives/2009/07/another_new_aes.html)**.
 
 **rc4 and table encryption methods are deprecated because they are not secure.**
+
+### One Time Auth
+
+Append `-auth` to the encryption method to enable [One Time Auth (OTA)](https://shadowsocks.org/en/spec/one-time-auth.html).
+
+- For server: this will **force client use OTA**, non-OTA connection will be dropped. Otherwise, both OTA and non-OTA clients can connect
+- For client: the `-A` command line option can also enable OTA
 
 ## Command line options
 

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
 	"math/rand"
@@ -13,7 +12,10 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"time"
+
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
 var debug ss.DebugLog
@@ -170,8 +172,12 @@ func parseServerConfig(config *ss.Config) {
 	}
 
 	if len(config.ServerPassword) == 0 {
+		method := config.Method
+		if config.Auth {
+			method += "-auth"
+		}
 		// only one encryption table
-		cipher, err := ss.NewCipher(config.Method, config.Password)
+		cipher, err := ss.NewCipher(method, config.Password)
 		if err != nil {
 			log.Fatal("Failed generating ciphers:", err)
 		}
@@ -208,14 +214,17 @@ func parseServerConfig(config *ss.Config) {
 			if !hasPort(server) {
 				log.Fatalf("no port for server %s\n", server)
 			}
-			cipher, ok := cipherCache[passwd]
+			// Using "|" as delimiter is safe here, since no encryption
+			// method contains it in the name.
+			cacheKey := encmethod + "|" + passwd
+			cipher, ok := cipherCache[cacheKey]
 			if !ok {
 				var err error
 				cipher, err = ss.NewCipher(encmethod, passwd)
 				if err != nil {
 					log.Fatal("Failed generating ciphers:", err)
 				}
-				cipherCache[passwd] = cipher
+				cipherCache[cacheKey] = cipher
 			}
 			servers.srvCipher[i] = &ServerCipher{server, cipher}
 			i++
@@ -360,6 +369,7 @@ func main() {
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
+	flag.BoolVar(&cmdConfig.Auth, "A", false, "one time auth")
 
 	flag.Parse()
 
@@ -370,6 +380,11 @@ func main() {
 
 	cmdConfig.Server = cmdServer
 	ss.SetDebug(debug)
+
+	if strings.HasSuffix(cmdConfig.Method, "-auth") {
+		cmdConfig.Method = cmdConfig.Method[:len(cmdConfig.Method)-4]
+		cmdConfig.Auth = true
+	}
 
 	exists, err := ss.IsFileExists(configFile)
 	// If no config file in current directory, try search it in the binary directory

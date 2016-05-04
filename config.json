@@ -3,6 +3,6 @@
     "server_port":8388,
     "local_port":1080,
     "password":"barfoo!",
-    "method": "aes-128-cfb",
+    "method": "aes-128-cfb-auth",
     "timeout":600
 }

@@ -1,6 +1,6 @@
 language: go
 go:
-  - 1.4.2
+  - 1.4.3
 install:
   - go get golang.org/x/crypto/blowfish
   - go get golang.org/x/crypto/cast5
@@ -10,3 +10,4 @@ install:
   - go install ./cmd/shadowsocks-server
 script:
   - PATH=$PATH:$HOME/gopath/bin bash -x ./script/test.sh
+sudo: false

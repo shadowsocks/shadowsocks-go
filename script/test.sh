@@ -47,7 +47,7 @@ test_get() {
     # -s silent to disable progress meter, but enable --show-error
     # -i to include http header
     # -L to follow redirect so we should always get HTTP 200
-    cont=`curl --socks5 $SOCKS -s --show-error -i -L $url 2>&1`
+    cont=`curl -m 5 --socks5 $SOCKS -s --show-error -i -L $url 2>&1`
     ok=`echo $cont | grep -E -o "HTTP/1\.1 +$code"`
     html=`echo $cont | grep -E -o -i "$target"`
     if [[ -z $ok || -z $html ]] ; then
@@ -74,7 +74,7 @@ test_shadowsocks() {
     server_pid=$!
     wait_server $SERVER_PORT
 
-    $LOCAL $OPTION -s 127.0.0.1 -l $LOCAL_PORT -m "$method" &
+    $LOCAL $OPTION -s 127.0.0.1 -l $LOCAL_PORT -m "$method" -A &
     local_pid=$!
     wait_server $LOCAL_PORT
 
@@ -101,12 +101,10 @@ test_server_local_pair() {
 
     local url
     url=http://127.0.0.1:$HTTP_PORT/README.md
-    test_shadowsocks $url table
-    test_shadowsocks $url rc4
     test_shadowsocks $url rc4-md5
     test_shadowsocks $url aes-128-cfb
-    test_shadowsocks $url aes-192-cfb
-    test_shadowsocks $url aes-256-cfb
+    #test_shadowsocks $url aes-192-cfb
+    #test_shadowsocks $url aes-256-cfb
     test_shadowsocks $url bf-cfb
     test_shadowsocks $url des-cfb
     test_shadowsocks $url cast5-cfb
