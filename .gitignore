@@ -1,2 +1,3 @@
 *.deb
 script/http
+bin

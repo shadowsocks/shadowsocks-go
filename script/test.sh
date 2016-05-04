@@ -74,7 +74,7 @@ test_shadowsocks() {
     server_pid=$!
     wait_server $SERVER_PORT
 
-    $LOCAL $OPTION -s 127.0.0.1 -l $LOCAL_PORT -m "$method" &
+    $LOCAL $OPTION -s 127.0.0.1 -l $LOCAL_PORT -m "$method" -A &
     local_pid=$!
     wait_server $LOCAL_PORT
 
@@ -103,8 +103,8 @@ test_server_local_pair() {
     url=http://127.0.0.1:$HTTP_PORT/README.md
     test_shadowsocks $url rc4-md5
     test_shadowsocks $url aes-128-cfb
-    test_shadowsocks $url aes-192-cfb
-    test_shadowsocks $url aes-256-cfb
+    #test_shadowsocks $url aes-192-cfb
+    #test_shadowsocks $url aes-256-cfb
     test_shadowsocks $url bf-cfb
     test_shadowsocks $url des-cfb
     test_shadowsocks $url cast5-cfb
