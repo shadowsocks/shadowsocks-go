@@ -174,7 +174,7 @@ func parseServerConfig(config *ss.Config) {
 	if len(config.ServerPassword) == 0 {
 		method := config.Method
 		if config.Auth {
-			method += "-ota"
+			method += "-auth"
 		}
 		// only one encryption table
 		cipher, err := ss.NewCipher(method, config.Password)
@@ -381,7 +381,7 @@ func main() {
 	cmdConfig.Server = cmdServer
 	ss.SetDebug(debug)
 
-	if strings.HasSuffix(cmdConfig.Method, "-ota") {
+	if strings.HasSuffix(cmdConfig.Method, "-auth") {
 		cmdConfig.Method = cmdConfig.Method[:len(cmdConfig.Method)-4]
 		cmdConfig.Auth = true
 	}

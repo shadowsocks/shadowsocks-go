@@ -184,8 +184,8 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 		return nil, errEmptyPassword
 	}
 	var ota bool
-	if strings.HasSuffix(strings.ToLower(method), "-ota") {
-		method = method[:len(method)-4] // len("-ota") = 4
+	if strings.HasSuffix(strings.ToLower(method), "-auth") {
+		method = method[:len(method)-5] // len("-auth") = 5
 		ota = true
 	} else {
 		ota = false

@@ -87,8 +87,8 @@ func ParseConfig(path string) (config *Config, err error) {
 		return nil, err
 	}
 	readTimeout = time.Duration(config.Timeout) * time.Second
-	if strings.HasSuffix(strings.ToLower(config.Method), "-ota") {
-		config.Method = config.Method[:len(config.Method)-4]
+	if strings.HasSuffix(strings.ToLower(config.Method), "-auth") {
+		config.Method = config.Method[:len(config.Method)-5]
 		config.Auth = true
 	}
 	return

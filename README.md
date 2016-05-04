@@ -57,7 +57,7 @@ AES is recommended for shadowsocks-go. [Intel AES Instruction Set](http://en.wik
 
 ### One Time Auth
 
-Append `-ota` to the encryption method to enable [One Time Auth (OTA)](https://shadowsocks.org/en/spec/one-time-auth.html).
+Append `-auth` to the encryption method to enable [One Time Auth (OTA)](https://shadowsocks.org/en/spec/one-time-auth.html).
 
 - For server: this will **force client use OTA**, non-OTA connection will be dropped. Otherwise, both OTA and non-OTA clients can connect
 - For client: the `-A` command line option can also enable OTA
