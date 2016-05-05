@@ -346,7 +346,7 @@ func main() {
 	ss.SetDebug(debug)
 
 	if strings.HasSuffix(cmdConfig.Method, "-auth") {
-		cmdConfig.Method = cmdConfig.Method[:len(cmdConfig.Method)-4]
+		cmdConfig.Method = cmdConfig.Method[:len(cmdConfig.Method)-5]
 		cmdConfig.Auth = true
 	}
 
