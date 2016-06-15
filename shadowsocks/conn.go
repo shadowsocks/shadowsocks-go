@@ -16,9 +16,9 @@ const (
 type Conn struct {
 	net.Conn
 	*Cipher
-	readBuf   []byte
-	writeBuf  []byte
-	chunkId   uint32
+	readBuf  []byte
+	writeBuf []byte
+	chunkId  uint32
 }
 
 func NewConn(c net.Conn, cipher *Cipher) *Conn {
@@ -142,11 +142,19 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 }
 
 func (c *Conn) Write(b []byte) (n int, err error) {
+	nn := len(b)
 	if c.ota {
 		chunkId := c.GetAndIncrChunkId()
 		b = otaReqChunkAuth(c.iv, chunkId, b)
 	}
-	return c.write(b)
+	headerLen := len(b) - nn
+
+	n, err = c.write(b)
+	// Make sure <= 0 <= len(b), where b is the slice passed in.
+	if n >= headerLen {
+		n -= headerLen
+	}
+	return
 }
 
 func (c *Conn) write(b []byte) (n int, err error) {
