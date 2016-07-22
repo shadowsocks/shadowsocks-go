@@ -87,6 +87,10 @@ func TestChaCha20(t *testing.T) {
 	testBlockCipher(t, "chacha20")
 }
 
+func TestChaCha20IETF(t *testing.T) {
+	testBlockCipher(t, "chacha20-ietf")
+}
+
 var cipherKey = make([]byte, 64)
 var cipherIv = make([]byte, 64)
 

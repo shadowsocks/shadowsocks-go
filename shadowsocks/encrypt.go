@@ -12,6 +12,7 @@ import (
 	"io"
 	"strings"
 
+	chacha20IETF "github.com/aead/chacha20"
 	"github.com/codahale/chacha20"
 	"golang.org/x/crypto/blowfish"
 	"golang.org/x/crypto/cast5"
@@ -98,6 +99,23 @@ func newChaCha20Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
 	return chacha20.New(key, iv)
 }
 
+func newChacha20IETFStream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
+	if len(key) != 32 {
+		return nil, errors.New("invlaid key size")
+	}
+	if len(iv) != chacha20IETF.NonceSize {
+		return nil, errors.New("invlaid iv size")
+	}
+	var (
+		Key   [32]byte
+		nonce [chacha20IETF.NonceSize]byte
+	)
+	copy(Key[:], key)
+	copy(nonce[:], iv)
+
+	return chacha20IETF.NewCipher(&nonce, &Key), nil
+}
+
 type salsaStreamCipher struct {
 	nonce   [8]byte
 	key     [32]byte
@@ -145,15 +163,16 @@ type cipherInfo struct {
 }
 
 var cipherMethod = map[string]*cipherInfo{
-	"aes-128-cfb": {16, 16, newAESStream},
-	"aes-192-cfb": {24, 16, newAESStream},
-	"aes-256-cfb": {32, 16, newAESStream},
-	"des-cfb":     {8, 8, newDESStream},
-	"bf-cfb":      {16, 8, newBlowFishStream},
-	"cast5-cfb":   {16, 8, newCast5Stream},
-	"rc4-md5":     {16, 16, newRC4MD5Stream},
-	"chacha20":    {32, 8, newChaCha20Stream},
-	"salsa20":     {32, 8, newSalsa20Stream},
+	"aes-128-cfb":   {16, 16, newAESStream},
+	"aes-192-cfb":   {24, 16, newAESStream},
+	"aes-256-cfb":   {32, 16, newAESStream},
+	"des-cfb":       {8, 8, newDESStream},
+	"bf-cfb":        {16, 8, newBlowFishStream},
+	"cast5-cfb":     {16, 8, newCast5Stream},
+	"rc4-md5":       {16, 16, newRC4MD5Stream},
+	"chacha20":      {32, 8, newChaCha20Stream},
+	"chacha20-ietf": {32, 12, newChacha20IETFStream},
+	"salsa20":       {32, 8, newSalsa20Stream},
 }
 
 func CheckCipherMethod(method string) error {
