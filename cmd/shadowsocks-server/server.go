@@ -17,7 +17,7 @@ import (
 	"sync"
 	"syscall"
 
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/lijinpei/shadowsocks-go/shadowsocks"
 )
 
 const (
@@ -376,6 +376,12 @@ func main() {
 	if core > 0 {
 		runtime.GOMAXPROCS(core)
 	}
+<<<<<<< HEAD
+=======
+	if nil == config.Server {
+		config.Server = []string{"[::]"}
+	}
+>>>>>>> master
 	for _, address := range config.Server {
 		for port, password := range config.PortPassword {
 			go run(address, port, password, config.Auth)

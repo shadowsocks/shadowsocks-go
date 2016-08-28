@@ -17,5 +17,5 @@ func main() {
 		os.Exit(1)
 	}
 	http.HandleFunc("/", handler)
-	http.ListenAndServe("127.0.0.1:"+os.Args[1], nil)
+	http.ListenAndServe("0.0.0.0:"+os.Args[1], nil)
 }
