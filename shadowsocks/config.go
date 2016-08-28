@@ -19,7 +19,7 @@ import (
 )
 
 type Config struct {
-	Server     string      `json:"server"`
+	Server     []string    `json:"server"`
 	ServerPort int         `json:"server_port"`
 	LocalPort  int         `json:"local_port"`
 	Password   string      `json:"password"`
@@ -39,6 +39,7 @@ type Config struct {
 
 var readTimeout time.Duration
 /*
+// This function should be deprecated.
 func (config *Config) GetServerArray() []string {
 	// Specifying multiple servers in the "server" options is deprecated.
 	// But for backward compatiblity, keep this.

@@ -239,10 +239,12 @@ func updatePasswd() {
 	if err = unifyPortPassword(config); err != nil {
 		return
 	}
-	for port, passwd := range config.PortPassword {
-		passwdManager.updatePortPasswd(config.Server, port, passwd, config.Auth)
-		if oldconfig.PortPassword != nil {
-			delete(oldconfig.PortPassword, port)
+	for _, address := range config.Server {
+		for port, passwd := range config.PortPassword {
+			passwdManager.updatePortPasswd(address, port, passwd, config.Auth)
+			if oldconfig.PortPassword != nil {
+				delete(oldconfig.PortPassword, port)
+			}
 		}
 	}
 	// port password still left in the old config should be closed
@@ -374,8 +376,10 @@ func main() {
 	if core > 0 {
 		runtime.GOMAXPROCS(core)
 	}
-	for port, password := range config.PortPassword {
-		go run(config.Server, port, password, config.Auth)
+	for _, address := range config.Server {
+		for port, password := range config.PortPassword {
+			go run(address, port, password, config.Auth)
+		}
 	}
 
 	waitSignal()
