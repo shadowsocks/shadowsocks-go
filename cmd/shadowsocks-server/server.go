@@ -216,7 +216,7 @@ func (pm *PasswdManager) updatePortPasswd(address, port, password string, auth b
 		if pl.password == password {
 			return
 		}
-		log.Printf("closing port %s to update password\n", port)
+		log.Printf("closing address %v port %s to update password\n", address, port)
 		pl.listener.Close()
 	}
 	// run will add the new port listener to passwdManager.
@@ -268,14 +268,14 @@ func waitSignal() {
 }
 
 func run(address, port, password string, auth bool) {
-	ln, err := net.Listen("tcp", ":"+port)
+	ln, err := net.Listen("tcp", address+":"+port)
 	if err != nil {
-		log.Printf("error listening port %v: %v\n", port, err)
+		log.Printf("error listening address %v port %v: %v\n", address, port, err)
 		os.Exit(1)
 	}
 	passwdManager.add(port, password, ln)
 	var cipher *ss.Cipher
-	log.Printf("server listening port %v ...\n", port)
+	log.Printf("server listening address %v port %v ...\n", address, port)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -285,7 +285,7 @@ func run(address, port, password string, auth bool) {
 		}
 		// Creating cipher upon first connection.
 		if cipher == nil {
-			log.Println("creating cipher for port:", port)
+			log.Println("creating cipher for port :", port)
 			cipher, err = ss.NewCipher(config.Method, password)
 			if err != nil {
 				log.Printf("Error generating cipher for port: %s %v\n", port, err)
