@@ -208,7 +208,7 @@ func (pm *PasswdManager) del(port string) {
 // port. A different approach would be directly change the password used by
 // that port, but that requires **sharing** password between the port listener
 // and password manager.
-func (pm *PasswdManager) updatePortPasswd(port, password string, auth bool) {
+func (pm *PasswdManager) updatePortPasswd(address, port, password string, auth bool) {
 	pl, ok := pm.get(port)
 	if !ok {
 		log.Printf("new port %s added\n", port)
@@ -221,7 +221,7 @@ func (pm *PasswdManager) updatePortPasswd(port, password string, auth bool) {
 	}
 	// run will add the new port listener to passwdManager.
 	// So there maybe concurrent access to passwdManager and we need lock to protect it.
-	go run(port, password, auth)
+	go run(address, port, password, auth)
 }
 
 var passwdManager = PasswdManager{portListener: map[string]*PortListener{}}
@@ -240,7 +240,7 @@ func updatePasswd() {
 		return
 	}
 	for port, passwd := range config.PortPassword {
-		passwdManager.updatePortPasswd(port, passwd, config.Auth)
+		passwdManager.updatePortPasswd(config.Server, port, passwd, config.Auth)
 		if oldconfig.PortPassword != nil {
 			delete(oldconfig.PortPassword, port)
 		}
@@ -267,7 +267,7 @@ func waitSignal() {
 	}
 }
 
-func run(port, password string, auth bool) {
+func run(address, port, password string, auth bool) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		log.Printf("error listening port %v: %v\n", port, err)
@@ -375,7 +375,7 @@ func main() {
 		runtime.GOMAXPROCS(core)
 	}
 	for port, password := range config.PortPassword {
-		go run(port, password, config.Auth)
+		go run(config.Server, port, password, config.Auth)
 	}
 
 	waitSignal()
