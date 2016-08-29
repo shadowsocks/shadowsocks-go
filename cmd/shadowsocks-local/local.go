@@ -182,7 +182,7 @@ func parseServerConfig(config *ss.Config) {
 			log.Fatal("Failed generating ciphers:", err)
 		}
 		srvPort := strconv.Itoa(config.ServerPort)
-		srvArr := config.GetServerArray()
+		srvArr := config.Server
 		n := len(srvArr)
 		servers.srvCipher = make([]*ServerCipher, n)
 
@@ -378,7 +378,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	cmdConfig.Server = cmdServer
+	cmdConfig.Server = []string{cmdServer}
 	ss.SetDebug(debug)
 
 	if strings.HasSuffix(cmdConfig.Method, "-auth") {
@@ -415,7 +415,7 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		if config.Password != "" || config.ServerPort != 0 || config.GetServerArray() != nil {
+		if config.Password != "" || config.ServerPort != 0 || config.Server != nil {
 			fmt.Fprintln(os.Stderr, "given server_password, ignore server, server_port and password option:", config)
 		}
 		if config.LocalPort == 0 {
