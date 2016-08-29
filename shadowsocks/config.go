@@ -19,7 +19,7 @@ import (
 )
 
 type Config struct {
-	Server     interface{} `json:"server"`
+	Server     []string    `json:"server"`
 	ServerPort int         `json:"server_port"`
 	LocalPort  int         `json:"local_port"`
 	Password   string      `json:"password"`
@@ -38,7 +38,8 @@ type Config struct {
 }
 
 var readTimeout time.Duration
-
+/*
+// This function should be deprecated.
 func (config *Config) GetServerArray() []string {
 	// Specifying multiple servers in the "server" options is deprecated.
 	// But for backward compatiblity, keep this.
@@ -51,12 +52,10 @@ func (config *Config) GetServerArray() []string {
 	}
 	arr, ok := config.Server.([]interface{})
 	if ok {
-		/*
 			if len(arr) > 1 {
 				log.Println("Multiple servers in \"server\" option is deprecated. " +
 					"Please use \"server_password\" instead.")
 			}
-		*/
 		serverArr := make([]string, len(arr), len(arr))
 		for i, s := range arr {
 			serverArr[i], ok = s.(string)
@@ -69,7 +68,7 @@ func (config *Config) GetServerArray() []string {
 typeError:
 	panic(fmt.Sprintf("Config.Server type error %v", reflect.TypeOf(config.Server)))
 }
-
+*/
 func ParseConfig(path string) (config *Config, err error) {
 	file, err := os.Open(path) // For read access.
 	if err != nil {
