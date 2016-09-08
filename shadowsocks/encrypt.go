@@ -250,6 +250,7 @@ func (c *Cipher) Copy() *Cipher {
 	// the nature of the algorithm.)
 
 	nc := *c
+	nc.iv = nil
 	nc.enc = nil
 	nc.dec = nil
 	nc.ota = c.ota
