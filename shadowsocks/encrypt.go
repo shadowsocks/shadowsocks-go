@@ -65,9 +65,17 @@ func newStream(block cipher.Block, err error, key, iv []byte,
 	}
 }
 
-func newAESStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
+func newAESCFBStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
 	block, err := aes.NewCipher(key)
 	return newStream(block, err, key, iv, doe)
+}
+
+func newAESCTRStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewCTR(block, iv), nil
 }
 
 func newDESStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
@@ -145,9 +153,12 @@ type cipherInfo struct {
 }
 
 var cipherMethod = map[string]*cipherInfo{
-	"aes-128-cfb": {16, 16, newAESStream},
-	"aes-192-cfb": {24, 16, newAESStream},
-	"aes-256-cfb": {32, 16, newAESStream},
+	"aes-128-cfb": {16, 16, newAESCFBStream},
+	"aes-192-cfb": {24, 16, newAESCFBStream},
+	"aes-256-cfb": {32, 16, newAESCFBStream},
+	"aes-128-ctr": {16, 16, newAESCTRStream},
+	"aes-192-ctr": {24, 16, newAESCTRStream},
+	"aes-256-ctr": {32, 16, newAESCTRStream},
 	"des-cfb":     {8, 8, newDESStream},
 	"bf-cfb":      {16, 8, newBlowFishStream},
 	"cast5-cfb":   {16, 8, newCast5Stream},
