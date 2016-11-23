@@ -116,10 +116,8 @@ tl := &ss.TrafficListener{0, 0}
 
 conn.TrafficListener = tl
 
-tl.In	#进口流量
-tl.Out	#出口流量
 
-tl.Clear()
-
+tl.GetIn()	#进口流量
+tl.GetOut()	#出口流量
 
 ```
