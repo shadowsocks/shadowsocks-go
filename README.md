@@ -107,17 +107,3 @@ Edit the config file used to start the server, then send `SIGHUP` to the server 
 
 If vswap is not an option and memory usage is a problem for you, try [shadowsocks-libev](https://github.com/madeye/shadowsocks-libev).
 
-### Traffic Counter
-
-```
-var conn *ss.Conn
-
-tl := &ss.TrafficListener{0, 0}
-
-conn.TrafficListener = tl
-
-
-tl.GetIn()	#进口流量
-tl.GetOut()	#出口流量
-
-```
