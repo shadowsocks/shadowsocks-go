@@ -236,11 +236,17 @@ func updatePasswd() {
 	oldconfig := config
 	config = newconfig
 
-	if err = unifyPortPassword(config); err != nil {
+	server, err := unifyPortPassword(config)
+	if err != nil {
 		return
 	}
 	for port, passwd := range config.PortPassword {
-		passwdManager.updatePortPasswd(port, passwd, config.Auth)
+		if strings.Index(port, ":") > -1 {
+			passwdManager.updatePortPasswd(port, passwd, config.Auth)
+		} else {
+			passwdManager.updatePortPasswd((server + ":" + port), passwd, config.Auth)
+		}
+
 		if oldconfig.PortPassword != nil {
 			delete(oldconfig.PortPassword, port)
 		}
@@ -268,7 +274,7 @@ func waitSignal() {
 }
 
 func run(port, password string, auth bool) {
-	ln, err := net.Listen("tcp", ":"+port)
+	ln, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Printf("error listening port %v: %v\n", port, err)
 		os.Exit(1)
@@ -301,11 +307,18 @@ func enoughOptions(config *ss.Config) bool {
 	return config.ServerPort != 0 && config.Password != ""
 }
 
-func unifyPortPassword(config *ss.Config) (err error) {
+func unifyPortPassword(config *ss.Config) (server string, err error) {
+	svrArr := config.GetServerArray()
+	if len(svrArr) != 1 {
+		fmt.Fprintf(os.Stderr, "must specify server: %v\n", svrArr)
+		return "", errors.New("invalid option server")
+	}
+	server = svrArr[0]
+
 	if len(config.PortPassword) == 0 { // this handles both nil PortPassword and empty one
 		if !enoughOptions(config) {
 			fmt.Fprintln(os.Stderr, "must specify both port and password")
-			return errors.New("not enough options")
+			return "", errors.New("not enough options")
 		}
 		port := strconv.Itoa(config.ServerPort)
 		config.PortPassword = map[string]string{port: config.Password}
@@ -368,14 +381,19 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err = unifyPortPassword(config); err != nil {
+	server, err := unifyPortPassword(config)
+	if err != nil {
 		os.Exit(1)
 	}
 	if core > 0 {
 		runtime.GOMAXPROCS(core)
 	}
 	for port, password := range config.PortPassword {
-		go run(port, password, config.Auth)
+		if strings.Index(port, ":") > -1 {
+			go run(port, password, config.Auth)
+		} else {
+			go run((server + ":" + port), password, config.Auth)
+		}
 	}
 
 	waitSignal()
