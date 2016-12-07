@@ -309,11 +309,14 @@ func enoughOptions(config *ss.Config) bool {
 
 func unifyPortPassword(config *ss.Config) (server string, err error) {
 	svrArr := config.GetServerArray()
-	if len(svrArr) != 1 {
+	if len(svrArr) == 0 {
+		server = "0.0.0.0"
+	} else if len(svrArr) == 1 {
+		server = svrArr[0]
+	} else if len(svrArr) != 1 {
 		fmt.Fprintf(os.Stderr, "must specify server: %v\n", svrArr)
 		return "", errors.New("invalid option server")
 	}
-	server = svrArr[0]
 
 	if len(config.PortPassword) == 0 { // this handles both nil PortPassword and empty one
 		if !enoughOptions(config) {
