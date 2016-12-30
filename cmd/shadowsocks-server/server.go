@@ -17,7 +17,7 @@ import (
 	"sync"
 	"syscall"
 
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/slurin/shadowsocks-go/shadowsocks"
 )
 
 const (
@@ -46,7 +46,7 @@ func getRequest(conn *ss.Conn, auth bool) (host string, ota bool, err error) {
 	// 1(addrType) + 1(lenByte) + 256(max length address) + 2(port) + 10(hmac-sha1)
 	buf := make([]byte, 270)
 	// read till we get possible domain length field
-	if _, err = io.ReadFull(conn, buf[:idType+1]); err != nil {
+	if _, err = io.ReadFull(conn, buf[:1]); err != nil {
 		return
 	}
 
@@ -58,7 +58,7 @@ func getRequest(conn *ss.Conn, auth bool) (host string, ota bool, err error) {
 	case typeIPv6:
 		reqStart, reqEnd = idIP0, idIP0+lenIPv6
 	case typeDm:
-		if _, err = io.ReadFull(conn, buf[idType+1:idDmLen+1]); err != nil {
+		if _, err = io.ReadFull(conn, buf[1:2]); err != nil {
 			return
 		}
 		reqStart, reqEnd = idDm0, int(idDm0+buf[idDmLen]+lenDmBase)
@@ -66,7 +66,6 @@ func getRequest(conn *ss.Conn, auth bool) (host string, ota bool, err error) {
 		err = fmt.Errorf("addr type %d not supported", addrType&ss.AddrMask)
 		return
 	}
-
 	if _, err = io.ReadFull(conn, buf[reqStart:reqEnd]); err != nil {
 		return
 	}
@@ -105,7 +104,7 @@ func getRequest(conn *ss.Conn, auth bool) (host string, ota bool, err error) {
 const logCntDelta = 100
 
 var connCnt int
-var nextLogConnCnt int = logCntDelta
+var nextLogConnCnt = logCntDelta
 
 func handleConnection(conn *ss.Conn, auth bool) {
 	var host string
@@ -138,6 +137,7 @@ func handleConnection(conn *ss.Conn, auth bool) {
 	host, ota, err := getRequest(conn, auth)
 	if err != nil {
 		log.Println("error getting request", conn.RemoteAddr(), conn.LocalAddr(), err)
+		closed = true
 		return
 	}
 	debug.Println("connecting", host)
@@ -246,7 +246,7 @@ func updatePasswd() {
 		}
 	}
 	// port password still left in the old config should be closed
-	for port, _ := range oldconfig.PortPassword {
+	for port := range oldconfig.PortPassword {
 		log.Printf("closing port %s as it's deleted\n", port)
 		passwdManager.del(port)
 	}

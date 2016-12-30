@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/slurin/shadowsocks-go/shadowsocks"
 )
 
 var debug ss.DebugLog
