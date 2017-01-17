@@ -43,8 +43,8 @@ func getRequest(conn *ss.Conn, auth bool) (host string, ota bool, err error) {
 
 	// buf size should at least have the same size with the largest possible
 	// request size (when addrType is 3, domain name has at most 256 bytes)
-	// 1(addrType) + 1(lenByte) + 256(max length address) + 2(port) + 10(hmac-sha1)
-	buf := make([]byte, 270)
+	// 1(addrType) + 1(lenByte) + 255(max length address) + 2(port) + 10(hmac-sha1)
+	buf := make([]byte, 269)
 	// read till we get possible domain length field
 	if _, err = io.ReadFull(conn, buf[:idType+1]); err != nil {
 		return
@@ -61,7 +61,7 @@ func getRequest(conn *ss.Conn, auth bool) (host string, ota bool, err error) {
 		if _, err = io.ReadFull(conn, buf[idType+1:idDmLen+1]); err != nil {
 			return
 		}
-		reqStart, reqEnd = idDm0, int(idDm0+buf[idDmLen]+lenDmBase)
+		reqStart, reqEnd = idDm0, idDm0+int(buf[idDmLen])+lenDmBase
 	default:
 		err = fmt.Errorf("addr type %d not supported", addrType&ss.AddrMask)
 		return
@@ -80,7 +80,7 @@ func getRequest(conn *ss.Conn, auth bool) (host string, ota bool, err error) {
 	case typeIPv6:
 		host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
 	case typeDm:
-		host = string(buf[idDm0 : idDm0+buf[idDmLen]])
+		host = string(buf[idDm0 : idDm0+int(buf[idDmLen])])
 	}
 	// parse port
 	port := binary.BigEndian.Uint16(buf[reqEnd-2 : reqEnd])
