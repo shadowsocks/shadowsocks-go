@@ -1,139 +1,139 @@
 package shadowsocks
 
 import (
-	"errors"
+	"bytes"
+	"fmt"
 	"net"
+	"time"
 )
 
-type UDPConn struct {
-	*net.UDPConn
+const (
+	maxPacketSize = 4096 // increase it if error occurs
+)
+
+var (
+	errPacketTooSmall  = fmt.Errorf("[udp]read error: cannot decrypt, received packet is smaller than ivLen")
+	errPacketTooLarge  = fmt.Errorf("[udp]read error: received packet is latger than maxPacketSize(%d)", maxPacketSize)
+	errBufferTooSmall  = fmt.Errorf("[udp]read error: given buffer is too small to hold data")
+	errPacketOtaFailed = fmt.Errorf("[udp]read error: received packet has invalid ota")
+)
+
+type SecurePacketConn struct {
+	net.PacketConn
 	*Cipher
-	readBuf []byte
-	// writeBuf []byte
-	// for shadowsocks-go
-	natlist NATlist
+	ota bool
 }
 
-func NewUDPConn(c *net.UDPConn, cipher *Cipher) *UDPConn {
-	return &UDPConn{
-		UDPConn: c,
-		Cipher:  cipher,
-		readBuf: leakyBuf.Get(),
-		// for thread safety
-		// writeBuf: leakyBuf.Get(),
-		// for shadowsocks-go
-		natlist: NATlist{conns: map[string]*CachedUDPConn{}},
+func NewSecurePacketConn(c net.PacketConn, cipher *Cipher, ota bool) *SecurePacketConn {
+	return &SecurePacketConn{
+		PacketConn: c,
+		Cipher:     cipher,
+		ota:        ota,
 	}
 }
 
-func (c *UDPConn) Close() error {
-	leakyBuf.Put(c.readBuf)
-	//leakyBuf.Put(c.writeBuf)
-	return c.UDPConn.Close()
+func (c *SecurePacketConn) Close() error {
+	return c.PacketConn.Close()
 }
 
-func (c *UDPConn) Read(b []byte) (n int, err error) {
-	buf := c.readBuf
-	n, err = c.UDPConn.Read(buf[0:])
+func (c *SecurePacketConn) ReadFrom(b []byte) (n int, src net.Addr, err error) {
+	cipher := c.Copy()
+	buf := make([]byte, 4096)
+	n, src, err = c.PacketConn.ReadFrom(buf)
 	if err != nil {
 		return
 	}
 
-	iv := buf[:c.info.ivLen]
-	if err = c.initDecrypt(iv); err != nil {
-		return
-	}
-	c.decrypt(b[0:n-c.info.ivLen], buf[c.info.ivLen:n])
-	n = n - c.info.ivLen
-	return
-}
-
-func (c *UDPConn) ReadFrom(b []byte) (n int, src net.Addr, err error) {
-	n, src, err = c.UDPConn.ReadFrom(c.readBuf[0:])
-	if err != nil {
-		return
-	}
 	if n < c.info.ivLen {
-		return 0, nil, errors.New("[udp]read error: cannot decrypt")
+		return 0, nil, errPacketTooSmall
 	}
+
+	if len(b) < n-c.info.ivLen {
+		err = errBufferTooSmall // just a warning
+	}
+
 	iv := make([]byte, c.info.ivLen)
-	copy(iv, c.readBuf[:c.info.ivLen])
-	if err = c.initDecrypt(iv); err != nil {
+	copy(iv, buf[:c.info.ivLen])
+
+	if err = cipher.initDecrypt(iv); err != nil {
 		return
 	}
-	c.decrypt(b[0:n-c.info.ivLen], c.readBuf[c.info.ivLen:n])
-	n = n - c.info.ivLen
+
+	cipher.decrypt(b[0:], buf[c.info.ivLen:n])
+	n -= c.info.ivLen
+	if c.ota {
+		key := cipher.key
+		actualHmacSha1Buf := HmacSha1(append(iv, key...), b[:n-lenHmacSha1])
+		if !bytes.Equal(b[n-lenHmacSha1:n], actualHmacSha1Buf) {
+			Debug.Printf("verify one time auth failed, iv=%v key=%v data=%v", iv, key, b)
+			return 0, nil, errPacketOtaFailed
+		}
+		n -= lenHmacSha1
+	}
+
 	return
 }
 
-func (c *UDPConn) ReadFromUDP(b []byte) (n int, src *net.UDPAddr, err error) {
-	n, src, err = c.UDPConn.ReadFromUDP(c.readBuf[0:])
+func (c *SecurePacketConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
+	cipher := c.Copy()
+	iv, err := cipher.initEncrypt()
 	if err != nil {
 		return
 	}
-	if n < c.info.ivLen {
-		return 0, nil, errors.New("[udp]read error: cannot decrypt")
-	}
-	iv := make([]byte, c.info.ivLen)
-	copy(iv, c.readBuf[:c.info.ivLen])
-	if err = c.initDecrypt(iv); err != nil {
-		return
-	}
-	c.decrypt(b[0:n-c.info.ivLen], c.readBuf[c.info.ivLen:n])
-	n = n - c.info.ivLen
-	return
-}
+	packetLen := len(b) + len(iv)
 
-// Maybe some thread safe issue with Write and encryption
-func (c *UDPConn) Write(b []byte) (n int, err error) {
-	dataStart := 0
-
-	var iv []byte
-	iv, err = c.initEncrypt()
-	if err != nil {
-		return
+	if c.ota {
+		packetLen += lenHmacSha1
+		key := cipher.key
+		actualHmacSha1Buf := HmacSha1(append(iv, key...), b)
+		b = append(b, actualHmacSha1Buf...)
 	}
-	// Put initialization vector in buffer, do a single write to send both
-	// iv and data.
-	cipherData := make([]byte, len(b)+len(iv))
+
+	cipherData := make([]byte, packetLen)
 	copy(cipherData, iv)
-	dataStart = len(iv)
 
-	c.encrypt(cipherData[dataStart:], b)
-	n, err = c.UDPConn.Write(cipherData)
+	cipher.encrypt(cipherData[len(iv):], b)
+	n, err = c.PacketConn.WriteTo(cipherData, dst)
 	return
 }
 
-func (c *UDPConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
-	var iv []byte
-	iv, err = c.initEncrypt()
-	if err != nil {
-		return
-	}
-	// Put initialization vector in buffer, do a single write to send both
-	// iv and data.
-	cipherData := make([]byte, len(b)+len(iv))
-	copy(cipherData, iv)
-	dataStart := len(iv)
-
-	c.encrypt(cipherData[dataStart:], b)
-	n, err = c.UDPConn.WriteTo(cipherData, dst)
-	return
+func (c *SecurePacketConn) LocalAddr() net.Addr {
+	return c.PacketConn.LocalAddr()
 }
 
-func (c *UDPConn) WriteToUDP(b []byte, dst *net.UDPAddr) (n int, err error) {
-	var iv []byte
-	iv, err = c.initEncrypt()
+func (c *SecurePacketConn) SetDeadline(t time.Time) error {
+	return c.PacketConn.SetDeadline(t)
+}
+
+func (c *SecurePacketConn) SetReadDeadline(t time.Time) error {
+	return c.PacketConn.SetReadDeadline(t)
+}
+
+func (c *SecurePacketConn) SetWriteDeadline(t time.Time) error {
+	return c.PacketConn.SetWriteDeadline(t)
+}
+
+func (c *SecurePacketConn) IsOta() bool {
+	return c.ota
+}
+
+func (c *SecurePacketConn) ForceOTAWriteTo(b []byte, dst net.Addr) (n int, err error) {
+	cipher := c.Copy()
+	iv, err := cipher.initEncrypt()
 	if err != nil {
 		return
 	}
-	// Put initialization vector in buffer, do a single write to send both
-	// iv and data.
-	cipherData := make([]byte, len(b)+len(iv))
-	copy(cipherData, iv)
-	dataStart := len(iv)
+	packetLen := len(b) + len(iv)
 
-	c.encrypt(cipherData[dataStart:], b)
-	n, err = c.UDPConn.WriteToUDP(cipherData, dst)
+	packetLen += lenHmacSha1
+	key := cipher.key
+	actualHmacSha1Buf := HmacSha1(append(iv, key...), b)
+	b = append(b, actualHmacSha1Buf...)
+
+	cipherData := make([]byte, packetLen)
+	copy(cipherData, iv)
+
+	cipher.encrypt(cipherData[len(iv):], b)
+	n, err = c.PacketConn.WriteTo(cipherData, dst)
 	return
 }

@@ -20,76 +20,66 @@ const (
 	typeDm   = 3 // type is domain address
 	typeIPv6 = 4 // type is ipv6 address
 
-	lenIPv4   = 1 + net.IPv4len + 2 // 1addrType + ipv4 + 2port
-	lenIPv6   = 1 + net.IPv6len + 2 // 1addrType + ipv6 + 2port
-	lenDmBase = 1 + 1 + 2           // 1addrType + 1addrLen + 2port, plus addrLen
+	lenIPv4     = 1 + net.IPv4len + 2 // 1addrType + ipv4 + 2port
+	lenIPv6     = 1 + net.IPv6len + 2 // 1addrType + ipv6 + 2port
+	lenDmBase   = 1 + 1 + 2           // 1addrType + 1addrLen + 2port, plus addrLen
+	lenHmacSha1 = 10
 )
 
 var (
-	reqList = ReqList{List: map[string]*ReqNode{}}
+	reqList            = newReqList()
+	natlist            = newNatTable()
+	udpTimeout         = 30 * time.Second
+	reqListRefreshTime = 5 * time.Minute
 )
 
-type CachedUDPConn struct {
-	*net.UDPConn
-	srcaddr_index string
-}
-
-func NewCachedUDPConn(udpconn *net.UDPConn, index string) *CachedUDPConn {
-	return &CachedUDPConn{udpconn, index}
-}
-
-func (c *CachedUDPConn) Close() error {
-	return c.UDPConn.Close()
-}
-
-type NATlist struct {
+type natTable struct {
 	sync.Mutex
-	conns map[string]*CachedUDPConn
+	conns map[string]net.PacketConn
 }
 
-func (self *NATlist) Delete(index string) {
-	self.Lock()
-	c, ok := self.conns[index]
+func newNatTable() *natTable {
+	return &natTable{conns: map[string]net.PacketConn{}}
+}
+
+func (table *natTable) DeleteAndClose(index string) {
+	table.Lock()
+	defer table.Unlock()
+	c, ok := table.conns[index]
 	if ok {
 		c.Close()
-		delete(self.conns, index)
+		delete(table.conns, index)
 	}
-	// Socks5 Request header processing
-	reqList.Refresh()
-	defer self.Unlock()
 }
 
-func (self *NATlist) Get(index string) (c *CachedUDPConn, ok bool, err error) {
-	self.Lock()
-	defer self.Unlock()
-	c, ok = self.conns[index]
+func (table *natTable) Get(index string) (c net.PacketConn, ok bool, err error) {
+	table.Lock()
+	defer table.Unlock()
+	c, ok = table.conns[index]
 	if !ok {
-		//NAT not exists or expired
-		//delete(self.conns, index)
-		//ok = false
-		//full cone
-		conn, err := net.ListenUDP("udp", &net.UDPAddr{
-			IP:   net.IPv6zero,
-			Port: 0,
-		})
+		c, err = net.ListenPacket("udp", "")
 		if err != nil {
-			return nil, ok, err
+			return nil, false, err
 		}
-		c = NewCachedUDPConn(conn, index)
-		self.conns[index] = c
+		table.conns[index] = c
 	}
-	err = nil
 	return
 }
 
-type ReqNode struct {
-	Req    []byte
-	ReqLen int
+type ReqList struct {
+	sync.Mutex
+	List map[string]([]byte)
 }
 
-type ReqList struct {
-	List map[string]*ReqNode
-	sync.Mutex
+func newReqList() *ReqList {
+	ret := &ReqList{List: map[string]([]byte){}}
+	go func() {
+		for {
+			time.Sleep(reqListRefreshTime)
+			ret.Refresh()
+		}
+	}()
+	return ret
 }
 
 func (r *ReqList) Refresh() {
@@ -100,14 +90,14 @@ func (r *ReqList) Refresh() {
 	}
 }
 
-func (r *ReqList) Get(dstaddr string) (req *ReqNode, ok bool) {
+func (r *ReqList) Get(dstaddr string) (req []byte, ok bool) {
 	r.Lock()
 	defer r.Unlock()
 	req, ok = r.List[dstaddr]
 	return
 }
 
-func (r *ReqList) Put(dstaddr string, req *ReqNode) {
+func (r *ReqList) Put(dstaddr string, req []byte) {
 	r.Lock()
 	defer r.Unlock()
 	r.List[dstaddr] = req
@@ -115,7 +105,7 @@ func (r *ReqList) Put(dstaddr string, req *ReqNode) {
 }
 
 func ParseHeader(addr net.Addr) ([]byte, int) {
-	//what if the request address type is domain???
+	// if the request address type is domain, it cannot be reverselookuped
 	ip, port, err := net.SplitHostPort(addr.String())
 	if err != nil {
 		return nil, 0
@@ -138,40 +128,60 @@ func ParseHeader(addr net.Addr) ([]byte, int) {
 	return buf[:1+iplen+2], 1 + iplen + 2
 }
 
-func Pipeloop(ss *UDPConn, srcaddr *net.UDPAddr, remote *CachedUDPConn) {
+func Pipeloop(ss *SecurePacketConn, addr net.Addr, in net.PacketConn, compatiblemode bool) {
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
+	defer in.Close()
 	for {
-		remote.SetDeadline(time.Now().Add(readTimeout))
-		n, raddr, err := remote.ReadFrom(buf)
+		in.SetDeadline(time.Now().Add(udpTimeout))
+		n, raddr, err := in.ReadFrom(buf)
 		if err != nil {
-			if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
-				// log too many open file error
-				// EMFILE is process reaches open file limits, ENFILE is system limit
-				fmt.Println("[udp]read error:", err)
-			} else if ne.Err.Error() == "use of closed network connection" {
-				fmt.Println("[udp]Connection Closing:", remote.LocalAddr())
-			} else {
-				fmt.Println("[udp]error reading from:", remote.LocalAddr(), err)
+			if ne, ok := err.(*net.OpError); ok {
+				if ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE {
+					// log too many open file error
+					// EMFILE is process reaches open file limits, ENFILE is system limit
+					Debug.Println("[udp]read error:", err)
+				}
 			}
+			Debug.Printf("[udp]closed pipe %s<-%s\n", addr, in.LocalAddr())
 			return
 		}
 		// need improvement here
-		if N, ok := reqList.Get(raddr.String()); ok {
-			go ss.WriteToUDP(append(N.Req[:N.ReqLen], buf[:n]...), srcaddr)
+		if req, ok := reqList.Get(raddr.String()); ok {
+			if compatiblemode {
+				ss.ForceOTAWriteTo(append(req, buf[:n]...), addr)
+			} else {
+				ss.WriteTo(append(req, buf[:n]...), addr)
+			}
 		} else {
 			header, hlen := ParseHeader(raddr)
-			go ss.WriteToUDP(append(header[:hlen], buf[:n]...), srcaddr)
+			if compatiblemode {
+				ss.ForceOTAWriteTo(append(header[:hlen], buf[:n]...), addr)
+			} else {
+				ss.WriteTo(append(header[:hlen], buf[:n]...), addr)
+			}
+
 		}
 	}
 }
 
-func (c *UDPConn) handleUDPConnection(n int, src *net.UDPAddr, receive []byte) {
+func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive []byte) {
 	var dstIP net.IP
 	var reqLen int
+	var ota bool
+	addrType := receive[idType]
 	defer leakyBuf.Put(receive)
 
-	switch receive[idType] {
+	if addrType&OneTimeAuthMask > 0 {
+		ota = true
+	}
+	if handle.IsOta() && !ota {
+		Debug.Println("[udp]incoming connection dropped, due to ota enforcement")
+		return
+	}
+	compatiblemode := !handle.IsOta() && ota
+
+	switch addrType & AddrMask {
 	case typeIPv4:
 		reqLen = lenIPv4
 		dstIP = net.IP(receive[idIP0 : idIP0+net.IPv4len])
@@ -180,14 +190,14 @@ func (c *UDPConn) handleUDPConnection(n int, src *net.UDPAddr, receive []byte) {
 		dstIP = net.IP(receive[idIP0 : idIP0+net.IPv6len])
 	case typeDm:
 		reqLen = int(receive[idDmLen]) + lenDmBase
-		dIP, err := net.ResolveIPAddr("ip", string(receive[idDm0:idDm0+receive[idDmLen]]))
+		dIP, err := net.ResolveIPAddr("ip", string(receive[idDm0:idDm0+int(receive[idDmLen])])) // carefully with const type
 		if err != nil {
-			fmt.Sprintf("[udp]failed to resolve domain name: %s\n", string(receive[idDm0:idDm0+receive[idDmLen]]))
+			Debug.Printf("[udp]failed to resolve domain name: %s\n", string(receive[idDm0:idDm0+receive[idDmLen]]))
 			return
 		}
 		dstIP = dIP.IP
 	default:
-		fmt.Sprintf("[udp]addr type %d not supported", receive[idType])
+		Debug.Printf("[udp]addrType %d not supported", addrType)
 		return
 	}
 	dst := &net.UDPAddr{
@@ -196,45 +206,47 @@ func (c *UDPConn) handleUDPConnection(n int, src *net.UDPAddr, receive []byte) {
 	}
 	if _, ok := reqList.Get(dst.String()); !ok {
 		req := make([]byte, reqLen)
-		for i := 0; i < reqLen; i++ {
-			req[i] = receive[i]
-		}
-		reqList.Put(dst.String(), &ReqNode{req, reqLen})
+		copy(req, receive)
+		reqList.Put(dst.String(), req)
 	}
 
-	remote, exist, err := c.natlist.Get(src.String())
+	remote, exist, err := natlist.Get(src.String())
 	if err != nil {
 		return
 	}
 	if !exist {
+		Debug.Printf("[udp]new client %s->%s via %s ota=%v\n", src, dst, remote.LocalAddr(), ota)
 		go func() {
-			Pipeloop(c, src, remote)
-			c.natlist.Delete(src.String())
+			Pipeloop(handle, src, remote, compatiblemode)
+			natlist.DeleteAndClose(src.String())
 		}()
+	} else {
+		Debug.Printf("[udp]using cached client %s->%s via %s ota=%v\n", src, dst, remote.LocalAddr(), ota)
+	}
+	if remote == nil {
+		fmt.Println("WTF")
 	}
 	remote.SetDeadline(time.Now().Add(udpTimeout))
-	go func() {
-		_, err = remote.WriteToUDP(receive[reqLen:n], dst)
-		if err != nil {
-			if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
-				// log too many open file error
-				// EMFILE is process reaches open file limits, ENFILE is system limit
-				fmt.Println("[udp]write error:", err)
-			} else {
-				fmt.Println("[udp]error connecting to:", dst, err)
-			}
-			c.natlist.Delete(src.String())
+	_, err = remote.WriteTo(receive[reqLen:n], dst)
+	if err != nil {
+		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
+			// log too many open file error
+			// EMFILE is process reaches open file limits, ENFILE is system limit
+			Debug.Println("[udp]write error:", err)
+		} else {
+			Debug.Println("[udp]error connecting to:", dst, err)
 		}
-	}()
+		natlist.DeleteAndClose(src.String())
+	}
 	// Pipeloop
 	return
 }
 
-func (c *UDPConn) ReadAndHandleUDPReq() {
+func ReadAndHandleUDPReq(c *SecurePacketConn) {
 	buf := leakyBuf.Get()
-	n, src, err := c.ReadFromUDP(buf[0:])
+	n, src, err := c.ReadFrom(buf[0:])
 	if err != nil {
 		return
 	}
-	go c.handleUDPConnection(n, src, buf)
+	go handleUDPConnection(c, n, src, buf)
 }

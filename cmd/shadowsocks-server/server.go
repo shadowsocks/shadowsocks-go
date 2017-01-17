@@ -255,7 +255,7 @@ func (pm *PasswdManager) updatePortPasswd(port, password string, auth bool) {
 	if udp {
 		pl, _ := pm.getUDP(port)
 		pl.listener.Close()
-		go runUDP(port, password)
+		go runUDP(port, password, auth)
 	}
 }
 
@@ -332,7 +332,7 @@ func run(port, password string, auth bool) {
 	}
 }
 
-func runUDP(port, password string) {
+func runUDP(port, password string, auth bool) {
 	var cipher *ss.Cipher
 	port_i, _ := strconv.Atoi(port)
 	log.Printf("listening udp port %v\n", port)
@@ -351,9 +351,9 @@ func runUDP(port, password string) {
 		log.Printf("Error generating cipher for udp port: %s %v\n", port, err)
 		conn.Close()
 	}
-	UDPConn := ss.NewUDPConn(conn, cipher.Copy())
+	SecurePacketConn := ss.NewSecurePacketConn(conn, cipher.Copy(), auth)
 	for {
-		UDPConn.ReadAndHandleUDPReq()
+		ss.ReadAndHandleUDPReq(SecurePacketConn)
 	}
 }
 
@@ -418,6 +418,7 @@ func main() {
 			os.Exit(1)
 		}
 		config = &cmdConfig
+		ss.UpdateConfig(config, config)
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}
@@ -437,7 +438,7 @@ func main() {
 	for port, password := range config.PortPassword {
 		go run(port, password, config.Auth)
 		if udp {
-			go runUDP(port, password)
+			go runUDP(port, password, config.Auth)
 		}
 	}
 
