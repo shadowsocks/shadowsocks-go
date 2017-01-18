@@ -142,6 +142,12 @@ func handleConnection(conn *ss.Conn, auth bool) {
 		closed = true
 		return
 	}
+	// ensure the host does not contain some illegal characters, NUL may panic on Win32
+	if strings.ContainsRune(host, 0x00) {
+		log.Println("invalid domain name.")
+		closed = true
+		return
+	}
 	debug.Println("connecting", host)
 	remote, err := net.Dial("tcp", host)
 	if err != nil {
