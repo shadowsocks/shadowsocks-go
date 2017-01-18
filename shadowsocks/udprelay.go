@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -184,13 +185,28 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 	switch addrType & AddrMask {
 	case typeIPv4:
 		reqLen = lenIPv4
+		if len(receive) < reqLen {
+			Debug.Println("[udp]invalid received message.")
+		}
 		dstIP = net.IP(receive[idIP0 : idIP0+net.IPv4len])
 	case typeIPv6:
 		reqLen = lenIPv6
+		if len(receive) < reqLen {
+			Debug.Println("[udp]invalid received message.")
+		}
 		dstIP = net.IP(receive[idIP0 : idIP0+net.IPv6len])
 	case typeDm:
 		reqLen = int(receive[idDmLen]) + lenDmBase
-		dIP, err := net.ResolveIPAddr("ip", string(receive[idDm0:idDm0+int(receive[idDmLen])])) // carefully with const type
+		if len(receive) < reqLen {
+			Debug.Println("[udp]invalid received message.")
+		}
+		name := string(receive[idDm0 : idDm0+int(receive[idDmLen])])
+		// avoid panic: syscall: string with NUL passed to StringToUTF16 on windows.
+		if strings.ContainsRune(name, 0x00) {
+			fmt.Println("[udp]invalid domain name.")
+			return
+		}
+		dIP, err := net.ResolveIPAddr("ip", name) // carefully with const type
 		if err != nil {
 			Debug.Printf("[udp]failed to resolve domain name: %s\n", string(receive[idDm0:idDm0+receive[idDmLen]]))
 			return
