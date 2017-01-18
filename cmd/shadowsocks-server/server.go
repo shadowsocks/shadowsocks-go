@@ -360,7 +360,9 @@ func runUDP(port, password string, auth bool) {
 	}
 	SecurePacketConn := ss.NewSecurePacketConn(conn, cipher.Copy(), auth)
 	for {
-		ss.ReadAndHandleUDPReq(SecurePacketConn)
+		if err := ss.ReadAndHandleUDPReq(SecurePacketConn); err != nil {
+			debug.Println(err)
+		}
 	}
 }
 

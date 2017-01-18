@@ -176,10 +176,6 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 	if addrType&OneTimeAuthMask > 0 {
 		ota = true
 	}
-	if handle.IsOta() && !ota {
-		Debug.Println("[udp]incoming connection dropped, due to ota enforcement")
-		return
-	}
 	compatiblemode := !handle.IsOta() && ota
 
 	switch addrType & AddrMask {
@@ -258,11 +254,12 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 	return
 }
 
-func ReadAndHandleUDPReq(c *SecurePacketConn) {
+func ReadAndHandleUDPReq(c *SecurePacketConn) error {
 	buf := leakyBuf.Get()
 	n, src, err := c.ReadFrom(buf[0:])
 	if err != nil {
-		return
+		return err
 	}
 	go handleUDPConnection(c, n, src, buf)
+	return nil
 }

@@ -37,6 +37,7 @@ func (c *SecurePacketConn) Close() error {
 }
 
 func (c *SecurePacketConn) ReadFrom(b []byte) (n int, src net.Addr, err error) {
+	ota := false
 	cipher := c.Copy()
 	buf := make([]byte, 4096)
 	n, src, err = c.PacketConn.ReadFrom(buf)
@@ -61,12 +62,20 @@ func (c *SecurePacketConn) ReadFrom(b []byte) (n int, src net.Addr, err error) {
 
 	cipher.decrypt(b[0:], buf[c.info.ivLen:n])
 	n -= c.info.ivLen
-	if c.ota {
+	if b[idType]&OneTimeAuthMask > 0 {
+		ota = true
+	}
+
+	if c.ota && !ota {
+		return 0, src, errPacketOtaFailed
+	}
+
+	if ota {
 		key := cipher.key
 		actualHmacSha1Buf := HmacSha1(append(iv, key...), b[:n-lenHmacSha1])
 		if !bytes.Equal(b[n-lenHmacSha1:n], actualHmacSha1Buf) {
 			Debug.Printf("verify one time auth failed, iv=%v key=%v data=%v", iv, key, b)
-			return 0, nil, errPacketOtaFailed
+			return 0, src, errPacketOtaFailed
 		}
 		n -= lenHmacSha1
 	}
@@ -94,6 +103,9 @@ func (c *SecurePacketConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
 
 	cipher.encrypt(cipherData[len(iv):], b)
 	n, err = c.PacketConn.WriteTo(cipherData, dst)
+	if c.ota {
+		n -= lenHmacSha1
+	}
 	return
 }
 
@@ -135,5 +147,6 @@ func (c *SecurePacketConn) ForceOTAWriteTo(b []byte, dst net.Addr) (n int, err e
 
 	cipher.encrypt(cipherData[len(iv):], b)
 	n, err = c.PacketConn.WriteTo(cipherData, dst)
+	n -= lenHmacSha1
 	return
 }
