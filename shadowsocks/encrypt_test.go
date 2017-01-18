@@ -99,6 +99,10 @@ func TestChaCha20(t *testing.T) {
 	testBlockCipher(t, "chacha20")
 }
 
+func TestChaCha20IETF(t *testing.T) {
+	testBlockCipher(t, "chacha20-ietf")
+}
+
 var cipherKey = make([]byte, 64)
 var cipherIv = make([]byte, 64)
 
@@ -164,6 +168,10 @@ func BenchmarkChaCha20Init(b *testing.B) {
 	benchmarkCipherInit(b, "chacha20")
 }
 
+func BenchmarkChaCha20IETFInit(b *testing.B) {
+	benchmarkCipherInit(b, "chacha20-ietf")
+}
+
 func BenchmarkSalsa20Init(b *testing.B) {
 	benchmarkCipherInit(b, "salsa20")
 }
@@ -226,6 +234,10 @@ func BenchmarkRC4MD5Encrypt(b *testing.B) {
 
 func BenchmarkChacha20Encrypt(b *testing.B) {
 	benchmarkCipherEncrypt(b, "chacha20")
+}
+
+func BenchmarkChacha20IETFEncrypt(b *testing.B) {
+	benchmarkCipherEncrypt(b, "chacha20-ietf")
 }
 
 func BenchmarkSalsa20Encrypt(b *testing.B) {
@@ -295,6 +307,10 @@ func BenchmarkRC4MD5Decrypt(b *testing.B) {
 
 func BenchmarkChaCha20Decrypt(b *testing.B) {
 	benchmarkCipherDecrypt(b, "chacha20")
+}
+
+func BenchmarkChaCha20IETFDecrypt(b *testing.B) {
+	benchmarkCipherDecrypt(b, "chacha20-ietf")
 }
 
 func BenchmarkSalsa20Decrypt(b *testing.B) {
