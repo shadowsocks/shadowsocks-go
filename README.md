@@ -62,6 +62,12 @@ Append `-auth` to the encryption method to enable [One Time Auth (OTA)](https://
 - For server: this will **force client use OTA**, non-OTA connection will be dropped. Otherwise, both OTA and non-OTA clients can connect
 - For client: the `-A` command line option can also enable OTA
 
+### UDP relay
+
+Use `-u` command line options when starting server to enable UDP relay.
+
+Currently only tested with Shadowsocks-Android, if you have encountered any problem, please report.
+
 ## Command line options
 
 Command line options can override settings from configuration files. Use `-h` option to see all available options.
