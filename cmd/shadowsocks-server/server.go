@@ -139,7 +139,7 @@ func handleConnection(conn *ss.Conn, auth bool) {
 	host, ota, err := getRequest(conn, auth)
 	if err != nil {
 		log.Println("error getting request", conn.RemoteAddr(), conn.LocalAddr(), err)
-		conn.Close()
+		closed = true
 		return
 	}
 	debug.Println("connecting", host)
