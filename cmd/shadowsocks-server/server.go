@@ -37,6 +37,7 @@ const (
 )
 
 var debug ss.DebugLog
+var udp bool
 
 func getRequest(conn *ss.Conn, auth bool) (host string, ota bool, err error) {
 	ss.SetReadTimeout(conn)
@@ -175,14 +176,26 @@ type PortListener struct {
 	listener net.Listener
 }
 
+type UDPListener struct {
+	password string
+	listener *net.UDPConn
+}
+
 type PasswdManager struct {
 	sync.Mutex
 	portListener map[string]*PortListener
+	udpListener  map[string]*UDPListener
 }
 
 func (pm *PasswdManager) add(port, password string, listener net.Listener) {
 	pm.Lock()
 	pm.portListener[port] = &PortListener{password, listener}
+	pm.Unlock()
+}
+
+func (pm *PasswdManager) addUDP(port, password string, listener *net.UDPConn) {
+	pm.Lock()
+	pm.udpListener[port] = &UDPListener{password, listener}
 	pm.Unlock()
 }
 
@@ -193,14 +206,31 @@ func (pm *PasswdManager) get(port string) (pl *PortListener, ok bool) {
 	return
 }
 
+func (pm *PasswdManager) getUDP(port string) (pl *UDPListener, ok bool) {
+	pm.Lock()
+	pl, ok = pm.udpListener[port]
+	pm.Unlock()
+	return
+}
+
 func (pm *PasswdManager) del(port string) {
 	pl, ok := pm.get(port)
 	if !ok {
 		return
 	}
+	if udp {
+		upl, ok := pm.getUDP(port)
+		if !ok {
+			return
+		}
+		upl.listener.Close()
+	}
 	pl.listener.Close()
 	pm.Lock()
 	delete(pm.portListener, port)
+	if udp {
+		delete(pm.udpListener, port)
+	}
 	pm.Unlock()
 }
 
@@ -222,9 +252,14 @@ func (pm *PasswdManager) updatePortPasswd(port, password string, auth bool) {
 	// run will add the new port listener to passwdManager.
 	// So there maybe concurrent access to passwdManager and we need lock to protect it.
 	go run(port, password, auth)
+	if udp {
+		pl, _ := pm.getUDP(port)
+		pl.listener.Close()
+		go runUDP(port, password, auth)
+	}
 }
 
-var passwdManager = PasswdManager{portListener: map[string]*PortListener{}}
+var passwdManager = PasswdManager{portListener: map[string]*PortListener{}, udpListener: map[string]*UDPListener{}}
 
 func updatePasswd() {
 	log.Println("updating password")
@@ -297,6 +332,31 @@ func run(port, password string, auth bool) {
 	}
 }
 
+func runUDP(port, password string, auth bool) {
+	var cipher *ss.Cipher
+	port_i, _ := strconv.Atoi(port)
+	log.Printf("listening udp port %v\n", port)
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{
+		IP:   net.IPv6zero,
+		Port: port_i,
+	})
+	passwdManager.addUDP(port, password, conn)
+	if err != nil {
+		log.Printf("error listening udp port %v: %v\n", port, err)
+		return
+	}
+	defer conn.Close()
+	cipher, err = ss.NewCipher(config.Method, password)
+	if err != nil {
+		log.Printf("Error generating cipher for udp port: %s %v\n", port, err)
+		conn.Close()
+	}
+	SecurePacketConn := ss.NewSecurePacketConn(conn, cipher.Copy(), auth)
+	for {
+		ss.ReadAndHandleUDPReq(SecurePacketConn)
+	}
+}
+
 func enoughOptions(config *ss.Config) bool {
 	return config.ServerPort != 0 && config.Password != ""
 }
@@ -335,7 +395,7 @@ func main() {
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
-
+	flag.BoolVar(&udp, "u", false, "UDP Relay")
 	flag.Parse()
 
 	if printVer {
@@ -358,6 +418,7 @@ func main() {
 			os.Exit(1)
 		}
 		config = &cmdConfig
+		ss.UpdateConfig(config, config)
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}
@@ -376,6 +437,9 @@ func main() {
 	}
 	for port, password := range config.PortPassword {
 		go run(port, password, config.Auth)
+		if udp {
+			go runUDP(port, password, config.Auth)
+		}
 	}
 
 	waitSignal()
