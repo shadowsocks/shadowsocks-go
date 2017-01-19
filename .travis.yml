@@ -1,11 +1,11 @@
 language: go
 go:
-  - 1.4.3
+  - 1.7.4
 install:
   - go get golang.org/x/crypto/blowfish
   - go get golang.org/x/crypto/cast5
   - go get golang.org/x/crypto/salsa20
-  - go get github.com/codahale/chacha20
+  - go get github.com/Yawning/chacha20
   - go install ./cmd/shadowsocks-local
   - go install ./cmd/shadowsocks-server
 script:
