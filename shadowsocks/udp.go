@@ -92,6 +92,7 @@ func (c *SecurePacketConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
 	packetLen := len(b) + len(iv)
 
 	if c.ota {
+		b[idType] |= OneTimeAuthMask
 		packetLen += lenHmacSha1
 		key := cipher.key
 		actualHmacSha1Buf := HmacSha1(append(iv, key...), b)

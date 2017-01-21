@@ -168,6 +168,7 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 	if addrType&OneTimeAuthMask > 0 {
 		ota = true
 	}
+	receive[idType] &= ^OneTimeAuthMask
 	compatiblemode := !handle.IsOta() && ota
 
 	switch addrType & AddrMask {
