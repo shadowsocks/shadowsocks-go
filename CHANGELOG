@@ -1,3 +1,6 @@
+1.2.1 (2017-01-22)
+    * Fix bug in handling of UDP OTA packets
+
 1.2.0 (2017-01-20)
     * Support UDP relay on server side, and OTA
     * Support "aes-[128/192/256]-ctr" encryption method (Thanks for @slurin)
