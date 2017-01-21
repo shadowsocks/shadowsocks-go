@@ -17,6 +17,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/shadowsocks/shadowsocks-go/encrypt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
@@ -316,7 +317,7 @@ func run(port, password string, auth bool) {
 		os.Exit(1)
 	}
 	passwdManager.add(port, password, ln)
-	var cipher *ss.Cipher
+	var cipher *encrypt.Cipher
 	log.Printf("server listening port %v ...\n", port)
 	for {
 		conn, err := ln.Accept()
@@ -328,7 +329,7 @@ func run(port, password string, auth bool) {
 		// Creating cipher upon first connection.
 		if cipher == nil {
 			log.Println("creating cipher for port:", port)
-			cipher, err = ss.NewCipher(config.Method, password)
+			cipher, err = encrypt.NewCipher(config.Method, password)
 			if err != nil {
 				log.Printf("Error generating cipher for port: %s %v\n", port, err)
 				conn.Close()
@@ -340,7 +341,7 @@ func run(port, password string, auth bool) {
 }
 
 func runUDP(port, password string, auth bool) {
-	var cipher *ss.Cipher
+	var cipher *encrypt.Cipher
 	port_i, _ := strconv.Atoi(port)
 	log.Printf("listening udp port %v\n", port)
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{
@@ -353,7 +354,7 @@ func runUDP(port, password string, auth bool) {
 		return
 	}
 	defer conn.Close()
-	cipher, err = ss.NewCipher(config.Method, password)
+	cipher, err = encrypt.NewCipher(config.Method, password)
 	if err != nil {
 		log.Printf("Error generating cipher for udp port: %s %v\n", port, err)
 		conn.Close()
@@ -434,7 +435,7 @@ func main() {
 	if config.Method == "" {
 		config.Method = "aes-256-cfb"
 	}
-	if err = ss.CheckCipherMethod(config.Method); err != nil {
+	if err = encrypt.CheckCipherMethod(config.Method); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

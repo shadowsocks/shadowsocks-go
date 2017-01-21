@@ -1,4 +1,4 @@
-package shadowsocks
+package encrypt
 
 import (
 	"crypto/aes"
@@ -10,7 +10,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"strings"
 
 	"github.com/Yawning/chacha20"
 	"golang.org/x/crypto/blowfish"
@@ -18,7 +17,153 @@ import (
 	"golang.org/x/crypto/salsa20/salsa"
 )
 
+// DecOrEnc type, encrypt or decrypt, used when create cipher
+type DecOrEnc int
+
+const (
+	// Decrypt as its name
+	Decrypt DecOrEnc = iota
+	// Encrypt as its name
+	Encrypt
+)
+
 var errEmptyPassword = errors.New("empty key")
+
+// CheckCipherMethod checks if the cipher method is supported
+func CheckCipherMethod(method string) error {
+	if method == "" {
+		method = "aes-256-cfb"
+	}
+	_, ok := cipherMethod[method]
+	if !ok {
+		return errors.New("Unsupported encryption method: " + method)
+	}
+	return nil
+}
+
+// Cipher is used to encrypt and decrypt things.
+type Cipher struct {
+	enc  cipher.Stream
+	dec  cipher.Stream
+	key  []byte
+	info *cipherInfo
+	iv   []byte
+}
+
+// NewCipher creates a cipher that can be used in Dial() etc.
+// Use cipher.Copy() to create a new cipher with the same method and password
+// to avoid the cost of repeated cipher initialization.
+func NewCipher(method, password string) (c *Cipher, err error) {
+	if password == "" {
+		return nil, errEmptyPassword
+	}
+	mi, ok := cipherMethod[method]
+	if !ok {
+		return nil, errors.New("Unsupported encryption method: " + method)
+	}
+
+	key := evpBytesToKey(password, mi.keyLen)
+
+	c = &Cipher{key: key, info: mi}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
+// InitEncrypt initializes the block cipher, returns IV.
+func (c *Cipher) InitEncrypt() (iv []byte, err error) {
+	if c.iv == nil {
+		iv = make([]byte, c.info.ivLen)
+		if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+			return nil, err
+		}
+		c.iv = iv
+	} else {
+		iv = c.iv
+	}
+	c.enc, err = c.info.newStream(c.key, iv, Encrypt)
+	return
+}
+
+// EncInited checks if the enc cipher is inited.
+func (c *Cipher) EncInited() bool {
+	return c.enc == nil
+}
+
+// InitDecrypt initializes the block cipher from given IV.
+func (c *Cipher) InitDecrypt(iv []byte) (err error) {
+	c.dec, err = c.info.newStream(c.key, iv, Decrypt)
+	return
+}
+
+// DecInited checks if the dec cipher is inited.
+func (c *Cipher) DecInited() bool {
+	return c.dec == nil
+}
+
+// Encrypt encrypts src to dst, maybe the same slice.
+func (c *Cipher) Encrypt(dst, src []byte) {
+	c.enc.XORKeyStream(dst, src)
+}
+
+// Decrypt decrypts src to dst, maybe the same slice.
+func (c *Cipher) Decrypt(dst, src []byte) {
+	c.dec.XORKeyStream(dst, src)
+}
+
+// Copy creates a new cipher at it's initial state.
+func (c *Cipher) Copy() *Cipher {
+	// This optimization maybe not necessary. But without this function, we
+	// need to maintain a table cache for newTableCipher and use lock to
+	// protect concurrent access to that cache.
+
+	// AES and DES ciphers does not return specific types, so it's difficult
+	// to create copy. But their initizliation time is less than 4000ns on my
+	// 2.26 GHz Intel Core 2 Duo processor. So no need to worry.
+
+	// Currently, blow-fish and cast5 initialization cost is an order of
+	// maganitude slower than other ciphers. (I'm not sure whether this is
+	// because the current implementation is not highly optimized, or this is
+	// the nature of the algorithm.)
+
+	nc := *c
+	nc.enc = nil
+	nc.dec = nil
+	return &nc
+}
+
+// GetIV returns current IV, safe to use
+func (c *Cipher) GetIV() []byte {
+	ret := make([]byte, len(c.iv))
+	copy(ret, c.iv)
+	return ret
+}
+
+// GetKey returns current Key, safe to use
+func (c *Cipher) GetKey() []byte {
+	ret := make([]byte, len(c.key))
+	copy(ret, c.key)
+	return ret
+}
+
+// GetIVLen return the length of IV
+func (c *Cipher) GetIVLen() int {
+	return c.info.ivLen
+}
+
+// SetIV sets the given IV, please ensure the IV is valid value
+func (c *Cipher) SetIV(iv []byte) {
+	c.iv = make([]byte, len(iv))
+	copy(c.iv, iv)
+}
+
+// GetKeyLen return the length of Key
+func (c *Cipher) GetKeyLen() int {
+	return c.info.keyLen
+}
 
 func md5sum(d []byte) []byte {
 	h := md5.New()
@@ -46,13 +191,6 @@ func evpBytesToKey(password string, keyLen int) (key []byte) {
 	return m[:keyLen]
 }
 
-type DecOrEnc int
-
-const (
-	Decrypt DecOrEnc = iota
-	Encrypt
-)
-
 func newStream(block cipher.Block, err error, key, iv []byte,
 	doe DecOrEnc) (cipher.Stream, error) {
 	if err != nil {
@@ -60,9 +198,8 @@ func newStream(block cipher.Block, err error, key, iv []byte,
 	}
 	if doe == Encrypt {
 		return cipher.NewCFBEncrypter(block, iv), nil
-	} else {
-		return cipher.NewCFBDecrypter(block, iv), nil
 	}
+	return cipher.NewCFBDecrypter(block, iv), nil
 }
 
 func newAESCFBStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
@@ -122,10 +259,6 @@ func (c *salsaStreamCipher) XORKeyStream(dst, src []byte) {
 	dataSize := len(src) + padLen
 	if cap(dst) >= dataSize {
 		buf = dst[:dataSize]
-	} else if leakyBufSize >= dataSize {
-		buf = leakyBuf.Get()
-		defer leakyBuf.Put(buf)
-		buf = buf[:dataSize]
 	} else {
 		buf = make([]byte, dataSize)
 	}
@@ -170,104 +303,4 @@ var cipherMethod = map[string]*cipherInfo{
 	"chacha20":      {32, 8, newChaCha20Stream},
 	"chacha20-ietf": {32, 12, newChaCha20IETFStream},
 	"salsa20":       {32, 8, newSalsa20Stream},
-}
-
-func CheckCipherMethod(method string) error {
-	if method == "" {
-		method = "aes-256-cfb"
-	}
-	_, ok := cipherMethod[method]
-	if !ok {
-		return errors.New("Unsupported encryption method: " + method)
-	}
-	return nil
-}
-
-type Cipher struct {
-	enc  cipher.Stream
-	dec  cipher.Stream
-	key  []byte
-	info *cipherInfo
-	ota  bool // one-time auth
-	iv   []byte
-}
-
-// NewCipher creates a cipher that can be used in Dial() etc.
-// Use cipher.Copy() to create a new cipher with the same method and password
-// to avoid the cost of repeated cipher initialization.
-func NewCipher(method, password string) (c *Cipher, err error) {
-	if password == "" {
-		return nil, errEmptyPassword
-	}
-	var ota bool
-	if strings.HasSuffix(strings.ToLower(method), "-auth") {
-		method = method[:len(method)-5] // len("-auth") = 5
-		ota = true
-	} else {
-		ota = false
-	}
-	mi, ok := cipherMethod[method]
-	if !ok {
-		return nil, errors.New("Unsupported encryption method: " + method)
-	}
-
-	key := evpBytesToKey(password, mi.keyLen)
-
-	c = &Cipher{key: key, info: mi}
-
-	if err != nil {
-		return nil, err
-	}
-	c.ota = ota
-	return c, nil
-}
-
-// Initializes the block cipher with CFB mode, returns IV.
-func (c *Cipher) initEncrypt() (iv []byte, err error) {
-	if c.iv == nil {
-		iv = make([]byte, c.info.ivLen)
-		if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-			return nil, err
-		}
-		c.iv = iv
-	} else {
-		iv = c.iv
-	}
-	c.enc, err = c.info.newStream(c.key, iv, Encrypt)
-	return
-}
-
-func (c *Cipher) initDecrypt(iv []byte) (err error) {
-	c.dec, err = c.info.newStream(c.key, iv, Decrypt)
-	return
-}
-
-func (c *Cipher) encrypt(dst, src []byte) {
-	c.enc.XORKeyStream(dst, src)
-}
-
-func (c *Cipher) decrypt(dst, src []byte) {
-	c.dec.XORKeyStream(dst, src)
-}
-
-// Copy creates a new cipher at it's initial state.
-func (c *Cipher) Copy() *Cipher {
-	// This optimization maybe not necessary. But without this function, we
-	// need to maintain a table cache for newTableCipher and use lock to
-	// protect concurrent access to that cache.
-
-	// AES and DES ciphers does not return specific types, so it's difficult
-	// to create copy. But their initizliation time is less than 4000ns on my
-	// 2.26 GHz Intel Core 2 Duo processor. So no need to worry.
-
-	// Currently, blow-fish and cast5 initialization cost is an order of
-	// maganitude slower than other ciphers. (I'm not sure whether this is
-	// because the current implementation is not highly optimized, or this is
-	// the nature of the algorithm.)
-
-	nc := *c
-	nc.enc = nil
-	nc.dec = nil
-	nc.ota = c.ota
-	return &nc
 }

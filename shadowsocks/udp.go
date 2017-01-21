@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"time"
+
+	"github.com/shadowsocks/shadowsocks-go/encrypt"
 )
 
 const (
@@ -20,11 +22,11 @@ var (
 
 type SecurePacketConn struct {
 	net.PacketConn
-	*Cipher
+	*encrypt.Cipher
 	ota bool
 }
 
-func NewSecurePacketConn(c net.PacketConn, cipher *Cipher, ota bool) *SecurePacketConn {
+func NewSecurePacketConn(c net.PacketConn, cipher *encrypt.Cipher, ota bool) *SecurePacketConn {
 	return &SecurePacketConn{
 		PacketConn: c,
 		Cipher:     cipher,
@@ -40,28 +42,29 @@ func (c *SecurePacketConn) ReadFrom(b []byte) (n int, src net.Addr, err error) {
 	ota := false
 	cipher := c.Copy()
 	buf := make([]byte, 4096)
+	ivLen := cipher.GetIVLen()
 	n, src, err = c.PacketConn.ReadFrom(buf)
 	if err != nil {
 		return
 	}
 
-	if n < c.info.ivLen {
+	if n < ivLen {
 		return 0, nil, errPacketTooSmall
 	}
 
-	if len(b) < n-c.info.ivLen {
+	if len(b) < n-ivLen {
 		err = errBufferTooSmall // just a warning
 	}
 
-	iv := make([]byte, c.info.ivLen)
-	copy(iv, buf[:c.info.ivLen])
+	iv := make([]byte, ivLen)
+	copy(iv, buf[:ivLen])
 
-	if err = cipher.initDecrypt(iv); err != nil {
+	if err = cipher.InitDecrypt(iv); err != nil {
 		return
 	}
 
-	cipher.decrypt(b[0:], buf[c.info.ivLen:n])
-	n -= c.info.ivLen
+	cipher.Decrypt(b[0:], buf[ivLen:n])
+	n -= ivLen
 	if b[idType]&OneTimeAuthMask > 0 {
 		ota = true
 	}
@@ -71,10 +74,10 @@ func (c *SecurePacketConn) ReadFrom(b []byte) (n int, src net.Addr, err error) {
 	}
 
 	if ota {
-		key := cipher.key
+		key := cipher.GetKey()
 		actualHmacSha1Buf := HmacSha1(append(iv, key...), b[:n-lenHmacSha1])
 		if !bytes.Equal(b[n-lenHmacSha1:n], actualHmacSha1Buf) {
-			Debug.Printf("verify one time auth failed, iv=%v key=%v data=%v", iv, key, b)
+			Debug.Printf("verify one time auth failed, iv=%v key=%v data=%v", iv, key, b[:n])
 			return 0, src, errPacketOtaFailed
 		}
 		n -= lenHmacSha1
@@ -85,7 +88,7 @@ func (c *SecurePacketConn) ReadFrom(b []byte) (n int, src net.Addr, err error) {
 
 func (c *SecurePacketConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
 	cipher := c.Copy()
-	iv, err := cipher.initEncrypt()
+	iv, err := cipher.InitEncrypt()
 	if err != nil {
 		return
 	}
@@ -94,7 +97,7 @@ func (c *SecurePacketConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
 	if c.ota {
 		b[idType] |= OneTimeAuthMask
 		packetLen += lenHmacSha1
-		key := cipher.key
+		key := cipher.GetKey()
 		actualHmacSha1Buf := HmacSha1(append(iv, key...), b)
 		b = append(b, actualHmacSha1Buf...)
 	}
@@ -102,7 +105,7 @@ func (c *SecurePacketConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
 	cipherData := make([]byte, packetLen)
 	copy(cipherData, iv)
 
-	cipher.encrypt(cipherData[len(iv):], b)
+	cipher.Encrypt(cipherData[len(iv):], b)
 	n, err = c.PacketConn.WriteTo(cipherData, dst)
 	if c.ota {
 		n -= lenHmacSha1

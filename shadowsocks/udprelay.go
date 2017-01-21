@@ -106,11 +106,11 @@ func (r *requestHeaderList) Put(dstaddr string, req []byte) {
 	return
 }
 
-func parseHeaderFromAddr(addr net.Addr) ([]byte, int) {
+func parseHeaderFromAddr(addr net.Addr) []byte {
 	// if the request address type is domain, it cannot be reverselookuped
 	ip, port, err := net.SplitHostPort(addr.String())
 	if err != nil {
-		return nil, 0
+		return nil
 	}
 	buf := make([]byte, 20)
 	IP := net.ParseIP(ip)
@@ -127,7 +127,7 @@ func parseHeaderFromAddr(addr net.Addr) ([]byte, int) {
 	copy(buf[1:], b1)
 	port_i, _ := strconv.Atoi(port)
 	binary.BigEndian.PutUint16(buf[1+iplen:], uint16(port_i))
-	return buf[:1+iplen+2], 1 + iplen + 2
+	return buf[:1+iplen+2]
 }
 
 func Pipeloop(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
@@ -152,18 +152,17 @@ func Pipeloop(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn
 		if req, ok := reqList.Get(raddr.String()); ok {
 			write.WriteTo(append(req, buf[:n]...), writeAddr)
 		} else {
-			header, hlen := parseHeaderFromAddr(raddr)
-			write.WriteTo(append(header[:hlen], buf[:n]...), writeAddr)
+			header := parseHeaderFromAddr(raddr)
+			write.WriteTo(append(header, buf[:n]...), writeAddr)
 		}
 	}
 }
 
-func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive []byte) {
+func handleUDPConnection(handle *SecurePacketConn, src net.Addr, receive []byte) {
 	var dstIP net.IP
 	var reqLen int
 	var ota bool
 	addrType := receive[idType]
-	defer leakyBuf.Put(receive)
 
 	if addrType&OneTimeAuthMask > 0 {
 		ota = true
@@ -220,7 +219,7 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 		return
 	}
 	if !exist {
-		Debug.Printf("[udp]new client %s->%s via %s ota=%v\n", src, dst, remote.LocalAddr(), ota)
+		Debug.Printf("[udp]new client %s->%s via %s ota=%v compatiblemode=%v\n", src, dst, remote.LocalAddr(), ota, compatiblemode)
 		go func() {
 			if compatiblemode {
 				Pipeloop(handle.ForceOTA(), src, remote)
@@ -231,13 +230,13 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 			natlist.Delete(src.String())
 		}()
 	} else {
-		Debug.Printf("[udp]using cached client %s->%s via %s ota=%v\n", src, dst, remote.LocalAddr(), ota)
+		Debug.Printf("[udp]using cached client %s->%s via %s ota=%v compatiblemode=%v\n", src, dst, remote.LocalAddr(), ota, compatiblemode)
 	}
 	if remote == nil {
 		fmt.Println("WTF")
 	}
 	remote.SetDeadline(time.Now().Add(udpTimeout))
-	_, err = remote.WriteTo(receive[reqLen:n], dst)
+	_, err = remote.WriteTo(receive[reqLen:], dst)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
@@ -255,11 +254,11 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 }
 
 func ReadAndHandleUDPReq(c *SecurePacketConn) error {
-	buf := leakyBuf.Get()
-	n, src, err := c.ReadFrom(buf[0:])
+	buf := make([]byte, 4096)
+	n, src, err := c.ReadFrom(buf)
 	if err != nil {
 		return err
 	}
-	go handleUDPConnection(c, n, src, buf)
+	go handleUDPConnection(c, src, buf[:n])
 	return nil
 }
