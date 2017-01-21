@@ -92,6 +92,7 @@ func (c *SecurePacketConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
 	packetLen := len(b) + len(iv)
 
 	if c.ota {
+		b[idType] |= OneTimeAuthMask
 		packetLen += lenHmacSha1
 		key := cipher.key
 		actualHmacSha1Buf := HmacSha1(append(iv, key...), b)
@@ -129,24 +130,6 @@ func (c *SecurePacketConn) IsOta() bool {
 	return c.ota
 }
 
-func (c *SecurePacketConn) ForceOTAWriteTo(b []byte, dst net.Addr) (n int, err error) {
-	cipher := c.Copy()
-	iv, err := cipher.initEncrypt()
-	if err != nil {
-		return
-	}
-	packetLen := len(b) + len(iv)
-
-	packetLen += lenHmacSha1
-	key := cipher.key
-	actualHmacSha1Buf := HmacSha1(append(iv, key...), b)
-	b = append(b, actualHmacSha1Buf...)
-
-	cipherData := make([]byte, packetLen)
-	copy(cipherData, iv)
-
-	cipher.encrypt(cipherData[len(iv):], b)
-	n, err = c.PacketConn.WriteTo(cipherData, dst)
-	n -= lenHmacSha1
-	return
+func (c *SecurePacketConn) ForceOTA() net.PacketConn {
+	return NewSecurePacketConn(c.PacketConn, c.Cipher.Copy(), true)
 }

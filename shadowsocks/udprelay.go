@@ -43,14 +43,15 @@ func newNatTable() *natTable {
 	return &natTable{conns: map[string]net.PacketConn{}}
 }
 
-func (table *natTable) DeleteAndClose(index string) {
+func (table *natTable) Delete(index string) net.PacketConn {
 	table.Lock()
 	defer table.Unlock()
 	c, ok := table.conns[index]
 	if ok {
-		c.Close()
 		delete(table.conns, index)
+		return c
 	}
+	return nil
 }
 
 func (table *natTable) Get(index string) (c net.PacketConn, ok bool, err error) {
@@ -67,13 +68,13 @@ func (table *natTable) Get(index string) (c net.PacketConn, ok bool, err error) 
 	return
 }
 
-type ReqList struct {
+type requestHeaderList struct {
 	sync.Mutex
 	List map[string]([]byte)
 }
 
-func newReqList() *ReqList {
-	ret := &ReqList{List: map[string]([]byte){}}
+func newReqList() *requestHeaderList {
+	ret := &requestHeaderList{List: map[string]([]byte){}}
 	go func() {
 		for {
 			time.Sleep(reqListRefreshTime)
@@ -83,7 +84,7 @@ func newReqList() *ReqList {
 	return ret
 }
 
-func (r *ReqList) Refresh() {
+func (r *requestHeaderList) Refresh() {
 	r.Lock()
 	defer r.Unlock()
 	for k, _ := range r.List {
@@ -91,21 +92,21 @@ func (r *ReqList) Refresh() {
 	}
 }
 
-func (r *ReqList) Get(dstaddr string) (req []byte, ok bool) {
+func (r *requestHeaderList) Get(dstaddr string) (req []byte, ok bool) {
 	r.Lock()
 	defer r.Unlock()
 	req, ok = r.List[dstaddr]
 	return
 }
 
-func (r *ReqList) Put(dstaddr string, req []byte) {
+func (r *requestHeaderList) Put(dstaddr string, req []byte) {
 	r.Lock()
 	defer r.Unlock()
 	r.List[dstaddr] = req
 	return
 }
 
-func ParseHeader(addr net.Addr) ([]byte, int) {
+func parseHeaderFromAddr(addr net.Addr) ([]byte, int) {
 	// if the request address type is domain, it cannot be reverselookuped
 	ip, port, err := net.SplitHostPort(addr.String())
 	if err != nil {
@@ -129,13 +130,13 @@ func ParseHeader(addr net.Addr) ([]byte, int) {
 	return buf[:1+iplen+2], 1 + iplen + 2
 }
 
-func Pipeloop(ss *SecurePacketConn, addr net.Addr, in net.PacketConn, compatiblemode bool) {
+func Pipeloop(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
-	defer in.Close()
+	defer readClose.Close()
 	for {
-		in.SetDeadline(time.Now().Add(udpTimeout))
-		n, raddr, err := in.ReadFrom(buf)
+		readClose.SetDeadline(time.Now().Add(udpTimeout))
+		n, raddr, err := readClose.ReadFrom(buf)
 		if err != nil {
 			if ne, ok := err.(*net.OpError); ok {
 				if ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE {
@@ -144,24 +145,15 @@ func Pipeloop(ss *SecurePacketConn, addr net.Addr, in net.PacketConn, compatible
 					Debug.Println("[udp]read error:", err)
 				}
 			}
-			Debug.Printf("[udp]closed pipe %s<-%s\n", addr, in.LocalAddr())
+			Debug.Printf("[udp]closed pipe %s<-%s\n", writeAddr, readClose.LocalAddr())
 			return
 		}
 		// need improvement here
 		if req, ok := reqList.Get(raddr.String()); ok {
-			if compatiblemode {
-				ss.ForceOTAWriteTo(append(req, buf[:n]...), addr)
-			} else {
-				ss.WriteTo(append(req, buf[:n]...), addr)
-			}
+			write.WriteTo(append(req, buf[:n]...), writeAddr)
 		} else {
-			header, hlen := ParseHeader(raddr)
-			if compatiblemode {
-				ss.ForceOTAWriteTo(append(header[:hlen], buf[:n]...), addr)
-			} else {
-				ss.WriteTo(append(header[:hlen], buf[:n]...), addr)
-			}
-
+			header, hlen := parseHeaderFromAddr(raddr)
+			write.WriteTo(append(header[:hlen], buf[:n]...), writeAddr)
 		}
 	}
 }
@@ -176,6 +168,7 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 	if addrType&OneTimeAuthMask > 0 {
 		ota = true
 	}
+	receive[idType] &= ^OneTimeAuthMask
 	compatiblemode := !handle.IsOta() && ota
 
 	switch addrType & AddrMask {
@@ -229,8 +222,13 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 	if !exist {
 		Debug.Printf("[udp]new client %s->%s via %s ota=%v\n", src, dst, remote.LocalAddr(), ota)
 		go func() {
-			Pipeloop(handle, src, remote, compatiblemode)
-			natlist.DeleteAndClose(src.String())
+			if compatiblemode {
+				Pipeloop(handle.ForceOTA(), src, remote)
+			} else {
+				Pipeloop(handle, src, remote)
+			}
+
+			natlist.Delete(src.String())
 		}()
 	} else {
 		Debug.Printf("[udp]using cached client %s->%s via %s ota=%v\n", src, dst, remote.LocalAddr(), ota)
@@ -248,7 +246,9 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 		} else {
 			Debug.Println("[udp]error connecting to:", dst, err)
 		}
-		natlist.DeleteAndClose(src.String())
+		if conn := natlist.Delete(src.String()); conn != nil {
+			conn.Close()
+		}
 	}
 	// Pipeloop
 	return
