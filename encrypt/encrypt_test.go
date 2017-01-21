@@ -1,4 +1,4 @@
-package shadowsocks
+package encrypt
 
 import (
 	"crypto/rand"
@@ -14,8 +14,8 @@ func testCiphter(t *testing.T, c *Cipher, msg string) {
 	cipherBuf := make([]byte, n)
 	originTxt := make([]byte, n)
 
-	c.encrypt(cipherBuf, []byte(text))
-	c.decrypt(originTxt, cipherBuf)
+	c.Encrypt(cipherBuf, []byte(text))
+	c.Decrypt(originTxt, cipherBuf)
 
 	if string(originTxt) != text {
 		t.Error(msg, "encrypt then decrytp does not get original text")
@@ -44,21 +44,21 @@ func testBlockCipher(t *testing.T, method string) {
 		t.Fatal(method, "NewCipher:", err)
 	}
 	cipherCopy := cipher.Copy()
-	iv, err := cipher.initEncrypt()
+	iv, err := cipher.InitEncrypt()
 	if err != nil {
-		t.Error(method, "initEncrypt:", err)
+		t.Error(method, "InitEncrypt:", err)
 	}
-	if err = cipher.initDecrypt(iv); err != nil {
-		t.Error(method, "initDecrypt:", err)
+	if err = cipher.InitDecrypt(iv); err != nil {
+		t.Error(method, "InitDecrypt:", err)
 	}
 	testCiphter(t, cipher, method)
 
-	iv, err = cipherCopy.initEncrypt()
+	iv, err = cipherCopy.InitEncrypt()
 	if err != nil {
-		t.Error(method, "copy initEncrypt:", err)
+		t.Error(method, "copy InitEncrypt:", err)
 	}
-	if err = cipherCopy.initDecrypt(iv); err != nil {
-		t.Error(method, "copy initDecrypt:", err)
+	if err = cipherCopy.InitDecrypt(iv); err != nil {
+		t.Error(method, "copy InitDecrypt:", err)
 	}
 	testCiphter(t, cipherCopy, method+" copy")
 }
@@ -106,7 +106,7 @@ func TestChaCha20IETF(t *testing.T) {
 var cipherKey = make([]byte, 64)
 var cipherIv = make([]byte, 64)
 
-const CIPHER_BENCHMARK_BUFFER_LEN = 4096
+const CipherBenchmarkBufferLen = 4096
 
 func init() {
 	for i := 0; i < len(cipherKey); i++ {
@@ -184,8 +184,8 @@ func benchmarkCipherEncrypt(b *testing.B, method string) {
 	if err != nil {
 		b.Error(err)
 	}
-	src := make([]byte, CIPHER_BENCHMARK_BUFFER_LEN)
-	dst := make([]byte, CIPHER_BENCHMARK_BUFFER_LEN)
+	src := make([]byte, CipherBenchmarkBufferLen)
+	dst := make([]byte, CipherBenchmarkBufferLen)
 	io.ReadFull(rand.Reader, src)
 	for i := 0; i < b.N; i++ {
 		enc.XORKeyStream(dst, src)
@@ -256,8 +256,8 @@ func benchmarkCipherDecrypt(b *testing.B, method string) {
 	if err != nil {
 		b.Error(err)
 	}
-	src := make([]byte, CIPHER_BENCHMARK_BUFFER_LEN)
-	dst := make([]byte, CIPHER_BENCHMARK_BUFFER_LEN)
+	src := make([]byte, CipherBenchmarkBufferLen)
+	dst := make([]byte, CipherBenchmarkBufferLen)
 	io.ReadFull(rand.Reader, src)
 	enc.XORKeyStream(dst, src)
 	for i := 0; i < b.N; i++ {

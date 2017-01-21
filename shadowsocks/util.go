@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 )
 
 func PrintVersion() {
@@ -57,4 +58,12 @@ func (flag *ClosedFlag) SetClosed() {
 
 func (flag *ClosedFlag) IsClosed() bool {
 	return flag.flag
+}
+
+func methodOTAEnabled(method string) bool {
+	if strings.HasSuffix(strings.ToLower(method), "-auth") {
+		method = method[:len(method)-5] // len("-auth") = 5
+		return true
+	}
+	return false
 }

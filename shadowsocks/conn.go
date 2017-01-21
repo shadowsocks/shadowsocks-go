@@ -6,6 +6,8 @@ import (
 	"io"
 	"net"
 	"strconv"
+
+	"github.com/shadowsocks/shadowsocks-go/encrypt"
 )
 
 const (
@@ -15,13 +17,14 @@ const (
 
 type Conn struct {
 	net.Conn
-	*Cipher
+	*encrypt.Cipher
 	readBuf  []byte
 	writeBuf []byte
 	chunkId  uint32
+	ota      bool
 }
 
-func NewConn(c net.Conn, cipher *Cipher) *Conn {
+func NewConn(c net.Conn, cipher *encrypt.Cipher) *Conn {
 	return &Conn{
 		Conn:     c,
 		Cipher:   cipher,
@@ -58,22 +61,22 @@ func RawAddr(addr string) (buf []byte, err error) {
 // This is intended for use by users implementing a local socks proxy.
 // rawaddr shoud contain part of the data in socks request, starting from the
 // ATYP field. (Refer to rfc1928 for more information.)
-func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, err error) {
+func DialWithRawAddr(rawaddr []byte, server string, cipher *encrypt.Cipher, ota bool) (c *Conn, err error) {
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
 		return
 	}
 	c = NewConn(conn, cipher)
-	if cipher.ota {
-		if c.enc == nil {
-			if _, err = c.initEncrypt(); err != nil {
+	if ota {
+		if c.EncInited() {
+			if _, err = c.InitEncrypt(); err != nil {
 				return
 			}
 		}
 		// since we have initEncrypt, we must send iv manually
-		conn.Write(cipher.iv)
+		conn.Write(c.GetIV())
 		rawaddr[0] |= OneTimeAuthMask
-		rawaddr = otaConnectAuth(cipher.iv, cipher.key, rawaddr)
+		rawaddr = otaConnectAuth(c.GetIV(), c.GetKey(), rawaddr)
 	}
 	if _, err = c.write(rawaddr); err != nil {
 		c.Close()
@@ -83,24 +86,20 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, er
 }
 
 // addr should be in the form of host:port
-func Dial(addr, server string, cipher *Cipher) (c *Conn, err error) {
+func Dial(addr, server string, cipher *encrypt.Cipher, ota bool) (c *Conn, err error) {
 	ra, err := RawAddr(addr)
 	if err != nil {
 		return
 	}
-	return DialWithRawAddr(ra, server, cipher)
+	return DialWithRawAddr(ra, server, cipher, ota)
 }
 
 func (c *Conn) GetIv() (iv []byte) {
-	iv = make([]byte, len(c.iv))
-	copy(iv, c.iv)
-	return
+	return c.Cipher.GetIV()
 }
 
 func (c *Conn) GetKey() (key []byte) {
-	key = make([]byte, len(c.key))
-	copy(key, c.key)
-	return
+	return c.Cipher.GetKey()
 }
 
 func (c *Conn) IsOta() bool {
@@ -114,16 +113,16 @@ func (c *Conn) GetAndIncrChunkId() (chunkId uint32) {
 }
 
 func (c *Conn) Read(b []byte) (n int, err error) {
-	if c.dec == nil {
-		iv := make([]byte, c.info.ivLen)
+	if c.DecInited() {
+		iv := make([]byte, c.GetIVLen())
 		if _, err = io.ReadFull(c.Conn, iv); err != nil {
 			return
 		}
-		if err = c.initDecrypt(iv); err != nil {
+		if err = c.InitDecrypt(iv); err != nil {
 			return
 		}
-		if len(c.iv) == 0 {
-			c.iv = iv
+		if len(c.GetIV()) == 0 {
+			c.SetIV(iv)
 		}
 	}
 
@@ -136,7 +135,7 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 
 	n, err = c.Conn.Read(cipherData)
 	if n > 0 {
-		c.decrypt(b[0:n], cipherData[0:n])
+		c.Decrypt(b[0:n], cipherData[0:n])
 	}
 	return
 }
@@ -145,7 +144,7 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 	nn := len(b)
 	if c.ota {
 		chunkId := c.GetAndIncrChunkId()
-		b = otaReqChunkAuth(c.iv, chunkId, b)
+		b = otaReqChunkAuth(c.GetIV(), chunkId, b)
 	}
 	headerLen := len(b) - nn
 
@@ -159,8 +158,8 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 
 func (c *Conn) write(b []byte) (n int, err error) {
 	var iv []byte
-	if c.enc == nil {
-		iv, err = c.initEncrypt()
+	if c.EncInited() {
+		iv, err = c.InitEncrypt()
 		if err != nil {
 			return
 		}
@@ -180,7 +179,7 @@ func (c *Conn) write(b []byte) (n int, err error) {
 		copy(cipherData, iv)
 	}
 
-	c.encrypt(cipherData[len(iv):], b)
+	c.Encrypt(cipherData[len(iv):], b)
 	n, err = c.Conn.Write(cipherData)
 	return
 }
