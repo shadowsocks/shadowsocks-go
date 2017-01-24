@@ -19,6 +19,7 @@ import (
 )
 
 var debug ss.DebugLog
+var random bool
 
 var (
 	errAddrType      = errors.New("socks addr type not supported")
@@ -261,7 +262,15 @@ func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) 
 	const baseFailCnt = 20
 	n := len(servers.srvCipher)
 	skipped := make([]int, 0)
-	for i := 0; i < n; i++ {
+
+	randomServers := rand.Perm(n)
+	var i int
+	for nativeIndex, randomIndex := range randomServers {
+		if random {
+			i = randomIndex
+		} else {
+			i = nativeIndex
+		}
 		// skip failed server, but try it with some probability
 		if servers.failCnt[i] > 0 && rand.Intn(servers.failCnt[i]+baseFailCnt) != 0 {
 			skipped = append(skipped, i)
@@ -360,6 +369,7 @@ func main() {
 	var printVer bool
 
 	flag.BoolVar(&printVer, "version", false, "print version")
+	flag.BoolVar(&random, "r", false, "enable random choosing server")
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
 	flag.StringVar(&cmdServer, "s", "", "server address")
 	flag.StringVar(&cmdLocal, "b", "", "local address, listen only to this address if specified")
