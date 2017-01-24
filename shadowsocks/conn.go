@@ -19,6 +19,7 @@ type Conn struct {
 	readBuf  []byte
 	writeBuf []byte
 	chunkId  uint32
+	*TrafficListener
 }
 
 func NewConn(c net.Conn, cipher *Cipher) *Conn {
@@ -114,6 +115,9 @@ func (c *Conn) GetAndIncrChunkId() (chunkId uint32) {
 }
 
 func (c *Conn) Read(b []byte) (n int, err error) {
+	if c.TrafficListener != nil {
+		c.TrafficListener.WhenIn(len(b))
+	}
 	if c.dec == nil {
 		iv := make([]byte, c.info.ivLen)
 		if _, err = io.ReadFull(c.Conn, iv); err != nil {
@@ -133,7 +137,6 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 	} else {
 		cipherData = cipherData[:len(b)]
 	}
-
 	n, err = c.Conn.Read(cipherData)
 	if n > 0 {
 		c.decrypt(b[0:n], cipherData[0:n])
@@ -143,6 +146,9 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 
 func (c *Conn) Write(b []byte) (n int, err error) {
 	nn := len(b)
+	if c.TrafficListener != nil {
+		c.TrafficListener.WhenOut(nn)
+	}
 	if c.ota {
 		chunkId := c.GetAndIncrChunkId()
 		b = otaReqChunkAuth(c.iv, chunkId, b)
