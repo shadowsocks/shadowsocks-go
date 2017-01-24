@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"golang.org/x/net/proxy"
 	"os"
 	"os/signal"
 	"runtime"
@@ -149,7 +150,9 @@ func handleConnection(conn *ss.Conn, auth bool) {
 		return
 	}
 	debug.Println("connecting", host)
-	remote, err := net.Dial("tcp", host)
+	var dialer proxy.Dialer
+	dialer = proxy.FromEnvironment()
+	remote, err := dialer.Dial("tcp", host)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
