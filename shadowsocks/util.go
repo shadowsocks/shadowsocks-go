@@ -6,15 +6,19 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
+// PrintVersion prints the current version of shadowsocks-go
 func PrintVersion() {
 	const version = "1.2.1"
 	fmt.Println("shadowsocks-go version", version)
 }
 
+// IsFileExists returns true if the file exists
 func IsFileExists(path string) (bool, error) {
 	stat, err := os.Stat(path)
 	if err == nil {
@@ -29,6 +33,7 @@ func IsFileExists(path string) (bool, error) {
 	return false, err
 }
 
+// HmacSha1 implements HmacSha1
 func HmacSha1(key []byte, data []byte) []byte {
 	hmacSha1 := hmac.New(sha1.New, key)
 	hmacSha1.Write(data)
@@ -39,25 +44,13 @@ func otaConnectAuth(iv, key, data []byte) []byte {
 	return append(data, HmacSha1(append(iv, key...), data)...)
 }
 
-func otaReqChunkAuth(iv []byte, chunkId uint32, data []byte) []byte {
+func otaReqChunkAuth(iv []byte, chunkID uint32, data []byte) (header []byte) {
 	nb := make([]byte, 2)
 	binary.BigEndian.PutUint16(nb, uint16(len(data)))
-	chunkIdBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(chunkIdBytes, chunkId)
-	header := append(nb, HmacSha1(append(iv, chunkIdBytes...), data)...)
-	return append(header, data...)
-}
-
-type ClosedFlag struct {
-	flag bool
-}
-
-func (flag *ClosedFlag) SetClosed() {
-	flag.flag = true
-}
-
-func (flag *ClosedFlag) IsClosed() bool {
-	return flag.flag
+	chunkIDBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(chunkIDBytes, chunkID)
+	header = append(nb, HmacSha1(append(iv, chunkIDBytes...), data)...)
+	return
 }
 
 func methodOTAEnabled(method string) bool {
@@ -66,4 +59,24 @@ func methodOTAEnabled(method string) bool {
 		return true
 	}
 	return false
+}
+
+func rawAddr(addr string) (buf []byte, err error) {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, fmt.Errorf("shadowsocks: address error %s %v", addr, err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, fmt.Errorf("shadowsocks: invalid port %s", addr)
+	}
+
+	hostLen := len(host)
+	len := headerLenDmBase + hostLen // addrType + lenByte + address + port
+	buf = make([]byte, len)
+	buf[idType] = typeDm         // 3 means the address is domain name
+	buf[idDmLen] = byte(hostLen) // host address length  followed by host address
+	copy(buf[idDm0:], host)
+	binary.BigEndian.PutUint16(buf[idDm0+hostLen:idDm0+hostLen+2], uint16(port))
+	return
 }
