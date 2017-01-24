@@ -1,6 +1,6 @@
-// Provides leaky buffer, based on the example in Effective Go.
 package shadowsocks
 
+// LeakyBuf provides leaky buffer, based on the example in Effective Go.
 type LeakyBuf struct {
 	bufSize  int // size of each buffer
 	freeList chan []byte
