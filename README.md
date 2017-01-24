@@ -25,6 +25,8 @@ go get github.com/shadowsocks/shadowsocks-go/cmd/shadowsocks-local
 
 It's recommended to disable cgo when compiling shadowsocks-go. This will prevent the go runtime from creating too many threads for dns lookup.
 
+If you are using Docker, please check on [shadowsocks-go-docker](https://github.com/Kaijun/shadowsocks-go-docker).
+
 # Usage
 
 Both the server and client program will look for `config.json` in the current directory. You can use `-c` option to specify another configuration file.
