@@ -176,6 +176,7 @@ func (ln *Listener) Accept() (conn net.Conn, host string, err error) {
 	ss := NewSecureConn(conn, ln.cipher.Copy(), false, true)
 	host, err = getRequets(ss, ln.ota)
 	if err != nil {
+		ss.Close()
 		return nil, host, err
 	}
 	return ss, host, nil
