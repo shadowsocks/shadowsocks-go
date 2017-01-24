@@ -207,7 +207,7 @@ func parseServerConfig(config *ss.Config) {
 			}
 			server := serverInfo[0]
 			passwd := serverInfo[1]
-			encmethod := ""
+			encmethod := config.Method
 			if len(serverInfo) == 3 {
 				encmethod = serverInfo[2]
 			}
