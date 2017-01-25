@@ -36,21 +36,24 @@ const (
 
 var (
 	reqList            = newReqList()
-	natlist            = newNatTable()
+	natlist            = NewNatTable()
 	udpTimeout         = 30 * time.Second
 	reqListRefreshTime = 5 * time.Minute
 )
 
-type natTable struct {
+// NatTable is intended to help handling UDP
+type NatTable struct {
 	sync.Mutex
 	conns map[string]net.PacketConn
 }
 
-func newNatTable() *natTable {
-	return &natTable{conns: map[string]net.PacketConn{}}
+// NewNatTable returns an empty NatTable
+func NewNatTable() *NatTable {
+	return &NatTable{conns: map[string]net.PacketConn{}}
 }
 
-func (table *natTable) Delete(index string) net.PacketConn {
+// Delete deletes an item from the table
+func (table *NatTable) Delete(index string) net.PacketConn {
 	table.Lock()
 	defer table.Unlock()
 	c, ok := table.conns[index]
@@ -61,18 +64,19 @@ func (table *natTable) Delete(index string) net.PacketConn {
 	return nil
 }
 
-func (table *natTable) Get(index string) (c net.PacketConn, ok bool, err error) {
+// Get returns an item from the table
+func (table *NatTable) Get(index string) (c net.PacketConn, ok bool) {
 	table.Lock()
 	defer table.Unlock()
 	c, ok = table.conns[index]
-	if !ok {
-		c, err = net.ListenPacket("udp", "")
-		if err != nil {
-			return nil, false, err
-		}
-		table.conns[index] = c
-	}
 	return
+}
+
+// Put puts an item into the table
+func (table *NatTable) Put(index string, c net.PacketConn) {
+	table.Lock()
+	defer table.Unlock()
+	table.conns[index] = c
 }
 
 type requestHeaderList struct {
@@ -142,7 +146,7 @@ func receiveThenClose(write net.PacketConn, writeAddr net.Addr, readClose net.Pa
 	defer leakyBuf.Put(buf)
 	defer readClose.Close()
 	for {
-		readClose.SetDeadline(time.Now().Add(udpTimeout))
+		readClose.SetDeadline(time.Now().Add(30 * time.Second))
 		n, raddr, err := readClose.ReadFrom(buf)
 		if err != nil {
 			if ne, ok := err.(*net.OpError); ok {
@@ -189,11 +193,14 @@ func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []
 		reqList.Put(dst.String(), req)
 	}
 
-	remote, exist, err := natlist.Get(src.String())
-	if err != nil {
-		return err
-	}
+	remote, exist := natlist.Get(src.String())
 	if !exist {
+		c, err := net.ListenPacket("udp", "")
+		if err != nil {
+			return err
+		}
+		remote = c
+		natlist.Put(src.String(), remote)
 		Debug.Printf("[udp]new client %s->%s via %s\n", src, dst, remote.LocalAddr())
 		go func() {
 			receiveThenClose(handle, src, remote)
@@ -202,7 +209,6 @@ func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []
 	} else {
 		Debug.Printf("[udp]using cached client %s->%s via %s\n", src, dst, remote.LocalAddr())
 	}
-	setDeadline(remote)
 	_, err = remote.WriteTo(payload[headerLen:], dst)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {

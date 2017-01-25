@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shadowsocks/shadowsocks-go/encrypt"
 )
@@ -21,24 +22,24 @@ type SecureConn struct {
 	writeBuf     []byte
 	chunkID      uint32
 	isServerSide bool
+	timeout      int
 	ota          bool
 }
 
 // NewSecureConn creates a SecureConn
-func NewSecureConn(c net.Conn, cipher *encrypt.Cipher, ota bool, isServerSide bool) *SecureConn {
+func NewSecureConn(c net.Conn, cipher *encrypt.Cipher, ota bool, timeout int, isServerSide bool) *SecureConn {
 	return &SecureConn{
 		Conn:         c,
 		Cipher:       cipher,
-		readBuf:      leakyBuf.Get(),
 		writeBuf:     leakyBuf.Get(),
 		isServerSide: isServerSide,
+		timeout:      timeout,
 		ota:          ota,
 	}
 }
 
 // Close closes the connection.
 func (c *SecureConn) Close() error {
-	leakyBuf.Put(c.readBuf)
 	leakyBuf.Put(c.writeBuf)
 	return c.Conn.Close()
 }
@@ -81,7 +82,7 @@ func (c *SecureConn) Read(b []byte) (n int, err error) {
 		binary.BigEndian.PutUint32(chunkIDBytes, chunkID)
 		actualHmacSha1 := HmacSha1(append(c.GetIV(), chunkIDBytes...), b[:dataLen])
 		if !bytes.Equal(expectedHmacSha1, actualHmacSha1) {
-			return 0, errPacketOtaFailed
+			return 0, ErrPacketOtaFailed
 		}
 		return int(dataLen), nil
 	}
@@ -101,17 +102,12 @@ func (c *SecureConn) read(b []byte) (n int, err error) {
 			c.SetIV(iv)
 		}
 	}
-
-	cipherData := c.readBuf
-	if len(b) > len(cipherData) {
-		cipherData = make([]byte, len(b))
-	} else {
-		cipherData = cipherData[:len(b)]
+	if c.timeout > 0 {
+		c.SetReadDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
 	}
-
-	n, err = c.Conn.Read(cipherData)
+	n, err = c.Conn.Read(b)
 	if n > 0 {
-		c.Decrypt(b[0:n], cipherData[0:n])
+		c.Decrypt(b[0:n], b[0:n])
 	}
 	return
 }
@@ -155,6 +151,9 @@ func (c *SecureConn) write(b []byte) (n int, err error) {
 	}
 
 	c.Encrypt(cipherData[len(iv):], b)
+	if c.timeout > 0 {
+		c.SetWriteDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
+	}
 	n, err = c.Conn.Write(cipherData)
 	return
 }
@@ -162,8 +161,9 @@ func (c *SecureConn) write(b []byte) (n int, err error) {
 // Listener is like net.Listener, but a little different
 type Listener struct {
 	net.Listener
-	cipher *encrypt.Cipher
-	ota    bool
+	cipher  *encrypt.Cipher
+	timeout int
+	ota     bool
 }
 
 // Accept just like net.Listener.Accept(), but with additional return variable host.
@@ -173,7 +173,7 @@ func (ln *Listener) Accept() (conn net.Conn, host string, err error) {
 	if err != nil {
 		return nil, "", err
 	}
-	ss := NewSecureConn(conn, ln.cipher.Copy(), false, true)
+	ss := NewSecureConn(conn, ln.cipher.Copy(), false, ln.timeout, true)
 	host, err = getRequets(ss, ln.ota)
 	if err != nil {
 		ss.Close()
@@ -182,31 +182,19 @@ func (ln *Listener) Accept() (conn net.Conn, host string, err error) {
 	return ss, host, nil
 }
 
-// Close stops listening on the TCP address. Already Accepted connections are not closed.
-func (ln *Listener) Close() error {
-	return ln.Listener.Close()
-}
-
-// Addr returns the listener's network address, a *TCPAddr.
-// The Addr returned is shared by all invocations of Addr, so do not modify it.
-func (ln *Listener) Addr() net.Addr {
-	return ln.Listener.Addr()
-}
-
 // Listen announces on the TCP address laddr and returns a TCP listener.
 // Net must be "tcp", "tcp4", or "tcp6".
 // If laddr has a port of 0, ListenTCP will choose an available port.
 // The caller can use the Addr method of TCPListener to retrieve the chosen address.
-func Listen(network, laddr string, config *Config) (*Listener, error) {
-	cipher, err := encrypt.NewCipher(config.Method, config.Password)
-	if err != nil {
-		return nil, err
+func Listen(network, laddr string, cipher *encrypt.Cipher, timeout int, ota bool) (*Listener, error) {
+	if cipher == nil {
+		return nil, ErrNilCipher
 	}
 	ln, err := net.Listen(network, laddr)
 	if err != nil {
 		return nil, err
 	}
-	return &Listener{ln, cipher, config.Auth}, nil
+	return &Listener{ln, cipher, timeout, ota}, nil
 }
 
 func readFull(c *SecureConn, b []byte) (n int, err error) {
@@ -267,7 +255,7 @@ func getRequets(ss *SecureConn, auth bool) (host string, err error) {
 	ota := addrType&OneTimeAuthMask > 0
 	if auth {
 		if !ota {
-			err = errPacketOtaFailed
+			err = ErrPacketOtaFailed
 			return
 		}
 	}
@@ -279,7 +267,7 @@ func getRequets(ss *SecureConn, auth bool) (host string, err error) {
 		key := ss.GetKey()
 		actualHmacSha1Buf := HmacSha1(append(iv, key...), buf[:reqEnd])
 		if !bytes.Equal(buf[reqEnd:reqEnd+lenHmacSha1], actualHmacSha1Buf) {
-			err = errPacketOtaFailed
+			err = ErrPacketOtaFailed
 			return
 		}
 		ss.EnableOta()
