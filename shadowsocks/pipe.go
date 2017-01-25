@@ -5,23 +5,13 @@ import (
 	"time"
 )
 
-type deadable interface {
-	SetDeadline(time.Time) error
-}
-
-func setDeadline(d deadable) {
-	if readTimeout != 0 {
-		d.SetDeadline(time.Now().Add(readTimeout))
-	}
-}
-
 // PipeThenClose copies data from src to dst, closes dst when done.
-func PipeThenClose(src, dst net.Conn) {
+func PipeThenClose(src, dst net.Conn, timeout int) {
 	defer dst.Close()
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
 	for {
-		setDeadline(src)
+		src.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
 		n, err := src.Read(buf)
 		// read may return EOF with n > 0
 		// should always process n > 0 bytes before handling error
@@ -44,7 +34,7 @@ func PipeThenClose(src, dst net.Conn) {
 			if err == errBufferTooSmall {
 				// unlikely
 				Debug.Println("read:", err)
-			} else if err == errPacketOtaFailed {
+			} else if err == ErrPacketOtaFailed {
 				Debug.Println("read:", err)
 			}
 			break
