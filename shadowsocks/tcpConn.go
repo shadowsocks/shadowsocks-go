@@ -3,11 +3,8 @@ package shadowsocks
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"net"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/shadowsocks/shadowsocks-go/encrypt"
@@ -195,82 +192,4 @@ func Listen(network, laddr string, cipher *encrypt.Cipher, timeout int, ota bool
 		return nil, err
 	}
 	return &Listener{ln, cipher, timeout, ota}, nil
-}
-
-func readFull(c *SecureConn, b []byte) (n int, err error) {
-	min := len(b)
-	for n < min {
-		var nn int
-		nn, err = c.read(b[n:])
-		n += nn
-	}
-	if n >= min {
-		err = nil
-	} else if n > 0 && err == io.EOF {
-		err = io.ErrUnexpectedEOF
-	}
-	return
-}
-
-func getRequets(ss *SecureConn, auth bool) (host string, err error) {
-	buf := make([]byte, 269)
-	// read till we get possible domain length field
-	if _, err = readFull(ss, buf[:idType+1]); err != nil {
-		return
-	}
-	var reqStart, reqEnd int
-	addrType := buf[idType]
-	switch addrType & AddrMask {
-	case typeIPv4:
-		reqStart, reqEnd = idIP0, idIP0+headerLenIPv4-1
-	case typeIPv6:
-		reqStart, reqEnd = idIP0, idIP0+headerLenIPv6-1
-	case typeDm:
-		if _, err = readFull(ss, buf[idType+1:idDmLen+1]); err != nil {
-			return
-		}
-		reqStart, reqEnd = idDm0, idDm0+int(buf[idDmLen])+headerLenDmBase-2
-	default:
-		err = fmt.Errorf("addr type %d not supported", addrType&AddrMask)
-		return
-	}
-	if _, err = readFull(ss, buf[reqStart:reqEnd]); err != nil {
-		return
-	}
-
-	switch addrType & AddrMask {
-	case typeIPv4:
-		host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
-	case typeIPv6:
-		host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
-	case typeDm:
-		host = string(buf[idDm0 : idDm0+int(buf[idDmLen])])
-		if strings.ContainsRune(host, 0x00) {
-			return "", errInvalidHostname
-		}
-	}
-
-	port := binary.BigEndian.Uint16(buf[reqEnd-2 : reqEnd])
-	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
-	ota := addrType&OneTimeAuthMask > 0
-	if auth {
-		if !ota {
-			err = ErrPacketOtaFailed
-			return
-		}
-	}
-	if ota {
-		if _, err = readFull(ss, buf[reqEnd:reqEnd+lenHmacSha1]); err != nil {
-			return
-		}
-		iv := ss.GetIV()
-		key := ss.GetKey()
-		actualHmacSha1Buf := HmacSha1(append(iv, key...), buf[:reqEnd])
-		if !bytes.Equal(buf[reqEnd:reqEnd+lenHmacSha1], actualHmacSha1Buf) {
-			err = ErrPacketOtaFailed
-			return
-		}
-		ss.EnableOta()
-	}
-	return
 }

@@ -141,34 +141,6 @@ func parseHeaderFromAddr(addr net.Addr) []byte {
 	return buf[:1+iplen+2]
 }
 
-func receiveThenClose(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
-	buf := leakyBuf.Get()
-	defer leakyBuf.Put(buf)
-	defer readClose.Close()
-	for {
-		readClose.SetDeadline(time.Now().Add(30 * time.Second))
-		n, raddr, err := readClose.ReadFrom(buf)
-		if err != nil {
-			if ne, ok := err.(*net.OpError); ok {
-				if ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE {
-					// log too many open file error
-					// EMFILE is process reaches open file limits, ENFILE is system limit
-					Debug.Println("[udp]read error:", err)
-				}
-			}
-			Debug.Printf("[udp]closed pipe %s<-%s\n", writeAddr, readClose.LocalAddr())
-			return
-		}
-		// need improvement here
-		if req, ok := reqList.Get(raddr.String()); ok {
-			write.WriteTo(append(req, buf[:n]...), writeAddr)
-		} else {
-			header := parseHeaderFromAddr(raddr)
-			write.WriteTo(append(header, buf[:n]...), writeAddr)
-		}
-	}
-}
-
 // ForwardUDPConn forwards the payload (should with header) to the dst.
 // meanwhile, the request header is cached and the connection is alse cached for futher use.
 func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []byte, headerLen int) error {
@@ -203,7 +175,7 @@ func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []
 		natlist.Put(src.String(), remote)
 		Debug.Printf("[udp]new client %s->%s via %s\n", src, dst, remote.LocalAddr())
 		go func() {
-			receiveThenClose(handle, src, remote)
+			udpReceiveThenClose(handle, src, remote)
 			natlist.Delete(src.String())
 		}()
 	} else {
