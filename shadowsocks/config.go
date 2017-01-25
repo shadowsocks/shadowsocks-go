@@ -103,6 +103,32 @@ func (c *config) getServerArray() []string {
 	return nil
 }
 
+// ParseConfig parses a config file
+func ParseConfig(path string) (conf Config, err error) {
+	file, err := os.Open(path) // For read access.
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	data, err := ioutil.ReadAll(file)
+	if err != nil {
+		return
+	}
+
+	c := &config{}
+	if err = json.Unmarshal(data, c); err != nil {
+		return nil, err
+	}
+
+	postProcess(c)
+	return c, nil
+}
+
+func SetDebug(d DebugLog) {
+	Debug = d
+}
+
 func postProcess(c *config) {
 	var host []string
 	var local string
@@ -167,30 +193,4 @@ func postProcess(c *config) {
 		}
 	}
 	c.JLocalAddr = net.JoinHostPort(local, strconv.Itoa(c.JLocalPort))
-}
-
-// ParseConfig parses a config file
-func ParseConfig(path string) (conf Config, err error) {
-	file, err := os.Open(path) // For read access.
-	if err != nil {
-		return
-	}
-	defer file.Close()
-
-	data, err := ioutil.ReadAll(file)
-	if err != nil {
-		return
-	}
-
-	c := &config{}
-	if err = json.Unmarshal(data, c); err != nil {
-		return nil, err
-	}
-
-	postProcess(c)
-	return c, nil
-}
-
-func SetDebug(d DebugLog) {
-	Debug = d
 }

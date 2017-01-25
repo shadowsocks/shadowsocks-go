@@ -2,7 +2,6 @@ package shadowsocks
 
 import (
 	"bytes"
-	"fmt"
 	"net"
 
 	"github.com/shadowsocks/shadowsocks-go/encrypt"
@@ -10,15 +9,6 @@ import (
 
 const (
 	maxPacketSize = 4096 // increase it if error occurs
-)
-
-var (
-	errPacketTooSmall  = fmt.Errorf("[udp]read error: cannot decrypt, received packet is smaller than ivLen")
-	errPacketTooLarge  = fmt.Errorf("[udp]read error: received packet is latger than maxPacketSize(%d)", maxPacketSize)
-	errBufferTooSmall  = fmt.Errorf("[udp]read error: given buffer is too small to hold data")
-	ErrPacketOtaFailed = fmt.Errorf("[udp]read error: received packet has invalid ota")
-	errInvalidHostname = fmt.Errorf("errInvalidHostname")
-	errInvalidPara     = fmt.Errorf("errInvalidPara")
 )
 
 // SecurePacketConn is the implementation of

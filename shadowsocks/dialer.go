@@ -1,7 +1,6 @@
 package shadowsocks
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -17,9 +16,6 @@ type Dialer struct {
 	timeout int
 	ota     bool
 }
-
-// ErrNilCipher occurs when the cipher is nil
-var ErrNilCipher = errors.New("Cipher can't be nil")
 
 // NewDialer initializes a new Dialer
 func NewDialer(server string, cipher *encrypt.Cipher, timeout int, ota bool) (dialer *Dialer, err error) {
