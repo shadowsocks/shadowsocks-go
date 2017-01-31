@@ -15,15 +15,14 @@ func SetReadTimeout(c net.Conn) {
 }
 
 // PipeThenClose copies data from src to dst, closes dst when done.
-func PipeThenClose(src, dst net.Conn) int {
+func PipeThenClose(src, dst net.Conn, addFlow func(int)) {
 	defer dst.Close()
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
-	var flow int
 	for {
 		SetReadTimeout(src)
 		n, err := src.Read(buf)
-		flow += n
+		addFlow(n)
 		// read may return EOF with n > 0
 		// should always process n > 0 bytes before handling error
 		if n > 0 {
@@ -45,11 +44,11 @@ func PipeThenClose(src, dst net.Conn) int {
 			break
 		}
 	}
-	return flow
+	return
 }
 
 // PipeThenClose copies data from src to dst, closes dst when done, with ota verification.
-func PipeThenCloseOta(src *Conn, dst net.Conn) int {
+func PipeThenCloseOta(src *Conn, dst net.Conn, addFlow func(int)) {
 	const (
 		dataLenLen  = 2
 		hmacSha1Len = 10
@@ -62,7 +61,6 @@ func PipeThenCloseOta(src *Conn, dst net.Conn) int {
 	// sometimes it have to fill large block
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
-	var flow int
 	for i := 1; ; i += 1 {
 		SetReadTimeout(src)
 		if n, err := io.ReadFull(src, buf[:dataLenLen+hmacSha1Len]); err != nil {
@@ -88,7 +86,7 @@ func PipeThenCloseOta(src *Conn, dst net.Conn) int {
 			Debug.Printf("conn=%p #%v read data error n=%v: %v", src, i, n, err)
 			break
 		}
-		flow += int(dataLen)
+		addFlow(int(dataLen))
 		chunkIdBytes := make([]byte, 4)
 		chunkId := src.GetAndIncrChunkId()
 		binary.BigEndian.PutUint32(chunkIdBytes, chunkId)
@@ -102,5 +100,5 @@ func PipeThenCloseOta(src *Conn, dst net.Conn) int {
 			break
 		}
 	}
-	return flow
+	return
 }

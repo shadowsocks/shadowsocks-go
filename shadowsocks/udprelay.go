@@ -130,7 +130,7 @@ func parseHeaderFromAddr(addr net.Addr) ([]byte, int) {
 	return buf[:1+iplen+2], 1 + iplen + 2
 }
 
-func Pipeloop(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
+func Pipeloop(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn, addFlow func(int)) {
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
 	defer readClose.Close()
@@ -150,15 +150,17 @@ func Pipeloop(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn
 		}
 		// need improvement here
 		if req, ok := reqList.Get(raddr.String()); ok {
-			write.WriteTo(append(req, buf[:n]...), writeAddr)
+			n, _ := write.WriteTo(append(req, buf[:n]...), writeAddr)
+			addFlow(n)
 		} else {
 			header, hlen := parseHeaderFromAddr(raddr)
-			write.WriteTo(append(header[:hlen], buf[:n]...), writeAddr)
+			n, _ := write.WriteTo(append(header[:hlen], buf[:n]...), writeAddr)
+			addFlow(n)
 		}
 	}
 }
 
-func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive []byte) {
+func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive []byte, addFlow func(int)) {
 	var dstIP net.IP
 	var reqLen int
 	var ota bool
@@ -223,9 +225,9 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 		Debug.Printf("[udp]new client %s->%s via %s ota=%v\n", src, dst, remote.LocalAddr(), ota)
 		go func() {
 			if compatiblemode {
-				Pipeloop(handle.ForceOTA(), src, remote)
+				Pipeloop(handle.ForceOTA(), src, remote, addFlow)
 			} else {
-				Pipeloop(handle, src, remote)
+				Pipeloop(handle, src, remote, addFlow)
 			}
 
 			natlist.Delete(src.String())
@@ -237,7 +239,8 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 		fmt.Println("WTF")
 	}
 	remote.SetDeadline(time.Now().Add(udpTimeout))
-	_, err = remote.WriteTo(receive[reqLen:n], dst)
+	n, err = remote.WriteTo(receive[reqLen:n], dst)
+	addFlow(n)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
@@ -254,12 +257,12 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 	return
 }
 
-func ReadAndHandleUDPReq(c *SecurePacketConn) error {
+func ReadAndHandleUDPReq(c *SecurePacketConn, addFlow func(int)) error {
 	buf := leakyBuf.Get()
 	n, src, err := c.ReadFrom(buf[0:])
 	if err != nil {
 		return err
 	}
-	go handleUDPConnection(c, n, src, buf)
+	go handleUDPConnection(c, n, src, buf, addFlow)
 	return nil
 }

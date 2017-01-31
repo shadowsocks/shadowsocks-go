@@ -172,17 +172,20 @@ func handleConnection(conn *ss.Conn, auth bool, port string) {
 	}
 	if ota {
 		go func() {
-			flow := ss.PipeThenCloseOta(conn, remote)
-			passwdManager.addFlow(port, flow)
+			ss.PipeThenCloseOta(conn, remote, func(flow int){
+				passwdManager.addFlow(port, flow)
+			})
 		}()
 	} else {
 		go func() {
-			flow := ss.PipeThenClose(conn, remote)
-			passwdManager.addFlow(port, flow)
+			ss.PipeThenClose(conn, remote, func(flow int){
+				passwdManager.addFlow(port, flow)
+			})
 		}()
 	}
-	flow := ss.PipeThenClose(remote, conn)
-	passwdManager.addFlow(port, flow)
+	ss.PipeThenClose(remote, conn, func(flow int) {
+		passwdManager.addFlow(port, flow)
+	})
 	
 	closed = true
 	return
@@ -290,8 +293,16 @@ func (pm *PasswdManager) updatePortPasswd(port, password string, auth bool) {
 	// So there maybe concurrent access to passwdManager and we need lock to protect it.
 	go run(port, password, auth)
 	if udp {
-		pl, _ := pm.getUDP(port)
-		pl.listener.Close()
+		pl, ok := pm.getUDP(port)
+		if !ok {
+			log.Printf("new udp port %s added\n", port)
+		} else {
+			if pl.password == password {
+				return
+			}
+			log.Printf("closing udp port %s to update password\n", port)
+			pl.listener.Close()
+		}
 		go runUDP(port, password, auth)
 	}
 }
@@ -394,8 +405,11 @@ func runUDP(port, password string, auth bool) {
 	}
 	SecurePacketConn := ss.NewSecurePacketConn(conn, cipher.Copy(), auth)
 	for {
-		if err := ss.ReadAndHandleUDPReq(SecurePacketConn); err != nil {
-			debug.Println(err)
+		if err := ss.ReadAndHandleUDPReq(SecurePacketConn, func(flow int) {
+			passwdManager.addFlow(port, flow)
+		}); err != nil {
+			debug.Printf("udp read error: %v\n", err)
+			return
 		}
 	}
 }
