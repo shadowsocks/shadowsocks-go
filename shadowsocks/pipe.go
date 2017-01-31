@@ -22,7 +22,9 @@ func PipeThenClose(src, dst net.Conn, addFlow func(int)) {
 	for {
 		SetReadTimeout(src)
 		n, err := src.Read(buf)
-		addFlow(n)
+		if addFlow != nil {
+			addFlow(n)
+		}
 		// read may return EOF with n > 0
 		// should always process n > 0 bytes before handling error
 		if n > 0 {
