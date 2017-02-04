@@ -1,55 +1,89 @@
-/**
- * Created with IntelliJ IDEA.
- * User: clowwindy
- * Date: 12-11-2
- * Time: 上午10:31
- * To change this template use File | Settings | File Templates.
- */
 package shadowsocks
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
-	// "log"
+	"net"
 	"os"
-	"reflect"
+	"strconv"
 	"strings"
-	"time"
 )
 
-type Config struct {
-	Server     interface{} `json:"server"`
-	ServerPort int         `json:"server_port"`
-	LocalPort  int         `json:"local_port"`
-	Password   string      `json:"password"`
-	Method     string      `json:"method"` // encryption method
-	Auth       bool        `json:"auth"`   // one time auth
+// Config is the interface for config.
+// although shadowsocks package do not directly receive config now,
+// it'a a basic structure containing all key elements for config.
+type Config interface {
+	// ServerAddrs is for server side, used to listen
+	ServerAddrPasswords() map[string]string
+	// RemoteAddrs is for client side, used to connect
+	RemoteAddrPasswords() [][]string
+	LocalAddr() string
+	Method() string
+	Password() string
+	Timeout() int
+	OTA() bool
+}
+
+// config is the struct for shadowsocks config
+type config struct {
+	JServer     interface{} `json:"server"` // deprecated
+	JServerPort int         `json:"server_port"`
+	JLocalAddr  string      `json:"local_address"`
+	JLocalPort  int         `json:"local_port"`
+	JPassword   string      `json:"password"`
+	JMethod     string      `json:"method"` // encryption method
+	JOTA        bool        `json:"auth"`   // one time auth
 
 	// following options are only used by server
-	PortPassword map[string]string `json:"port_password"`
-	Timeout      int               `json:"timeout"`
+	JPortPassword map[string]string `json:"port_password"`
+	JTimeout      int               `json:"timeout"`
 
 	// following options are only used by client
 
 	// The order of servers in the client config is significant, so use array
 	// instead of map to preserve the order.
-	ServerPassword [][]string `json:"server_password"`
+	JServerPassword [][]string `json:"server_password"`
 }
 
-var readTimeout time.Duration
+func (c *config) ServerAddrPasswords() map[string]string {
+	return c.JPortPassword
+}
 
-func (config *Config) GetServerArray() []string {
+func (c *config) RemoteAddrPasswords() [][]string {
+	return c.JServerPassword
+}
+
+func (c *config) LocalAddr() string {
+	return c.JLocalAddr
+}
+
+func (c *config) OTA() bool {
+	return c.JOTA
+}
+
+func (c *config) Password() string {
+	return c.JPassword
+}
+
+func (c *config) Method() string {
+	return c.JMethod
+}
+
+func (c *config) Timeout() int {
+	return c.JTimeout
+}
+
+func (c *config) getServerArray() []string {
 	// Specifying multiple servers in the "server" options is deprecated.
 	// But for backward compatiblity, keep this.
-	if config.Server == nil {
+	if c.JServer == nil {
 		return nil
 	}
-	single, ok := config.Server.(string)
+	single, ok := c.JServer.(string)
 	if ok {
 		return []string{single}
 	}
-	arr, ok := config.Server.([]interface{})
+	arr, ok := c.JServer.([]interface{})
 	if ok {
 		/*
 			if len(arr) > 1 {
@@ -61,16 +95,16 @@ func (config *Config) GetServerArray() []string {
 		for i, s := range arr {
 			serverArr[i], ok = s.(string)
 			if !ok {
-				goto typeError
+				return nil
 			}
 		}
 		return serverArr
 	}
-typeError:
-	panic(fmt.Sprintf("Config.Server type error %v", reflect.TypeOf(config.Server)))
+	return nil
 }
 
-func ParseConfig(path string) (config *Config, err error) {
+// ParseConfig parses a config file
+func ParseConfig(path string) (conf Config, err error) {
 	file, err := os.Open(path) // For read access.
 	if err != nil {
 		return
@@ -82,55 +116,81 @@ func ParseConfig(path string) (config *Config, err error) {
 		return
 	}
 
-	config = &Config{}
-	if err = json.Unmarshal(data, config); err != nil {
+	c := &config{}
+	if err = json.Unmarshal(data, c); err != nil {
 		return nil, err
 	}
-	readTimeout = time.Duration(config.Timeout) * time.Second
-	if strings.HasSuffix(strings.ToLower(config.Method), "-auth") {
-		config.Method = config.Method[:len(config.Method)-5]
-		config.Auth = true
-	}
-	return
+
+	postProcess(c)
+	return c, nil
 }
 
 func SetDebug(d DebugLog) {
 	Debug = d
 }
 
-// Useful for command line to override options specified in config file
-// Debug is not updated.
-func UpdateConfig(old, new *Config) {
-	// Using reflection here is not necessary, but it's a good exercise.
-	// For more information on reflections in Go, read "The Laws of Reflection"
-	// http://golang.org/doc/articles/laws_of_reflection.html
-	newVal := reflect.ValueOf(new).Elem()
-	oldVal := reflect.ValueOf(old).Elem()
+func postProcess(c *config) {
+	var host []string
+	var local string
+	if strings.HasSuffix(strings.ToLower(c.JMethod), "-auth") {
+		c.JMethod = c.JMethod[:len(c.JMethod)-5]
+		c.JOTA = true
+	}
 
-	// typeOfT := newVal.Type()
-	for i := 0; i < newVal.NumField(); i++ {
-		newField := newVal.Field(i)
-		oldField := oldVal.Field(i)
-		// log.Printf("%d: %s %s = %v\n", i,
-		// typeOfT.Field(i).Name, newField.Type(), newField.Interface())
-		switch newField.Kind() {
-		case reflect.Interface:
-			if fmt.Sprintf("%v", newField.Interface()) != "" {
-				oldField.Set(newField)
-			}
-		case reflect.String:
-			s := newField.String()
-			if s != "" {
-				oldField.SetString(s)
-			}
-		case reflect.Int:
-			i := newField.Int()
-			if i != 0 {
-				oldField.SetInt(i)
+	// parse server side listen address
+	// port_password has higher priority over server_port
+	if len(c.JPortPassword) == 0 {
+		if c.JServerPort != 0 {
+			c.JPortPassword = map[string]string{strconv.Itoa(c.JServerPort): c.JPassword}
+		}
+	}
+	// apply the address binding if server option exists
+	servers := c.getServerArray()
+	if len(servers) > 0 {
+		host = make([]string, len(servers))
+		for index, v := range servers {
+			if ip := net.ParseIP(v); ip != nil {
+				if ipv4 := ip.To4(); ipv4 != nil {
+					host[index] = ipv4.String()
+				} else if ipv6 := ip.To16(); ipv6 != nil {
+					host[index] = ipv6.String()
+				}
 			}
 		}
 	}
 
-	old.Timeout = new.Timeout
-	readTimeout = time.Duration(old.Timeout) * time.Second
+	portPass := map[string]string{}
+	for port, password := range c.JPortPassword {
+		if len(host) > 0 {
+			for _, ip := range host {
+				laddr := net.JoinHostPort(ip, port)
+				portPass[laddr] = password
+			}
+		} else {
+			laddr := net.JoinHostPort("", port)
+			portPass[laddr] = password
+		}
+	}
+	c.JPortPassword = portPass
+	// for client
+	// server_password has higher priority over server
+	if len(c.JServerPassword) == 0 && c.JServerPort != 0 && len(servers) != 0 {
+		c.JServerPassword = make([][]string, len(servers))
+		for k := range c.JServerPassword {
+			c.JServerPassword[k] = make([]string, 2)
+			c.JServerPassword[k][0] = net.JoinHostPort(servers[k], strconv.Itoa(c.JServerPort))
+			c.JServerPassword[k][1] = c.JPassword
+		}
+	}
+
+	if len(c.JLocalAddr) > 0 {
+		if ip := net.ParseIP(c.JLocalAddr); ip != nil {
+			if ipv4 := ip.To4(); ipv4 != nil {
+				local = ipv4.String()
+			} else if ipv6 := ip.To16(); ipv6 != nil {
+				local = ipv6.String()
+			}
+		}
+	}
+	c.JLocalAddr = net.JoinHostPort(local, strconv.Itoa(c.JLocalPort))
 }

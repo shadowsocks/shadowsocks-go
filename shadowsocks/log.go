@@ -7,9 +7,10 @@ import (
 
 type DebugLog bool
 
-var Debug DebugLog
-
-var dbgLog = log.New(os.Stdout, "[DEBUG] ", log.Ltime)
+var (
+	Debug  DebugLog
+	dbgLog = log.New(os.Stdout, "[DEBUG] ", log.Ltime)
+)
 
 func (d DebugLog) Printf(format string, args ...interface{}) {
 	if d {

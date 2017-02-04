@@ -10,18 +10,24 @@ func TestConfigJson(t *testing.T) {
 		t.Fatal("error parsing config.json:", err)
 	}
 
-	if config.Password != "barfoo!" {
+	if config.Password() != "barfoo!" {
 		t.Error("wrong password from config")
 	}
-	if config.Timeout != 600 {
+	if config.Timeout() != 600 {
 		t.Error("timeout should be 600")
 	}
-	if config.Method != "aes-128-cfb" {
+	if config.Method() != "aes-128-cfb" {
 		t.Error("method should be aes-128-cfb")
 	}
-	srvArr := config.GetServerArray()
-	if len(srvArr) != 1 || srvArr[0] != "127.0.0.1" {
+
+	addrPass := config.ServerAddrPasswords()
+	if len(addrPass) != 1 || addrPass["127.0.0.1:8388"] != "barfoo!" {
 		t.Error("server option is not set correctly")
+	}
+
+	remotePass := config.RemoteAddrPasswords()
+	if len(remotePass) != 1 || remotePass[0][0] != "127.0.0.1:8388" || remotePass[0][1] != "barfoo!" {
+		t.Error("remote server option is not set correctly")
 	}
 }
 
@@ -30,14 +36,19 @@ func TestServerMultiPort(t *testing.T) {
 	if err != nil {
 		t.Fatal("error parsing ../sample-config/server-multi-port.json:", err)
 	}
+	addrPass := config.ServerAddrPasswords()
+	if len(addrPass) != 2 {
+		t.Error("wrong number of multiple password configs")
+	}
 
-	if config.PortPassword["8387"] != "foobar" {
+	if addrPass[":8387"] != "foobar" {
 		t.Error("wrong multiple password for port 8387")
 	}
-	if config.PortPassword["8388"] != "barfoo" {
+
+	if addrPass[":8388"] != "barfoo" {
 		t.Error("wrong multiple password for port 8388")
 	}
-	if config.PortPassword["8389"] != "" {
+	if addrPass["8389"] != "" {
 		t.Error("should have no password for port 8389")
 	}
 }
@@ -48,17 +59,19 @@ func TestDeprecatedClientMultiServerArray(t *testing.T) {
 	if err != nil {
 		t.Fatal("error parsing deprecated-client-multi-server.json:", err)
 	}
-
-	srvArr := config.GetServerArray()
-	if len(srvArr) != 2 {
+	addrPass := config.ServerAddrPasswords()
+	if len(addrPass) != 2 {
 		t.Error("server option is not set correctly")
 	}
-	if srvArr[0] != "127.0.0.1" {
-		t.Errorf("1st server wrong, got %v", srvArr[0])
+
+	if addrPass["127.0.0.1:8388"] != "barfoo!" {
+		t.Errorf("1st server wrong, got %v", addrPass["127.0.0.1:8388"])
 	}
-	if srvArr[1] != "127.0.1.1" {
-		t.Errorf("2nd server wrong, got %v", srvArr[0])
+
+	if addrPass["127.0.1.1:8388"] != "barfoo!" {
+		t.Errorf("2ed server wrong, got %v", addrPass["127.0.1.1:8388"])
 	}
+
 }
 
 func TestClientMultiServerArray(t *testing.T) {
@@ -66,8 +79,12 @@ func TestClientMultiServerArray(t *testing.T) {
 	if err != nil {
 		t.Fatal("error parsing client-multi-server.json:", err)
 	}
+	servers := config.RemoteAddrPasswords()
+	if len(servers) != 2 {
+		t.Error("wrong number of multiple server configs")
+	}
 
-	sv := config.ServerPassword[0]
+	sv := servers[0]
 	if len(sv) != 2 {
 		t.Fatalf("server_password 1st server wrong, have %d items\n", len(sv[0]))
 	}
@@ -78,7 +95,7 @@ func TestClientMultiServerArray(t *testing.T) {
 		t.Error("server_password 1st server passwd wrong")
 	}
 
-	sv = config.ServerPassword[1]
+	sv = servers[1]
 	if len(sv) != 3 {
 		t.Fatalf("server_password 2nd server wrong, have %d items\n", len(sv[0]))
 	}
@@ -100,8 +117,8 @@ func TestParseConfigEmpty(t *testing.T) {
 		t.Fatal("error parsing noserver config:", err)
 	}
 
-	srvArr := config.GetServerArray()
-	if srvArr != nil {
+	servers := config.RemoteAddrPasswords()
+	if servers != nil {
 		t.Error("GetServerArray should return nil if no server option is given")
 	}
 }

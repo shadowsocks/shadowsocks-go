@@ -1,26 +1,18 @@
 package shadowsocks
 
 import (
-	"bytes"
-	"encoding/binary"
-	"io"
 	"net"
+	"syscall"
 	"time"
 )
 
-func SetReadTimeout(c net.Conn) {
-	if readTimeout != 0 {
-		c.SetReadDeadline(time.Now().Add(readTimeout))
-	}
-}
-
 // PipeThenClose copies data from src to dst, closes dst when done.
-func PipeThenClose(src, dst net.Conn) {
+func PipeThenClose(src, dst net.Conn, timeout int) {
 	defer dst.Close()
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
 	for {
-		SetReadTimeout(src)
+		src.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
 		n, err := src.Read(buf)
 		// read may return EOF with n > 0
 		// should always process n > 0 bytes before handling error
@@ -40,61 +32,62 @@ func PipeThenClose(src, dst net.Conn) {
 					Debug.Println("read:", err)
 				}
 			*/
+			if err == errBufferTooSmall {
+				// unlikely
+				Debug.Println("read:", err)
+			} else if err == ErrPacketOtaFailed {
+				Debug.Println("read:", err)
+			}
 			break
 		}
 	}
 }
 
-// PipeThenClose copies data from src to dst, closes dst when done, with ota verification.
-func PipeThenCloseOta(src *Conn, dst net.Conn) {
-	const (
-		dataLenLen  = 2
-		hmacSha1Len = 10
-		idxData0    = dataLenLen + hmacSha1Len
-	)
+func UDPClientReceiveThenClose(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
+	buf := make([]byte, 4096)
+	defer readClose.Close()
+	for {
+		readClose.SetDeadline(time.Now().Add(udpTimeout))
+		n, _, err := readClose.ReadFrom(buf)
+		if err != nil {
+			if ne, ok := err.(*net.OpError); ok {
+				if ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE {
+					// log too many open file error
+					// EMFILE is process reaches open file limits, ENFILE is system limit
+					Debug.Println("[udp]read error:", err)
+				}
+			}
+			Debug.Printf("[udp]closed pipe %s<-%s\n", writeAddr, readClose.LocalAddr())
+			return
+		}
+		write.WriteTo(buf[:n], writeAddr)
+	}
+}
 
-	defer func() {
-		dst.Close()
-	}()
-	// sometimes it have to fill large block
+func udpReceiveThenClose(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
-	for i := 1; ; i += 1 {
-		SetReadTimeout(src)
-		if n, err := io.ReadFull(src, buf[:dataLenLen+hmacSha1Len]); err != nil {
-			if err == io.EOF {
-				break
+	defer readClose.Close()
+	for {
+		readClose.SetDeadline(time.Now().Add(udpTimeout))
+		n, raddr, err := readClose.ReadFrom(buf)
+		if err != nil {
+			if ne, ok := err.(*net.OpError); ok {
+				if ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE {
+					// log too many open file error
+					// EMFILE is process reaches open file limits, ENFILE is system limit
+					Debug.Println("[udp]read error:", err)
+				}
 			}
-			Debug.Printf("conn=%p #%v read header error n=%v: %v", src, i, n, err)
-			break
+			Debug.Printf("[udp]closed pipe %s<-%s\n", writeAddr, readClose.LocalAddr())
+			return
 		}
-		dataLen := binary.BigEndian.Uint16(buf[:dataLenLen])
-		expectedHmacSha1 := buf[dataLenLen:idxData0]
-
-		var dataBuf []byte
-		if len(buf) < int(idxData0+dataLen) {
-			dataBuf = make([]byte, dataLen)
+		// need improvement here
+		if req, ok := reqList.Get(raddr.String()); ok {
+			write.WriteTo(append(req, buf[:n]...), writeAddr)
 		} else {
-			dataBuf = buf[idxData0 : idxData0+dataLen]
-		}
-		if n, err := io.ReadFull(src, dataBuf); err != nil {
-			if err == io.EOF {
-				break
-			}
-			Debug.Printf("conn=%p #%v read data error n=%v: %v", src, i, n, err)
-			break
-		}
-		chunkIdBytes := make([]byte, 4)
-		chunkId := src.GetAndIncrChunkId()
-		binary.BigEndian.PutUint32(chunkIdBytes, chunkId)
-		actualHmacSha1 := HmacSha1(append(src.GetIv(), chunkIdBytes...), dataBuf)
-		if !bytes.Equal(expectedHmacSha1, actualHmacSha1) {
-			Debug.Printf("conn=%p #%v read data hmac-sha1 mismatch, iv=%v chunkId=%v src=%v dst=%v len=%v expeced=%v actual=%v", src, i, src.GetIv(), chunkId, src.RemoteAddr(), dst.RemoteAddr(), dataLen, expectedHmacSha1, actualHmacSha1)
-			break
-		}
-		if n, err := dst.Write(dataBuf); err != nil {
-			Debug.Printf("conn=%p #%v write data error n=%v: %v", dst, i, n, err)
-			break
+			header := parseHeaderFromAddr(raddr)
+			write.WriteTo(append(header, buf[:n]...), writeAddr)
 		}
 	}
 }
