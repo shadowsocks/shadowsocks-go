@@ -12,7 +12,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Yawning/chacha20"
+	"github.com/aead/chacha20"
 	"golang.org/x/crypto/blowfish"
 	"golang.org/x/crypto/cast5"
 	"golang.org/x/crypto/salsa20/salsa"
@@ -103,11 +103,11 @@ func newRC4MD5Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
 }
 
 func newChaCha20Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
-	return chacha20.NewCipher(key, iv)
+	return chacha20.NewCipher(iv, key)
 }
 
 func newChaCha20IETFStream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
-	return chacha20.NewCipher(key, iv)
+	return chacha20.NewCipher(iv, key)
 }
 
 type salsaStreamCipher struct {
