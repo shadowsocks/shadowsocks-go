@@ -2,7 +2,10 @@ package shadowsocks
 
 import (
 	"bytes"
+	"fmt"
 	"net"
+
+	"go.uber.org/zap"
 
 	"github.com/shadowsocks/shadowsocks-go/encrypt"
 )
@@ -82,7 +85,8 @@ func (c *SecurePacketConn) ReadFrom(b []byte) (n int, src net.Addr, err error) {
 		key := cipher.GetKey()
 		actualHmacSha1Buf := HmacSha1(append(iv, key...), b[:n-lenHmacSha1])
 		if !bytes.Equal(b[n-lenHmacSha1:n], actualHmacSha1Buf) {
-			Debug.Printf("verify one time auth failed, iv=%v key=%v data=%v", iv, key, b[:n])
+			Logger.Error("verify one time auth failed: ", zap.String("iv", fmt.Sprint(iv)),
+				zap.String("key", fmt.Sprint(key)), zap.String("Buf", fmt.Sprint(b[:n])))
 			return 0, src, ErrPacketOtaFailed
 		}
 		n -= lenHmacSha1

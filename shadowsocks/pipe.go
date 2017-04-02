@@ -4,6 +4,8 @@ import (
 	"net"
 	"syscall"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // PipeThenClose copies data from src to dst, closes dst when done.
@@ -19,7 +21,7 @@ func PipeThenClose(src, dst net.Conn, timeout int) {
 		if n > 0 {
 			// Note: avoid overwrite err returned by Read.
 			if _, err := dst.Write(buf[0:n]); err != nil {
-				Debug.Println("write:", err)
+				Logger.Error("erro in pipe then close dst write:", zap.Error(err))
 				break
 			}
 		}
@@ -32,11 +34,8 @@ func PipeThenClose(src, dst net.Conn, timeout int) {
 					Debug.Println("read:", err)
 				}
 			*/
-			if err == errBufferTooSmall {
-				// unlikely
-				Debug.Println("read:", err)
-			} else if err == ErrPacketOtaFailed {
-				Debug.Println("read:", err)
+			if err == errBufferTooSmall || err == ErrPacketOtaFailed {
+				Logger.Error("erro in pipe then close, resd :", zap.Error(err))
 			}
 			break
 		}
@@ -54,16 +53,18 @@ func UDPClientReceiveThenClose(write net.PacketConn, writeAddr net.Addr, readClo
 				if ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE {
 					// log too many open file error
 					// EMFILE is process reaches open file limits, ENFILE is system limit
-					Debug.Println("[udp]read error:", err)
+					Logger.Error("erro in UDP client receive then close, read error:", zap.Error(err))
 				}
 			}
-			Debug.Printf("[udp]closed pipe %s<-%s\n", writeAddr, readClose.LocalAddr())
+			//Logger.Info("[udp]closed pipe ", zap.String("msg", fmt.Sprintf("%s<-%s\n", writeAddr, readClose.LocalAddr())))
+			Logger.Info("[udp]closed pipe ", zap.String("WriteTo", writeAddr.String()), zap.String("ReadFrom", readClose.LocalAddr().String()))
 			return
 		}
 		write.WriteTo(buf[:n], writeAddr)
 	}
 }
 
+// XXX is this suould be here?
 func udpReceiveThenClose(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
@@ -76,10 +77,10 @@ func udpReceiveThenClose(write net.PacketConn, writeAddr net.Addr, readClose net
 				if ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE {
 					// log too many open file error
 					// EMFILE is process reaches open file limits, ENFILE is system limit
-					Debug.Println("[udp]read error:", err)
+					Logger.Error("erro in UDP client receive then close, read error:", zap.Error(err))
 				}
 			}
-			Debug.Printf("[udp]closed pipe %s<-%s\n", writeAddr, readClose.LocalAddr())
+			Logger.Info("[udp]closed pipe ", zap.String("WriteTo", writeAddr.String()), zap.String("ReadFrom", readClose.LocalAddr().String()))
 			return
 		}
 		// need improvement here
