@@ -125,10 +125,6 @@ func ParseConfig(path string) (conf Config, err error) {
 	return c, nil
 }
 
-func SetDebug(d DebugLog) {
-	Debug = d
-}
-
 func postProcess(c *config) {
 	var host []string
 	var local string

@@ -9,6 +9,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -173,22 +175,24 @@ func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []
 		}
 		remote = c
 		natlist.Put(src.String(), remote)
-		Debug.Printf("[udp]new client %s->%s via %s\n", src, dst, remote.LocalAddr())
+		Logger.Info("[udp] new client", zap.Stringer("source", src), zap.Stringer("dest", dst),
+			zap.Stringer("via", remote.LocalAddr()))
 		go func() {
 			udpReceiveThenClose(handle, src, remote)
 			natlist.Delete(src.String())
 		}()
 	} else {
-		Debug.Printf("[udp]using cached client %s->%s via %s\n", src, dst, remote.LocalAddr())
+		Logger.Info("[udp] using cached client", zap.Stringer("source", src), zap.Stringer("dest", dst),
+			zap.Stringer("via", remote.LocalAddr()))
 	}
 	_, err = remote.WriteTo(payload[headerLen:], dst)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
 			// EMFILE is process reaches open file limits, ENFILE is system limit
-			Debug.Println("[udp]write error:", err)
+			Logger.Error("[udp]write error: too many open fd in system", zap.Error(err))
 		} else {
-			Debug.Println("[udp]error connecting to:", dst, err)
+			Logger.Error("[udp]error connecting to:", zap.Stringer("dest", dst), zap.Error(err))
 		}
 		if conn := natlist.Delete(src.String()); conn != nil {
 			conn.Close()
@@ -206,7 +210,7 @@ func UDPGetRequest(buf []byte, auth bool) (host string, headerLen int, compatibl
 	case typeIPv4:
 		headerLen = headerLenIPv4
 		if len(buf) < headerLen {
-			Debug.Println("[udp]invalid received message.")
+			Logger.Error("[udp]invalid received message.")
 		}
 		host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
 		port := binary.BigEndian.Uint16(buf[headerLenIPv4-2 : headerLenIPv4])
@@ -214,7 +218,7 @@ func UDPGetRequest(buf []byte, auth bool) (host string, headerLen int, compatibl
 	case typeIPv6:
 		headerLen = headerLenIPv6
 		if len(buf) < headerLen {
-			Debug.Println("[udp]invalid received message.")
+			Logger.Error("[udp]invalid received message.")
 		}
 		host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
 		port := binary.BigEndian.Uint16(buf[headerLenIPv4-2 : headerLenIPv4])
@@ -222,7 +226,7 @@ func UDPGetRequest(buf []byte, auth bool) (host string, headerLen int, compatibl
 	case typeDm:
 		headerLen = int(buf[idDmLen]) + headerLenDmBase
 		if len(buf) < headerLen {
-			Debug.Println("[udp]invalid received message.")
+			Logger.Error("[udp]invalid received message.")
 		}
 		host = string(buf[idDm0 : idDm0+int(buf[idDmLen])])
 		// avoid panic: syscall: string with NUL passed to StringToUTF16 on windows.
@@ -233,7 +237,7 @@ func UDPGetRequest(buf []byte, auth bool) (host string, headerLen int, compatibl
 		port := binary.BigEndian.Uint16(buf[headerLenIPv4-2 : headerLenIPv4])
 		host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 	default:
-		Debug.Printf("[udp]addrType %d not supported", addrType)
+		Logger.Error("[udp]addrType not supported", zap.String("address type", fmt.Sprint(addrType)))
 		return
 	}
 	return

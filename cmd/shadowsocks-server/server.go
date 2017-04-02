@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -12,11 +11,11 @@ import (
 	"strings"
 	"syscall"
 
+	"go.uber.org/zap"
+
 	"github.com/shadowsocks/shadowsocks-go/encrypt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
-
-var debug ss.DebugLog
 
 const logCntDelta = 100
 
@@ -29,35 +28,33 @@ func handleConnection(conn net.Conn, host string, timeout int) {
 		// XXX There's no xadd in the atomic package, so it's difficult to log
 		// the message only once with low cost. Also note nextLogConnCnt maybe
 		// added twice for current peak connection number level.
-		log.Printf("Number of client connections reaches %d\n", nextLogConnCnt)
+		ss.Logger.Info("Number of client connections reaches ", zap.Int("count", nextLogConnCnt))
 		nextLogConnCnt += logCntDelta
 	}
 
 	// function arguments are always evaluated, so surround debug statement
 	// with if statement
-	if debug {
-		debug.Printf("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
-	}
+	ss.Logger.Info("new client ", zap.Stringer("remote", conn.RemoteAddr()),
+		zap.Stringer("local", conn.LocalAddr()))
 	closed := false
 	defer func() {
-		if debug {
-			debug.Printf("closed pipe %s<->%s\n", conn.RemoteAddr(), host)
-		}
+		ss.Logger.Info("close pipe:", zap.Stringer("remote", conn.RemoteAddr()),
+			zap.String("host", host))
 		connCnt--
 		if !closed {
 			conn.Close()
 		}
 	}()
 
-	debug.Println("connecting", host)
+	ss.Logger.Info("connecting", zap.String("host", host))
 	remote, err := net.Dial("tcp", host)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
 			// EMFILE is process reaches open file limits, ENFILE is system limit
-			log.Println("dial error:", err)
+			ss.Logger.Error("dial error:", zap.Error(err))
 		} else {
-			log.Println("error connecting to:", host, err)
+			ss.Logger.Error("error connecting to host:", zap.String("host", host), zap.Error(err))
 		}
 		return
 	}
@@ -66,9 +63,8 @@ func handleConnection(conn net.Conn, host string, timeout int) {
 			remote.Close()
 		}
 	}()
-	if debug {
-		debug.Printf("piping %s<->%s ota=%v", conn.RemoteAddr(), host, conn.(*ss.SecureConn).IsOta())
-	}
+	ss.Logger.Info("piping remote to host:", zap.Stringer("remote", conn.RemoteAddr()),
+		zap.String("host", host), zap.Bool("OTA", conn.(*ss.SecureConn).IsOta()))
 	go ss.PipeThenClose(conn, remote, timeout)
 	ss.PipeThenClose(remote, conn, timeout)
 	closed = true
@@ -80,10 +76,10 @@ func waitSignal() {
 	signal.Notify(sigChan, syscall.SIGHUP)
 	for sig := range sigChan {
 		if sig == syscall.SIGHUP {
-
+			ss.Logger.Info("receive the KILL -HUP")
 		} else {
 			// is this going to happen?
-			log.Printf("caught signal %v, exit", sig)
+			ss.Logger.Error("Caught signal and exit", zap.String("signal", fmt.Sprint(sig)))
 			os.Exit(0)
 		}
 	}
@@ -98,7 +94,7 @@ func serveTCP(ln *ss.Listener, timeout int) {
 				continue
 			}
 			// listener maybe closed to update password
-			debug.Printf("accept error: %v\n", err)
+			ss.Logger.Error("serve TCP accept error", zap.Error(err))
 			return
 		}
 		go handleConnection(conn, host, timeout)
@@ -110,14 +106,14 @@ func run(conf ss.Config) {
 	for addr, pass := range addrPadd {
 		cipher, err := encrypt.NewCipher(conf.Method(), pass)
 		if err != nil {
-			log.Printf("Failed create cipher: %v\n", err)
+			ss.Logger.Error("Failed create cipher", zap.Error(err))
 		}
 		ln, err := ss.Listen("tcp", addr, cipher, conf.Timeout(), conf.OTA())
 		if err != nil {
-			log.Printf("error listening port %v: %v\n", addr, err)
+			ss.Logger.Error("error listening port", zap.String("port", addr), zap.Error(err))
 			os.Exit(1)
 		}
-		log.Printf("server listening port %v ...\n", addr)
+		ss.Logger.Info("server listening port", zap.String("port", addr))
 		go serveTCP(ln, conf.Timeout())
 	}
 }
@@ -131,12 +127,12 @@ func serveUDP(SecurePacketConn *ss.SecurePacketConn) {
 			if err == ss.ErrPacketOtaFailed {
 				continue
 			}
-			debug.Printf("[udp]read error: %v\n", err)
+			ss.Logger.Error("[udp]read error", zap.Error(err))
 			return
 		}
 		host, headerLen, compatibleMode, err := ss.UDPGetRequest(buf[:n], SecurePacketConn.IsOta())
 		if err != nil {
-			debug.Printf("[udp]faided to decode request: %v\n", err)
+			ss.Logger.Error("[udp]faided to decode request", zap.Error(err))
 			continue
 		}
 		if compatibleMode {
@@ -150,14 +146,14 @@ func serveUDP(SecurePacketConn *ss.SecurePacketConn) {
 func runUDP(conf ss.Config) {
 	addrPadd := conf.ServerAddrPasswords()
 	for addr, pass := range addrPadd {
-		log.Printf("listening udp port %v\n", addr)
+		ss.Logger.Info("listening udp", zap.String("port", addr))
 		cipher, err := encrypt.NewCipher(conf.Method(), pass)
 		if err != nil {
-			log.Printf("Failed create cipher: %v\n", err)
+			ss.Logger.Error("Failed create cipher", zap.Error(err))
 		}
 		SecurePacketConn, err := ss.ListenPacket("udp", addr, cipher, conf.OTA())
 		if err != nil {
-			log.Printf("error listening packetconn %v: %v\n", addr, err)
+			ss.Logger.Error("error listening packetconn ", zap.String("addrsee", addr), zap.Error(err))
 			os.Exit(1)
 		}
 		go serveUDP(SecurePacketConn)
@@ -169,9 +165,13 @@ func checkConfig(config ss.Config) error {
 	for addr, pass := range addrPass {
 		if _, portStr, err := net.SplitHostPort(addr); err == nil {
 			if port, err := strconv.Atoi(portStr); err != nil || port == 0 || pass == "" {
+				ss.Logger.Error("given config is invalid", zap.String("address", addr),
+					zap.String("password", pass))
 				return fmt.Errorf("given config is invalid: address(%s) password(%s)", addr, pass)
 			}
 		} else {
+			ss.Logger.Error("given config is invalid", zap.String("address", addr),
+				zap.String("password", pass))
 			return fmt.Errorf("given config is invalid: address(%s) password(%s)", addr, pass)
 		}
 	}
@@ -217,7 +217,6 @@ func main() {
 	var udp bool
 	var configFile string
 	var config ss.Config
-	log.SetOutput(os.Stdout)
 	cmd := &cmdConfig{}
 
 	flag.BoolVar(&printVer, "version", false, "print version")
@@ -227,14 +226,15 @@ func main() {
 	flag.IntVar(&cmd.CTimeout, "t", 300, "timeout in seconds")
 	flag.StringVar(&cmd.CMethod, "m", "", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
-	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
+	flag.StringVar(&ss.Level, "l", "info", "given the logger level for ss to log out")
 	flag.BoolVar(&udp, "u", false, "UDP Relay")
 	flag.Parse()
 	if printVer {
 		ss.PrintVersion()
 		os.Exit(0)
 	}
-	ss.SetDebug(debug)
+	ss.NewLogger()
+
 	if strings.HasSuffix(cmd.CMethod, "-auth") {
 		cmd.CMethod = cmd.CMethod[:len(cmd.CMethod)-5]
 		cmd.COTA = true
