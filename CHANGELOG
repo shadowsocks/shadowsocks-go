@@ -1,3 +1,16 @@
+1.2.1 (2017-01-22)
+    * Fix bug in handling of UDP OTA packets
+
+1.2.0 (2017-01-20)
+    * Support UDP relay on server side, and OTA
+    * Support "aes-[128/192/256]-ctr" encryption method (Thanks for @slurin)
+    * Support "chacha20-ietf" encryption method
+    * Improve performance of "chacha20" encryption method
+    * Correctly close connection if handshake failed
+
+1.1.5 (2016-05-04)
+    * Support OTA (Thanks for @ayanamist for implementing this feature)
+
 1.1.4 (2015-05-10)
     * Support "chacha20" encryption method, thanks to @defia
     * Support "salsa20" encryption method, thanks to @genzj

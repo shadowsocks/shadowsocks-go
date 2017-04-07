@@ -63,16 +63,28 @@ func testBlockCipher(t *testing.T, method string) {
 	testCiphter(t, cipherCopy, method+" copy")
 }
 
-func TestAES128(t *testing.T) {
+func TestAES128CFB(t *testing.T) {
 	testBlockCipher(t, "aes-128-cfb")
 }
 
-func TestAES192(t *testing.T) {
+func TestAES192CFB(t *testing.T) {
 	testBlockCipher(t, "aes-192-cfb")
 }
 
-func TestAES256(t *testing.T) {
+func TestAES256CFB(t *testing.T) {
 	testBlockCipher(t, "aes-256-cfb")
+}
+
+func TestAES128CTR(t *testing.T) {
+	testBlockCipher(t, "aes-128-ctr")
+}
+
+func TestAES192CTR(t *testing.T) {
+	testBlockCipher(t, "aes-192-ctr")
+}
+
+func TestAES256CTR(t *testing.T) {
+	testBlockCipher(t, "aes-256-ctr")
 }
 
 func TestDES(t *testing.T) {
@@ -85,6 +97,10 @@ func TestRC4MD5(t *testing.T) {
 
 func TestChaCha20(t *testing.T) {
 	testBlockCipher(t, "chacha20")
+}
+
+func TestChaCha20IETF(t *testing.T) {
+	testBlockCipher(t, "chacha20-ietf")
 }
 
 var cipherKey = make([]byte, 64)
@@ -108,16 +124,28 @@ func benchmarkCipherInit(b *testing.B, method string) {
 	}
 }
 
-func BenchmarkAES128Init(b *testing.B) {
+func BenchmarkAES128CFBInit(b *testing.B) {
 	benchmarkCipherInit(b, "aes-128-cfb")
 }
 
-func BenchmarkAES192Init(b *testing.B) {
+func BenchmarkAES19CFB2Init(b *testing.B) {
 	benchmarkCipherInit(b, "aes-192-cfb")
 }
 
-func BenchmarkAES256Init(b *testing.B) {
+func BenchmarkAES256CFBInit(b *testing.B) {
 	benchmarkCipherInit(b, "aes-256-cfb")
+}
+
+func BenchmarkAES128CTRInit(b *testing.B) {
+	benchmarkCipherInit(b, "aes-128-ctr")
+}
+
+func BenchmarkAES192CTRInit(b *testing.B) {
+	benchmarkCipherInit(b, "aes-192-ctr")
+}
+
+func BenchmarkAES256CTRInit(b *testing.B) {
+	benchmarkCipherInit(b, "aes-256-ctr")
 }
 
 func BenchmarkBlowFishInit(b *testing.B) {
@@ -140,6 +168,10 @@ func BenchmarkChaCha20Init(b *testing.B) {
 	benchmarkCipherInit(b, "chacha20")
 }
 
+func BenchmarkChaCha20IETFInit(b *testing.B) {
+	benchmarkCipherInit(b, "chacha20-ietf")
+}
+
 func BenchmarkSalsa20Init(b *testing.B) {
 	benchmarkCipherInit(b, "salsa20")
 }
@@ -160,16 +192,28 @@ func benchmarkCipherEncrypt(b *testing.B, method string) {
 	}
 }
 
-func BenchmarkAES128Encrypt(b *testing.B) {
+func BenchmarkAES128CFBEncrypt(b *testing.B) {
 	benchmarkCipherEncrypt(b, "aes-128-cfb")
 }
 
-func BenchmarkAES192Encrypt(b *testing.B) {
+func BenchmarkAES192CFBEncrypt(b *testing.B) {
 	benchmarkCipherEncrypt(b, "aes-192-cfb")
 }
 
-func BenchmarkAES256Encrypt(b *testing.B) {
+func BenchmarkAES256CFBEncrypt(b *testing.B) {
 	benchmarkCipherEncrypt(b, "aes-256-cfb")
+}
+
+func BenchmarkAES128CTREncrypt(b *testing.B) {
+	benchmarkCipherEncrypt(b, "aes-128-ctr")
+}
+
+func BenchmarkAES192CTREncrypt(b *testing.B) {
+	benchmarkCipherEncrypt(b, "aes-192-ctr")
+}
+
+func BenchmarkAES256CTREncrypt(b *testing.B) {
+	benchmarkCipherEncrypt(b, "aes-256-ctr")
 }
 
 func BenchmarkBlowFishEncrypt(b *testing.B) {
@@ -190,6 +234,10 @@ func BenchmarkRC4MD5Encrypt(b *testing.B) {
 
 func BenchmarkChacha20Encrypt(b *testing.B) {
 	benchmarkCipherEncrypt(b, "chacha20")
+}
+
+func BenchmarkChacha20IETFEncrypt(b *testing.B) {
+	benchmarkCipherEncrypt(b, "chacha20-ietf")
 }
 
 func BenchmarkSalsa20Encrypt(b *testing.B) {
@@ -217,16 +265,28 @@ func benchmarkCipherDecrypt(b *testing.B, method string) {
 	}
 }
 
-func BenchmarkAES128Decrypt(b *testing.B) {
+func BenchmarkAES128CFBDecrypt(b *testing.B) {
 	benchmarkCipherDecrypt(b, "aes-128-cfb")
 }
 
-func BenchmarkAES192Decrypt(b *testing.B) {
+func BenchmarkAES192CFBDecrypt(b *testing.B) {
 	benchmarkCipherDecrypt(b, "aes-192-cfb")
 }
 
-func BenchmarkAES256Decrypt(b *testing.B) {
+func BenchmarkAES256CFBDecrypt(b *testing.B) {
 	benchmarkCipherDecrypt(b, "aes-256-cfb")
+}
+
+func BenchmarkAES128CTRDecrypt(b *testing.B) {
+	benchmarkCipherDecrypt(b, "aes-128-ctr")
+}
+
+func BenchmarkAES192CTRDecrypt(b *testing.B) {
+	benchmarkCipherDecrypt(b, "aes-192-ctr")
+}
+
+func BenchmarkAES256CTRDecrypt(b *testing.B) {
+	benchmarkCipherDecrypt(b, "aes-256-ctr")
 }
 
 func BenchmarkBlowFishDecrypt(b *testing.B) {
@@ -247,6 +307,10 @@ func BenchmarkRC4MD5Decrypt(b *testing.B) {
 
 func BenchmarkChaCha20Decrypt(b *testing.B) {
 	benchmarkCipherDecrypt(b, "chacha20")
+}
+
+func BenchmarkChaCha20IETFDecrypt(b *testing.B) {
+	benchmarkCipherDecrypt(b, "chacha20-ietf")
 }
 
 func BenchmarkSalsa20Decrypt(b *testing.B) {
