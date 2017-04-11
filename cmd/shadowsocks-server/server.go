@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 
 	"go.uber.org/zap"
@@ -17,18 +18,18 @@ import (
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
-const logCntDelta = 100
+const logCntDelta int32 = 100
 
-var connCnt int
+var connCnt int32
 var nextLogConnCnt = logCntDelta
 
 func handleConnection(conn net.Conn, host string, timeout int) {
-	connCnt++ // this maybe not accurate, but should be enough
-	if connCnt-nextLogConnCnt >= 0 {
+	atomic.AddInt32(&connCnt, 1)
+	if atomic.LoadInt32(&connCnt)-nextLogConnCnt >= 0 {
 		// XXX There's no xadd in the atomic package, so it's difficult to log
 		// the message only once with low cost. Also note nextLogConnCnt maybe
 		// added twice for current peak connection number level.
-		ss.Logger.Info("Number of client connections reaches ", zap.Int("count", nextLogConnCnt))
+		ss.Logger.Warn("Number of client connections reaches ", zap.Int32("count", nextLogConnCnt))
 		nextLogConnCnt += logCntDelta
 	}
 
@@ -40,7 +41,7 @@ func handleConnection(conn net.Conn, host string, timeout int) {
 	defer func() {
 		ss.Logger.Info("close pipe:", zap.Stringer("remote", conn.RemoteAddr()),
 			zap.String("host", host))
-		connCnt--
+		atomic.AddInt32(&connCnt, -1)
 		if !closed {
 			conn.Close()
 		}
@@ -233,6 +234,8 @@ func main() {
 		ss.PrintVersion()
 		os.Exit(0)
 	}
+
+	// init the logger
 	ss.NewLogger()
 
 	if strings.HasSuffix(cmd.CMethod, "-auth") {
