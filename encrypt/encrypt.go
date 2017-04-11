@@ -81,10 +81,8 @@ func (c *Cipher) InitEncrypt() (iv []byte, err error) {
 			return nil, err
 		}
 		c.iv = iv
-	} else {
-		iv = c.iv
 	}
-	c.enc, err = c.info.newStream(c.key, iv, Encrypt)
+	c.enc, err = c.info.newStream(c.key, c.iv, Encrypt)
 	return
 }
 
@@ -191,11 +189,7 @@ func evpBytesToKey(password string, keyLen int) (key []byte) {
 	return m[:keyLen]
 }
 
-func newStream(block cipher.Block, err error, key, iv []byte,
-	doe DecOrEnc) (cipher.Stream, error) {
-	if err != nil {
-		return nil, err
-	}
+func newStream(block cipher.Block, key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
 	if doe == Encrypt {
 		return cipher.NewCFBEncrypter(block, iv), nil
 	}
@@ -204,7 +198,10 @@ func newStream(block cipher.Block, err error, key, iv []byte,
 
 func newAESCFBStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
 	block, err := aes.NewCipher(key)
-	return newStream(block, err, key, iv, doe)
+	if err != nil {
+		return nil, err
+	}
+	return newStream(block, key, iv, doe)
 }
 
 func newAESCTRStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
@@ -217,17 +214,26 @@ func newAESCTRStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
 
 func newDESStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
 	block, err := des.NewCipher(key)
-	return newStream(block, err, key, iv, doe)
+	if err != nil {
+		return nil, err
+	}
+	return newStream(block, key, iv, doe)
 }
 
 func newBlowFishStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
 	block, err := blowfish.NewCipher(key)
-	return newStream(block, err, key, iv, doe)
+	if err != nil {
+		return nil, err
+	}
+	return newStream(block, key, iv, doe)
 }
 
 func newCast5Stream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
 	block, err := cast5.NewCipher(key)
-	return newStream(block, err, key, iv, doe)
+	if err != nil {
+		return nil, err
+	}
+	return newStream(block, key, iv, doe)
 }
 
 func newRC4MD5Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
