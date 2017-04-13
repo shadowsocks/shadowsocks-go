@@ -63,6 +63,8 @@ func methodOTAEnabled(method string) bool {
 	return false
 }
 
+// XXX
+// rawAddr split the addr into a byte based buffer catch all info
 func rawAddr(addr string) (buf []byte, err error) {
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -83,6 +85,8 @@ func rawAddr(addr string) (buf []byte, err error) {
 	return
 }
 
+// XXX
+// read full will read until got b length buffer
 func readFull(c *SecureConn, b []byte) (n int, err error) {
 	min := len(b)
 	for n < min {
@@ -90,6 +94,8 @@ func readFull(c *SecureConn, b []byte) (n int, err error) {
 		nn, err = c.read(b[n:])
 		n += nn
 	}
+
+	// only get hmacsha1
 	if n >= min {
 		err = nil
 	} else if n > 0 && err == io.EOF {
@@ -98,12 +104,17 @@ func readFull(c *SecureConn, b []byte) (n int, err error) {
 	return
 }
 
+// XXX
+// CORE ! deencription for ss protocol
 func getRequets(ss *SecureConn, auth bool) (host string, err error) {
-	buf := make([]byte, 269)
 	// read till we get possible domain length field
+	buf := make([]byte, 269)
+
+	// read the type of the addr first
 	if _, err = readFull(ss, buf[:idType+1]); err != nil {
 		return
 	}
+	// reqstart & end hold the start and end about the request header
 	var reqStart, reqEnd int
 	addrType := buf[idType]
 	switch addrType & AddrMask {
@@ -120,6 +131,8 @@ func getRequets(ss *SecureConn, auth bool) (host string, err error) {
 		err = fmt.Errorf("addr type %d not supported", addrType&AddrMask)
 		return
 	}
+
+	// read the host & port
 	if _, err = readFull(ss, buf[reqStart:reqEnd]); err != nil {
 		return
 	}
@@ -136,15 +149,21 @@ func getRequets(ss *SecureConn, auth bool) (host string, err error) {
 		}
 	}
 
+	// get the port
 	port := binary.BigEndian.Uint16(buf[reqEnd-2 : reqEnd])
+	// the request host and port
 	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
+
 	ota := addrType&OneTimeAuthMask > 0
+	// this is the server option wether openup the one time auth certificate
 	if auth {
 		if !ota {
 			err = ErrPacketOtaFailed
 			return
 		}
 	}
+
+	// if client set the OTA ,server must handle this with OTA option
 	if ota {
 		if _, err = readFull(ss, buf[reqEnd:reqEnd+lenHmacSha1]); err != nil {
 			return
@@ -156,7 +175,7 @@ func getRequets(ss *SecureConn, auth bool) (host string, err error) {
 			err = ErrPacketOtaFailed
 			return
 		}
-		ss.EnableOta()
+		ss.EnableOTA()
 	}
 	return
 }

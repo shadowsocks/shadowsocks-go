@@ -31,8 +31,8 @@ const (
 	headerLenIPv4   = 1 + net.IPv4len + 2 // 1addrType + ipv4 + 2port
 	headerLenIPv6   = 1 + net.IPv6len + 2 // 1addrType + ipv6 + 2port
 	headerLenDmBase = 1 + 1 + 2           // 1addrType + 1addrLen + 2port, plus addrLen
-	lenHmacSha1     = 10
-	lenDataLen      = 2
+	lenHmacSha1     = 10                  // iv lenth is 10
+	lenDataLen      = 2                   //
 	idOTAData0      = lenDataLen + lenHmacSha1
 )
 
@@ -178,7 +178,7 @@ func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []
 		Logger.Info("[udp] new client", zap.Stringer("source", src), zap.Stringer("dest", dst),
 			zap.Stringer("via", remote.LocalAddr()))
 		go func() {
-			udpReceiveThenClose(handle, src, remote)
+			UDPReceiveThenClose(handle, src, remote)
 			natlist.Delete(src.String())
 		}()
 	} else {
