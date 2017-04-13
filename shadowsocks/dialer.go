@@ -17,6 +17,7 @@ type Dialer struct {
 	ota     bool
 }
 
+// XXX
 // NewDialer initializes a new Dialer
 func NewDialer(server string, cipher *encrypt.Cipher, timeout int, ota bool) (dialer *Dialer, err error) {
 	// Currently shadowsocks-go supports UDP
@@ -32,6 +33,7 @@ func NewDialer(server string, cipher *encrypt.Cipher, timeout int, ota bool) (di
 	}, nil
 }
 
+// XXX
 // Dial is intended for the Dialer interface described in golang.org/x/net/proxy
 func (d *Dialer) Dial(network, addr string) (c net.Conn, err error) {
 	if strings.HasPrefix(network, "tcp") {
@@ -48,11 +50,13 @@ func (d *Dialer) Dial(network, addr string) (c net.Conn, err error) {
 	return nil, fmt.Errorf("unsupported connection type: %s", network)
 }
 
+// XXX
 // DialUDP is used to open an UDP connection on client side to and remote dst
 func (d *Dialer) DialUDP(network, laddr, raddr string) (c net.PacketConn, err error) {
 	return nil, fmt.Errorf("not implemented yet")
 }
 
+// XXX
 // ListenPacket is used to open an UDP connection on client side
 func (d *Dialer) ListenPacket(network, laddr string) (c net.PacketConn, err error) {
 	if strings.HasPrefix(network, "udp") {
@@ -61,6 +65,7 @@ func (d *Dialer) ListenPacket(network, laddr string) (c net.PacketConn, err erro
 	return nil, fmt.Errorf("unsupported connection type: %s", network)
 }
 
+// XXX ???
 // DialWithRawAddr is intended for use by users implementing a local socks proxy.
 // rawaddr shoud contain part of the data in socks request, starting from the
 // ATYP field. (Refer to rfc1928 for more information.)

@@ -9,102 +9,97 @@ import (
 	"strings"
 )
 
-// Config is the interface for config.
-// although shadowsocks package do not directly receive config now,
-// it'a a basic structure containing all key elements for config.
-type Config interface {
-	// ServerAddrs is for server side, used to listen
-	ServerAddrPasswords() map[string]string
-	// RemoteAddrs is for client side, used to connect
-	RemoteAddrPasswords() [][]string
-	LocalAddr() string
-	Method() string
-	Password() string
-	Timeout() int
-	OTA() bool
-}
-
-// config is the struct for shadowsocks config
-type config struct {
-	JServer     interface{} `json:"server"` // deprecated
-	JServerPort int         `json:"server_port"`
-	JLocalAddr  string      `json:"local_address"`
-	JLocalPort  int         `json:"local_port"`
-	JPassword   string      `json:"password"`
-	JMethod     string      `json:"method"` // encryption method
-	JOTA        bool        `json:"auth"`   // one time auth
+type Config struct {
+	Server     string `json:"server"` // deprecated
+	ServerPort int    `json:"server_port"`
+	LocalAddr  string `json:"local_address"`
+	LocalPort  int    `json:"local_port"`
+	Password   string `json:"password"`
+	Method     string `json:"method"` // encryption method
+	OTA        bool   `json:"auth"`   // one time auth
 
 	// following options are only used by server
-	JPortPassword map[string]string `json:"port_password"`
-	JTimeout      int               `json:"timeout"`
+	PortPassword map[string]string `json:"port_password"`
+	Timeout      int               `json:"timeout"`
 
 	// following options are only used by client
 
 	// The order of servers in the client config is significant, so use array
 	// instead of map to preserve the order.
-	JServerPassword [][]string `json:"server_password"`
+	ServerPassword [][]string `json:"server_password"`
 }
 
-func (c *config) ServerAddrPasswords() map[string]string {
-	return c.JPortPassword
+type ConfOption func(c *Config)
+
+func NewConfig(opts ...ConfOption) Config {
+	var config Config
+
+	for _, v := range opts {
+		v(&config)
+	}
+	return config
 }
 
-func (c *config) RemoteAddrPasswords() [][]string {
-	return c.JServerPassword
+func WithPortPassword(port, passwd string) ConfOption {
+	return func(c *Config) {
+		c.PortPassword[port] = passwd
+	}
 }
 
-func (c *config) LocalAddr() string {
-	return c.JLocalAddr
+func WithServerPort(port int) ConfOption {
+	return func(c *Config) {
+		c.ServerPort = port
+	}
 }
 
-func (c *config) OTA() bool {
-	return c.JOTA
+func WithLocalAddr(addr string) ConfOption {
+	return func(c *Config) {
+		c.LocalAddr = addr
+	}
+}
+func WithLocalPort(port int) ConfOption {
+	return func(c *Config) {
+		c.LocalPort = port
+	}
+}
+func WithPassword(pwd string) ConfOption {
+	return func(c *Config) {
+		c.Password = pwd
+	}
+}
+func WithEncryptMethod(method string) ConfOption {
+	return func(c *Config) {
+		c.Method = method
+	}
+}
+func WithOTA() ConfOption {
+	return func(c *Config) {
+		c.OTA = true
+	}
 }
 
-func (c *config) Password() string {
-	return c.JPassword
+func WithTimeOut(t int) ConfOption {
+	return func(c *Config) {
+		c.Timeout = t
+	}
 }
 
-func (c *config) Method() string {
-	return c.JMethod
-}
+// TODO
+//ServerPassword [][]string `json:"server_password"`
+//ServerPassword
 
-func (c *config) Timeout() int {
-	return c.JTimeout
-}
-
-func (c *config) getServerArray() []string {
+// return the server addr list split by the ,
+func (c *Config) getServerArray() []string {
 	// Specifying multiple servers in the "server" options is deprecated.
 	// But for backward compatiblity, keep this.
-	if c.JServer == nil {
+	if c.Server == "" {
 		return nil
 	}
-	single, ok := c.JServer.(string)
-	if ok {
-		return []string{single}
-	}
-	arr, ok := c.JServer.([]interface{})
-	if ok {
-		/*
-			if len(arr) > 1 {
-				log.Println("Multiple servers in \"server\" option is deprecated. " +
-					"Please use \"server_password\" instead.")
-			}
-		*/
-		serverArr := make([]string, len(arr), len(arr))
-		for i, s := range arr {
-			serverArr[i], ok = s.(string)
-			if !ok {
-				return nil
-			}
-		}
-		return serverArr
-	}
-	return nil
+	return strings.Split(c.Server, ",")
 }
 
 // ParseConfig parses a config file
-func ParseConfig(path string) (conf Config, err error) {
+func ParseConfig(path string) (conf *Config, err error) {
 	file, err := os.Open(path) // For read access.
 	if err != nil {
 		return
@@ -116,7 +111,7 @@ func ParseConfig(path string) (conf Config, err error) {
 		return
 	}
 
-	c := &config{}
+	c := &Config{}
 	if err = json.Unmarshal(data, c); err != nil {
 		return nil, err
 	}
@@ -125,19 +120,19 @@ func ParseConfig(path string) (conf Config, err error) {
 	return c, nil
 }
 
-func postProcess(c *config) {
+func postProcess(c *Config) {
 	var host []string
 	var local string
-	if strings.HasSuffix(strings.ToLower(c.JMethod), "-auth") {
-		c.JMethod = c.JMethod[:len(c.JMethod)-5]
-		c.JOTA = true
+	if strings.HasSuffix(strings.ToLower(c.Method), "-auth") {
+		c.Method = c.Method[:len(c.Method)-5]
+		c.OTA = true
 	}
 
 	// parse server side listen address
 	// port_password has higher priority over server_port
-	if len(c.JPortPassword) == 0 {
-		if c.JServerPort != 0 {
-			c.JPortPassword = map[string]string{strconv.Itoa(c.JServerPort): c.JPassword}
+	if len(c.PortPassword) == 0 {
+		if c.ServerPort != 0 {
+			c.PortPassword = map[string]string{strconv.Itoa(c.ServerPort): c.Password}
 		}
 	}
 	// apply the address binding if server option exists
@@ -156,7 +151,7 @@ func postProcess(c *config) {
 	}
 
 	portPass := map[string]string{}
-	for port, password := range c.JPortPassword {
+	for port, password := range c.PortPassword {
 		if len(host) > 0 {
 			for _, ip := range host {
 				laddr := net.JoinHostPort(ip, port)
@@ -167,20 +162,21 @@ func postProcess(c *config) {
 			portPass[laddr] = password
 		}
 	}
-	c.JPortPassword = portPass
+	c.PortPassword = portPass
+
 	// for client
 	// server_password has higher priority over server
-	if len(c.JServerPassword) == 0 && c.JServerPort != 0 && len(servers) != 0 {
-		c.JServerPassword = make([][]string, len(servers))
-		for k := range c.JServerPassword {
-			c.JServerPassword[k] = make([]string, 2)
-			c.JServerPassword[k][0] = net.JoinHostPort(servers[k], strconv.Itoa(c.JServerPort))
-			c.JServerPassword[k][1] = c.JPassword
+	if len(c.ServerPassword) == 0 && c.ServerPort != 0 && len(servers) != 0 {
+		c.ServerPassword = make([][]string, len(servers))
+		for k := range c.ServerPassword {
+			c.ServerPassword[k] = make([]string, 2)
+			c.ServerPassword[k][0] = net.JoinHostPort(servers[k], strconv.Itoa(c.ServerPort))
+			c.ServerPassword[k][1] = c.Password
 		}
 	}
 
-	if len(c.JLocalAddr) > 0 {
-		if ip := net.ParseIP(c.JLocalAddr); ip != nil {
+	if len(c.LocalAddr) > 0 {
+		if ip := net.ParseIP(c.LocalAddr); ip != nil {
 			if ipv4 := ip.To4(); ipv4 != nil {
 				local = ipv4.String()
 			} else if ipv6 := ip.To16(); ipv6 != nil {
@@ -188,5 +184,5 @@ func postProcess(c *config) {
 			}
 		}
 	}
-	c.JLocalAddr = net.JoinHostPort(local, strconv.Itoa(c.JLocalPort))
+	c.LocalAddr = net.JoinHostPort(local, strconv.Itoa(c.LocalPort))
 }

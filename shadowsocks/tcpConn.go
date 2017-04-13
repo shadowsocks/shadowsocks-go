@@ -42,12 +42,12 @@ func (c *SecureConn) Close() error {
 }
 
 // IsOta returns true if the connection is OTA enabled
-func (c *SecureConn) IsOta() bool {
+func (c *SecureConn) IsOTA() bool {
 	return c.ota
 }
 
 // EnableOta enables OTA for the connection
-func (c *SecureConn) EnableOta() {
+func (c *SecureConn) EnableOTA() {
 	c.ota = true
 }
 
@@ -64,16 +64,17 @@ func (c *SecureConn) Read(b []byte) (n int, err error) {
 			return 0, err
 		}
 
+		// 2 byte len instruct the data length
 		dataLen := binary.BigEndian.Uint16(header[:lenDataLen])
-		expectedHmacSha1 := header[lenDataLen : lenDataLen+lenHmacSha1]
-
 		if len(b) < int(dataLen) {
-			err = errBufferTooSmall
-			return 0, err
+			return 0, errBufferTooSmall
 		}
 		if n, err = readFull(c, b[:dataLen]); err != nil {
 			return 0, err
 		}
+
+		expectedHmacSha1 := header[lenDataLen : lenDataLen+lenHmacSha1]
+
 		chunkIDBytes := make([]byte, 4)
 		chunkID := c.getAndIncrChunkID()
 		binary.BigEndian.PutUint32(chunkIDBytes, chunkID)
@@ -104,6 +105,7 @@ func (c *SecureConn) read(b []byte) (n int, err error) {
 	}
 	n, err = c.Conn.Read(b)
 	if n > 0 {
+		// ??? XXX what's this
 		c.Decrypt(b[0:n], b[0:n])
 	}
 	return
