@@ -13,8 +13,8 @@ var (
 	Level  string      // Level can be set into Debug Info Error, and Error level is used by default
 )
 
-// NewLogger will generate a zap logger with given level for log output
-func NewLogger() {
+// SetLogger will generate a zap logger with given level for log output
+func SetLogger() {
 	var lv = zap.NewAtomicLevel()
 	var encoder zapcore.Encoder
 	var output zapcore.WriteSyncer
