@@ -12,7 +12,7 @@ import (
 type Config struct {
 	Server     string `json:"server"` // deprecated
 	ServerPort int    `json:"server_port"`
-	LocalAddr  string `json:"local_address"`
+	Local      string `json:"local_address"`
 	LocalPort  int    `json:"local_port"`
 	Password   string `json:"password"`
 	Method     string `json:"method"` // encryption method
@@ -31,13 +31,13 @@ type Config struct {
 
 type ConfOption func(c *Config)
 
-func NewConfig(opts ...ConfOption) Config {
+func NewConfig(opts ...ConfOption) *Config {
 	var config Config
 
 	for _, v := range opts {
 		v(&config)
 	}
-	return config
+	return &config
 }
 
 func WithPortPassword(port, passwd string) ConfOption {
@@ -54,7 +54,7 @@ func WithServerPort(port int) ConfOption {
 
 func WithLocalAddr(addr string) ConfOption {
 	return func(c *Config) {
-		c.LocalAddr = addr
+		c.Local = addr
 	}
 }
 func WithLocalPort(port int) ConfOption {
@@ -89,7 +89,7 @@ func WithTimeOut(t int) ConfOption {
 //ServerPassword
 
 // return the server addr list split by the ,
-func (c *Config) getServerArray() []string {
+func (c *Config) GetServerArray() []string {
 	// Specifying multiple servers in the "server" options is deprecated.
 	// But for backward compatiblity, keep this.
 	if c.Server == "" {
@@ -136,7 +136,7 @@ func postProcess(c *Config) {
 		}
 	}
 	// apply the address binding if server option exists
-	servers := c.getServerArray()
+	servers := c.GetServerArray()
 	if len(servers) > 0 {
 		host = make([]string, len(servers))
 		for index, v := range servers {
@@ -175,8 +175,8 @@ func postProcess(c *Config) {
 		}
 	}
 
-	if len(c.LocalAddr) > 0 {
-		if ip := net.ParseIP(c.LocalAddr); ip != nil {
+	if len(c.Local) > 0 {
+		if ip := net.ParseIP(c.Local); ip != nil {
 			if ipv4 := ip.To4(); ipv4 != nil {
 				local = ipv4.String()
 			} else if ipv6 := ip.To16(); ipv6 != nil {
@@ -184,5 +184,5 @@ func postProcess(c *Config) {
 			}
 		}
 	}
-	c.LocalAddr = net.JoinHostPort(local, strconv.Itoa(c.LocalPort))
+	c.Local = net.JoinHostPort(local, strconv.Itoa(c.LocalPort))
 }
