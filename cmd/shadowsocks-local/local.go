@@ -254,8 +254,11 @@ func handleConnection(server string, conn net.Conn, ota bool, timeout int) {
 		}
 	}()
 
-	// FIXME!!!
-	ssconn.Write(rawaddr)
+	// FIXME here we get the fatal if can not connect the server
+	if _, err := ssconn.Write(rawaddr); err != nil {
+		ss.Logger.Fatal("request ss remote failed", zap.Stringer("serverlocal", ssconn.LocalAddr()),
+			zap.Stringer("serverremote", ssconn.RemoteAddr()), zap.ByteString("rawaddr", rawaddr))
+	}
 
 	// ask the request with rawaddr & payload
 	// then read the connection and write back
