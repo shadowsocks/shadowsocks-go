@@ -28,12 +28,12 @@ const (
 	typeDm   = 3 // type is domain address
 	typeIPv6 = 4 // type is ipv6 address
 
-	headerLenIPv4   = 1 + net.IPv4len + 2 // 1addrType + ipv4 + 2port
-	headerLenIPv6   = 1 + net.IPv6len + 2 // 1addrType + ipv6 + 2port
-	headerLenDmBase = 1 + 1 + 2           // 1addrType + 1addrLen + 2port, plus addrLen
-	lenHmacSha1     = 10                  // iv lenth is 10
-	lenDataLen      = 2                   //
-	idOTAData0      = lenDataLen + lenHmacSha1
+	headerLenIPv4   = 1 + net.IPv4len + 2      // 1addrType + ipv4 + 2port
+	headerLenIPv6   = 1 + net.IPv6len + 2      // 1addrType + ipv6 + 2port
+	headerLenDmBase = 1 + 1 + 2                // 1addrType + 1addrLen + 2port, plus addrLen
+	lenHmacSha1     = 10                       // iv lenth is 10
+	lenDataLen      = 2                        // the length about data length
+	idOTAData0      = lenDataLen + lenHmacSha1 // data with OTA start offset
 )
 
 var (

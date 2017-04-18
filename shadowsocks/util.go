@@ -104,8 +104,7 @@ func readFull(c *SecureConn, b []byte) (n int, err error) {
 	return
 }
 
-// XXX
-// CORE ! deencription for ss protocol
+// decryption for ss protocol
 func getRequets(ss *SecureConn, auth bool) (host string, err error) {
 	// read till we get possible domain length field
 	buf := make([]byte, 269)
@@ -114,6 +113,7 @@ func getRequets(ss *SecureConn, auth bool) (host string, err error) {
 	if _, err = readFull(ss, buf[:idType+1]); err != nil {
 		return
 	}
+
 	// reqstart & end hold the start and end about the request header
 	var reqStart, reqEnd int
 	addrType := buf[idType]
@@ -179,3 +179,6 @@ func getRequets(ss *SecureConn, auth bool) (host string, err error) {
 	}
 	return
 }
+
+// connectToServer
+func requestForServe() {}
