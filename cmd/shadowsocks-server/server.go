@@ -66,6 +66,7 @@ func handleConnection(conn net.Conn, host string, timeout int) {
 	}()
 	ss.Logger.Info("piping remote to host:", zap.Stringer("remote", conn.RemoteAddr()),
 		zap.String("host", host), zap.Bool("OTA", conn.(*ss.SecureConn).IsOTA()))
+
 	go ss.PipeThenClose(conn, remote, timeout)
 	ss.PipeThenClose(remote, conn, timeout)
 	closed = true
@@ -74,14 +75,19 @@ func handleConnection(conn net.Conn, host string, timeout int) {
 
 func waitSignal() {
 	var sigChan = make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGHUP)
-	for sig := range sigChan {
-		if sig == syscall.SIGHUP {
-			ss.Logger.Info("receive the KILL -HUP")
-		} else {
-			// is this going to happen?
-			ss.Logger.Error("Caught signal and exit", zap.String("signal", fmt.Sprint(sig)))
+	signal.Notify(sigChan, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+	for {
+		s := <-sigChan
+		switch s {
+		case syscall.SIGHUP:
+			ss.Logger.Warn("receive the KILL -HUP rebooting")
+			fallthrough
+			// TODO fo the reboot
+		case syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT:
+			ss.Logger.Info("Caught signal , shuting down", zap.Stringer("signal", s))
 			os.Exit(0)
+		default:
+			ss.Logger.Error("Caught meaning lease signal", zap.Stringer("signal", s))
 		}
 	}
 }
@@ -102,17 +108,16 @@ func serveTCP(ln *ss.Listener, timeout int) {
 	}
 }
 
+// start the ss remote servers listen on given ports
 func run(conf *ss.Config) {
-	addrPadd := conf.PortPassword
-	for addr, pass := range addrPadd {
+	for addr, pass := range conf.PortPassword {
 		cipher, err := encrypt.NewCipher(conf.Method, pass)
 		if err != nil {
-			ss.Logger.Error("Failed create cipher", zap.Error(err))
+			ss.Logger.Fatal("Failed create cipher", zap.Error(err))
 		}
 		ln, err := ss.Listen("tcp", addr, cipher, conf.Timeout, conf.OTA)
 		if err != nil {
-			ss.Logger.Error("error listening port", zap.String("port", addr), zap.Error(err))
-			os.Exit(1)
+			ss.Logger.Fatal("error listening port", zap.String("port", addr), zap.Error(err))
 		}
 		ss.Logger.Info("server listening port", zap.String("port", addr))
 		go serveTCP(ln, conf.Timeout)
@@ -162,8 +167,20 @@ func runUDP(conf *ss.Config) {
 }
 
 func checkConfig(config *ss.Config) error {
-	addrPass := config.PortPassword
-	for addr, pass := range addrPass {
+	if config.ServerPort != "" {
+		if config.Server == "" {
+			ss.Logger.Warn("warning ss will run on all bound")
+		}
+		if config.Password == "" {
+			return fmt.Errorf("missing passwd for config")
+		}
+	}
+
+	if config.ServerPort != "" || config.PortPassword == nil {
+		return fmt.Errorf("missing passwd for config")
+	}
+
+	for addr, pass := range config.PortPassword {
 		if _, portStr, err := net.SplitHostPort(addr); err == nil {
 			if port, err := strconv.Atoi(portStr); err != nil || port == 0 || pass == "" {
 				ss.Logger.Error("given config is invalid", zap.String("address", addr),
@@ -178,38 +195,6 @@ func checkConfig(config *ss.Config) error {
 	}
 	return nil
 }
-
-//type cmdConfig struct {
-//	CPassword   string
-//	CServerPort int
-//	CTimeout    int
-//	CMethod     string
-//	COTA        bool
-//}
-//
-//func (c *cmdConfig) ServerAddrPasswords() map[string]string {
-//	return map[string]string{":" + strconv.Itoa(c.CServerPort): c.CPassword}
-//}
-//func (c *cmdConfig) RemoteAddrPasswords() [][]string {
-//	return nil
-//}
-//func (c *cmdConfig) LocalAddr() string {
-//	return ""
-//}
-//func (c *cmdConfig) OTA() bool {
-//	return c.COTA
-//}
-//func (c *cmdConfig) Password() string {
-//	return c.Password()
-//}
-//
-//func (c *cmdConfig) Timeout() int {
-//	return c.CTimeout
-//}
-//
-//func (c *cmdConfig) Method() string {
-//	return c.CMethod
-//}
 
 func main() {
 	var err error
@@ -226,8 +211,8 @@ func main() {
 	flag.IntVar(&Timeout, "t", 300, "timeout in seconds")
 	flag.StringVar(&Method, "m", "aes-256-cfb", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
-	flag.StringVar(&ss.Level, "l", "info", "given the logger level for ss to logout info, can be set in debug info warn error panic")
-	flag.BoolVar(&udp, "u", false, "UDP Relay")
+	flag.StringVar(&ss.Level, "l", "info", "given the logger level for ss to logout info, can be set in debug info warn error")
+	flag.BoolVar(&udp, "u", false, "enable UDP service")
 	flag.Parse()
 	if !flag.Parsed() {
 		flag.Usage()
@@ -240,6 +225,7 @@ func main() {
 
 	// init the logger
 	ss.SetLogger()
+	ss.Logger.Info("Starting shadowsocks remote server")
 
 	// set the options for the config new
 	var opts []ss.ConfOption
@@ -279,6 +265,7 @@ func main() {
 
 	// check the config
 	if err = checkConfig(config); err != nil {
+		ss.Logger.Error("error in chack config", zap.Error(err))
 		os.Exit(1)
 	}
 
