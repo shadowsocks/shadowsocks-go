@@ -57,8 +57,11 @@ func (c *SecureConn) getAndIncrChunkID() (chunkID uint32) {
 	return
 }
 
+// Read the data from the ss connnection , get only the request after header
 func (c *SecureConn) Read(b []byte) (n int, err error) {
 	if c.ota && c.isServerSide {
+		// confirm the OTA option
+		// NOTICE server side read the tcp connection, get the iv, get the key, then decrypt the message
 		header := make([]byte, lenDataLen+lenHmacSha1)
 		if n, err = readFull(c, header); err != nil {
 			return 0, err
@@ -69,6 +72,12 @@ func (c *SecureConn) Read(b []byte) (n int, err error) {
 		if len(b) < int(dataLen) {
 			return 0, errBufferTooSmall
 		}
+
+		// FIXME set the read time out
+		if c.timeout > 0 {
+			c.SetReadDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
+		}
+
 		if n, err = readFull(c, b[:dataLen]); err != nil {
 			return 0, err
 		}
@@ -87,6 +96,7 @@ func (c *SecureConn) Read(b []byte) (n int, err error) {
 	return c.read(b)
 }
 
+// read read the data from ss connection, decrypted
 func (c *SecureConn) read(b []byte) (n int, err error) {
 	if c.DecInited() {
 		iv := make([]byte, c.GetIVLen())
@@ -100,12 +110,14 @@ func (c *SecureConn) read(b []byte) (n int, err error) {
 			c.SetIV(iv)
 		}
 	}
+
 	if c.timeout > 0 {
 		c.SetReadDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
 	}
+	// TODO why Conn.Read
 	n, err = c.Conn.Read(b)
 	if n > 0 {
-		// ??? XXX what's this
+		// decrypt the data with given cipher
 		c.Decrypt(b[0:n], b[0:n])
 	}
 	return
@@ -148,6 +160,7 @@ func (c *SecureConn) write(b []byte) (n int, err error) {
 		// iv and data.
 		copy(cipherData, iv)
 	}
+	// FIXME without the length of data?
 
 	c.Encrypt(cipherData[len(iv):], b)
 	if c.timeout > 0 {

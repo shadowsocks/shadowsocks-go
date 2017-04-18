@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// PipeThenClose copies data from src to dst, closes dst when done.
+// PipeThenClose copies data from src to dst, close dst when done.
 func PipeThenClose(src, dst net.Conn, timeout int) {
 	defer dst.Close()
 	buf := leakyBuf.Get()

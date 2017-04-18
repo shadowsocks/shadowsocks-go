@@ -3,30 +3,33 @@ package shadowsocks
 import (
 	"encoding/json"
 	"io/ioutil"
-	"net"
 	"os"
-	"strconv"
 	"strings"
 )
 
+// Config is used in both ss-server & ss-local server, notice the different role in ss
+// can help you get the right config in differen situation
+// 1) ss server:
+// ServerPort and Password shoud be placed in order if multi user is enabled
+// 2) ss local server:
+// Server and ServerPort and Password shoud be care when is used in ss local server module
+// NOTICE if the config file option is setted, the config option will be disabled automaticly
 type Config struct {
-	Server     string `json:"server"` // deprecated
-	ServerPort int    `json:"server_port"`
-	Local      string `json:"local_address"`
-	LocalPort  int    `json:"local_port"`
-	Password   string `json:"password"`
-	Method     string `json:"method"` // encryption method
-	OTA        bool   `json:"auth"`   // one time auth
+	Server     string `json:"server_addr"` // shadowsocks remote Server address, for multi server split them with comma
+	ServerPort string `json:"server_port"` // shadowsocks remote Server port, split with comma when multi user is enabled
+	Local      string `json:"local_addr"`  // shadowsocks local socks5 Server address
+	LocalPort  int    `json:"local_port"`  // shadowsocks local socks5 Server port
+	Password   string `json:"password"`    // shadowsocks remote server password, for multi server password should plase in order and split eith comma
+	Method     string `json:"method"`      // encryption method for ss local & ss server communication
+	Timeout    int    `json:"timeout"`     // shadowsocks conversation timeout limit
+
+	OTA bool `json:"auth"` // enable one time auth , will be abandoned in next release
 
 	// following options are only used by server
-	PortPassword map[string]string `json:"port_password"`
-	Timeout      int               `json:"timeout"`
+	PortPassword map[string]string `json:"port_password"` // shadowsocks mutli user password
 
 	// following options are only used by client
-
-	// The order of servers in the client config is significant, so use array
-	// instead of map to preserve the order.
-	ServerPassword [][]string `json:"server_password"`
+	ServerPassword map[string]string `json:"server_password"` // shadowsocks local mutli server password
 }
 
 type ConfOption func(c *Config)
@@ -45,13 +48,27 @@ func WithPortPassword(port, passwd string) ConfOption {
 		c.PortPassword[port] = passwd
 	}
 }
+func WithServerPassword(server, passwd string) ConfOption {
+	return func(c *Config) {
+		c.ServerPassword[server] = passwd
+	}
+}
 
-func WithServerPort(port int) ConfOption {
+func WithServer(server string) ConfOption {
+	return func(c *Config) {
+		c.Server = server
+	}
+}
+func WithServerPort(port string) ConfOption {
 	return func(c *Config) {
 		c.ServerPort = port
 	}
 }
-
+func WithPassword(pwd string) ConfOption {
+	return func(c *Config) {
+		c.Password = pwd
+	}
+}
 func WithLocalAddr(addr string) ConfOption {
 	return func(c *Config) {
 		c.Local = addr
@@ -60,11 +77,6 @@ func WithLocalAddr(addr string) ConfOption {
 func WithLocalPort(port int) ConfOption {
 	return func(c *Config) {
 		c.LocalPort = port
-	}
-}
-func WithPassword(pwd string) ConfOption {
-	return func(c *Config) {
-		c.Password = pwd
 	}
 }
 func WithEncryptMethod(method string) ConfOption {
@@ -77,18 +89,13 @@ func WithOTA() ConfOption {
 		c.OTA = true
 	}
 }
-
 func WithTimeOut(t int) ConfOption {
 	return func(c *Config) {
 		c.Timeout = t
 	}
 }
 
-// TODO
-//ServerPassword [][]string `json:"server_password"`
-//ServerPassword
-
-// return the server addr list split by the ,
+// return the server addr list split by comma
 func (c *Config) GetServerArray() []string {
 	// Specifying multiple servers in the "server" options is deprecated.
 	// But for backward compatiblity, keep this.
@@ -96,6 +103,19 @@ func (c *Config) GetServerArray() []string {
 		return nil
 	}
 	return strings.Split(c.Server, ",")
+}
+func (c *Config) GetServerPortArray() []string {
+	if c.ServerPort == "" {
+		return nil
+	}
+	return strings.Split(c.ServerPort, ",")
+}
+
+func (c *Config) GetPasswordArray() []string {
+	if c.Password == "" {
+		return nil
+	}
+	return strings.Split(c.Password, ",")
 }
 
 // ParseConfig parses a config file
@@ -116,73 +136,43 @@ func ParseConfig(path string) (conf *Config, err error) {
 		return nil, err
 	}
 
-	postProcess(c)
+	ProcessConfig(c)
 	return c, nil
 }
 
-func postProcess(c *Config) {
-	var host []string
-	var local string
+// ProcessConfig fill in the map after the config is unmarshaled
+func ProcessConfig(c *Config) {
+	//TODO will be abandoned in next release
 	if strings.HasSuffix(strings.ToLower(c.Method), "-auth") {
 		c.Method = c.Method[:len(c.Method)-5]
 		c.OTA = true
 	}
 
-	// parse server side listen address
-	// port_password has higher priority over server_port
-	if len(c.PortPassword) == 0 {
-		if c.ServerPort != 0 {
-			c.PortPassword = map[string]string{strconv.Itoa(c.ServerPort): c.Password}
-		}
-	}
-	// apply the address binding if server option exists
 	servers := c.GetServerArray()
-	if len(servers) > 0 {
-		host = make([]string, len(servers))
-		for index, v := range servers {
-			if ip := net.ParseIP(v); ip != nil {
-				if ipv4 := ip.To4(); ipv4 != nil {
-					host[index] = ipv4.String()
-				} else if ipv6 := ip.To16(); ipv6 != nil {
-					host[index] = ipv6.String()
-				}
-			}
+	serverports := c.GetServerPortArray()
+	passwds := c.GetPasswordArray()
+
+	// check and set for the ss local config
+	if len(servers) > 0 && len(serverports) > 0 && len(passwds) > 0 {
+		if len(servers) != len(serverports) || len(servers) != len(passwds) {
+			Logger.Fatal("error in proces the config file, Invalid config")
+		}
+		for i := 0; i < len(servers); i++ {
+			addr := serverports[i] + ":" + serverports[i]
+			c.ServerPassword[addr] = passwds[i]
 		}
 	}
 
-	portPass := map[string]string{}
-	for port, password := range c.PortPassword {
-		if len(host) > 0 {
-			for _, ip := range host {
-				laddr := net.JoinHostPort(ip, port)
-				portPass[laddr] = password
-			}
-		} else {
-			laddr := net.JoinHostPort("", port)
-			portPass[laddr] = password
+	// check and set for the ss remote server config
+	if len(serverports) > 0 && len(passwds) > 0 {
+		if len(servers) != len(passwds) {
+			Logger.Fatal("error in proces the config file, Invalid config")
 		}
-	}
-	c.PortPassword = portPass
-
-	// for client
-	// server_password has higher priority over server
-	if len(c.ServerPassword) == 0 && c.ServerPort != 0 && len(servers) != 0 {
-		c.ServerPassword = make([][]string, len(servers))
-		for k := range c.ServerPassword {
-			c.ServerPassword[k] = make([]string, 2)
-			c.ServerPassword[k][0] = net.JoinHostPort(servers[k], strconv.Itoa(c.ServerPort))
-			c.ServerPassword[k][1] = c.Password
-		}
-	}
-
-	if len(c.Local) > 0 {
-		if ip := net.ParseIP(c.Local); ip != nil {
-			if ipv4 := ip.To4(); ipv4 != nil {
-				local = ipv4.String()
-			} else if ipv6 := ip.To16(); ipv6 != nil {
-				local = ipv6.String()
+		for _, serveraddr := range servers {
+			for i := 0; i < len(serverports); i++ {
+				addr := serveraddr + ":" + serverports[i]
+				c.PortPassword[addr] = passwds[i]
 			}
 		}
 	}
-	c.Local = net.JoinHostPort(local, strconv.Itoa(c.LocalPort))
 }
