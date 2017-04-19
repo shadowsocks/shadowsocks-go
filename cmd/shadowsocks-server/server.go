@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -8,7 +9,6 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync/atomic"
 	"syscall"
 
@@ -35,19 +35,16 @@ func handleConnection(conn net.Conn, host string, timeout int) {
 
 	// function arguments are always evaluated, so surround debug statement
 	// with if statement
-	ss.Logger.Info("new client ", zap.Stringer("remote", conn.RemoteAddr()),
-		zap.Stringer("local", conn.LocalAddr()))
 	closed := false
 	defer func() {
-		ss.Logger.Info("close pipe:", zap.Stringer("remote", conn.RemoteAddr()),
-			zap.String("host", host))
+		ss.Logger.Info("closeing connection:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
 		atomic.AddInt32(&connCnt, -1)
 		if !closed {
 			conn.Close()
 		}
 	}()
 
-	ss.Logger.Info("connecting", zap.String("host", host))
+	ss.Logger.Info("connecting to the request host", zap.String("host", host))
 	remote, err := net.Dial("tcp", host)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
@@ -64,11 +61,11 @@ func handleConnection(conn net.Conn, host string, timeout int) {
 			remote.Close()
 		}
 	}()
-	ss.Logger.Info("piping remote to host:", zap.Stringer("remote", conn.RemoteAddr()),
-		zap.String("host", host), zap.Bool("OTA", conn.(*ss.SecureConn).IsOTA()))
+	ss.Logger.Info("piping remote to host:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
 
 	go ss.PipeThenClose(conn, remote, timeout)
 	ss.PipeThenClose(remote, conn, timeout)
+
 	closed = true
 	return
 }
@@ -98,12 +95,15 @@ func serveTCP(ln *ss.Listener, timeout int) {
 		conn, host, err := ln.Accept()
 		if err != nil {
 			if err == ss.ErrPacketOtaFailed {
+				ss.Logger.Warn("serve ota", zap.Error(err))
 				continue
 			}
 			// listener maybe closed to update password
 			ss.Logger.Error("serve TCP accept error", zap.Error(err))
 			return
 		}
+		ss.Logger.Info("ss server accept connection", zap.Stringer("local", conn.LocalAddr()), zap.String("host", host))
+
 		go handleConnection(conn, host, timeout)
 	}
 }
@@ -115,7 +115,7 @@ func run(conf *ss.Config) {
 		if err != nil {
 			ss.Logger.Fatal("Failed create cipher", zap.Error(err))
 		}
-		ln, err := ss.Listen("tcp", addr, cipher, conf.Timeout, conf.OTA)
+		ln, err := ss.Listen("tcp", addr, cipher, conf.Timeout)
 		if err != nil {
 			ss.Logger.Fatal("error listening port", zap.String("port", addr), zap.Error(err))
 		}
@@ -136,16 +136,12 @@ func serveUDP(SecurePacketConn *ss.SecurePacketConn) {
 			ss.Logger.Error("[udp]read error", zap.Error(err))
 			return
 		}
-		host, headerLen, compatibleMode, err := ss.UDPGetRequest(buf[:n], SecurePacketConn.IsOta())
+		host, headerLen, err := ss.UDPGetRequest(buf[:n])
 		if err != nil {
 			ss.Logger.Error("[udp]faided to decode request", zap.Error(err))
 			continue
 		}
-		if compatibleMode {
-			ss.ForwardUDPConn(SecurePacketConn.ForceOTA(), src, host, buf[:n], headerLen)
-		} else {
-			ss.ForwardUDPConn(SecurePacketConn, src, host, buf[:n], headerLen)
-		}
+		ss.ForwardUDPConn(SecurePacketConn, src, host, buf[:n], headerLen)
 	}
 }
 
@@ -157,7 +153,7 @@ func runUDP(conf *ss.Config) {
 		if err != nil {
 			ss.Logger.Error("Failed create cipher", zap.Error(err))
 		}
-		SecurePacketConn, err := ss.ListenPacket("udp", addr, cipher, conf.OTA)
+		SecurePacketConn, err := ss.ListenPacket("udp", addr, cipher)
 		if err != nil {
 			ss.Logger.Error("error listening packetconn ", zap.String("addrsee", addr), zap.Error(err))
 			os.Exit(1)
@@ -167,29 +163,29 @@ func runUDP(conf *ss.Config) {
 }
 
 func checkConfig(config *ss.Config) error {
-	if config.ServerPort != "" {
-		if config.Server == "" {
-			ss.Logger.Warn("warning ss will run on all bound")
-		}
-		if config.Password == "" {
-			return fmt.Errorf("missing passwd for config")
+	// aviliable config conditions:
+	// 1\ passwd is setted or portpassworf is setted
+	// 2\ serverport & server password should be correspounding
+	if config.Password == "" && config.PortPassword == nil {
+		return errors.New("missing passwd for config")
+	}
+
+	if config.PortPassword == nil {
+		if config.ServerPort == "" {
+			return errors.New("missing server port for config")
 		}
 	}
 
-	if config.ServerPort != "" || config.PortPassword == nil {
-		return fmt.Errorf("missing passwd for config")
+	if len(config.GetServerPortArray()) != len(config.GetPasswordArray()) {
+		return errors.New("server array and password array is illegal")
 	}
 
 	for addr, pass := range config.PortPassword {
 		if _, portStr, err := net.SplitHostPort(addr); err == nil {
 			if port, err := strconv.Atoi(portStr); err != nil || port == 0 || pass == "" {
-				ss.Logger.Error("given config is invalid", zap.String("address", addr),
-					zap.String("password", pass))
 				return fmt.Errorf("given config is invalid: address(%s) password(%s)", addr, pass)
 			}
 		} else {
-			ss.Logger.Error("given config is invalid", zap.String("address", addr),
-				zap.String("password", pass))
 			return fmt.Errorf("given config is invalid: address(%s) password(%s)", addr, pass)
 		}
 	}
@@ -205,9 +201,9 @@ func main() {
 	var config *ss.Config
 
 	flag.BoolVar(&printVer, "v", false, "print version")
-	flag.StringVar(&configFile, "c", "config.json", "specify config file")
-	flag.StringVar(&Password, "k", "foo", "password")
-	flag.IntVar(&ServerPort, "p", 16868, "server port")
+	flag.StringVar(&configFile, "c", "", "specify config file")
+	flag.StringVar(&Password, "k", "", "password")
+	flag.IntVar(&ServerPort, "p", 0, "server port")
 	flag.IntVar(&Timeout, "t", 300, "timeout in seconds")
 	flag.StringVar(&Method, "m", "aes-256-cfb", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
@@ -230,12 +226,6 @@ func main() {
 	// set the options for the config new
 	var opts []ss.ConfOption
 
-	// handle the auth optnion
-	if strings.HasSuffix(Method, "-auth") {
-		Method = Method[:len(Method)-5]
-		opts = append(opts, ss.WithOTA())
-	}
-
 	// choose the encrypt method then check
 	if Method == "" {
 		Method = "aes-256-cfb"
@@ -256,12 +246,13 @@ func main() {
 
 	// parse the config from the config file
 	if configFile != "" {
+		ss.Logger.Info("ss server loading config file", zap.String("path", configFile))
 		config, err = ss.ParseConfig(configFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", configFile, err)
-			os.Exit(1)
+			ss.Logger.Fatal("error in reading the ss config file", zap.String("path", configFile), zap.Error(err))
 		}
 	}
+	ss.Logger.Debug("show the ss config", zap.Stringer("config", config))
 
 	// check the config
 	if err = checkConfig(config); err != nil {

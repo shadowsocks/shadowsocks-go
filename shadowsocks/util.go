@@ -133,6 +133,7 @@ func getRequets(ss *SecureConn) (host string, err error) {
 
 	// read the host & port
 	if _, err = readFull(ss, buf[reqStart:reqEnd]); err != nil {
+		panic(err)
 		return
 	}
 
