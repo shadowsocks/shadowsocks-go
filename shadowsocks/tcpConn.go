@@ -1,8 +1,6 @@
 package shadowsocks
 
 import (
-	"bytes"
-	"encoding/binary"
 	"io"
 	"net"
 	"time"
@@ -20,18 +18,15 @@ type SecureConn struct {
 	chunkID      uint32
 	isServerSide bool
 	timeout      int
-	ota          bool
 }
 
 // NewSecureConn creates a SecureConn
-func NewSecureConn(c net.Conn, cipher *encrypt.Cipher, ota bool, timeout int, isServerSide bool) *SecureConn {
+func NewSecureConn(c net.Conn, cipher *encrypt.Cipher, timeout int) *SecureConn {
 	return &SecureConn{
-		Conn:         c,
-		Cipher:       cipher,
-		writeBuf:     leakyBuf.Get(),
-		isServerSide: isServerSide,
-		timeout:      timeout,
-		ota:          ota,
+		Conn:     c,
+		Cipher:   cipher,
+		writeBuf: leakyBuf.Get(),
+		timeout:  timeout,
 	}
 }
 
@@ -41,63 +36,18 @@ func (c *SecureConn) Close() error {
 	return c.Conn.Close()
 }
 
-// IsOta returns true if the connection is OTA enabled
-func (c *SecureConn) IsOTA() bool {
-	return c.ota
-}
-
-// EnableOta enables OTA for the connection
-func (c *SecureConn) EnableOTA() {
-	c.ota = true
-}
-
 func (c *SecureConn) getAndIncrChunkID() (chunkID uint32) {
 	chunkID = c.chunkID
 	c.chunkID++
 	return
 }
 
-// Read the data from the ss connnection , get only the request after header
+// Read the data from ss connection, then decrypted
 func (c *SecureConn) Read(b []byte) (n int, err error) {
-	if c.ota && c.isServerSide {
-		// confirm the OTA option
-		// NOTICE server side read the tcp connection, get the iv, get the key, then decrypt the message
-		header := make([]byte, lenDataLen+lenHmacSha1)
-		if n, err = readFull(c, header); err != nil {
-			return 0, err
-		}
-
-		// 2 byte len instruct the data length
-		dataLen := binary.BigEndian.Uint16(header[:lenDataLen])
-		if len(b) < int(dataLen) {
-			return 0, errBufferTooSmall
-		}
-
-		// FIXME set the read time out
-		if c.timeout > 0 {
-			c.SetReadDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
-		}
-
-		if n, err = readFull(c, b[:dataLen]); err != nil {
-			return 0, err
-		}
-
-		expectedHmacSha1 := header[lenDataLen : lenDataLen+lenHmacSha1]
-
-		chunkIDBytes := make([]byte, 4)
-		chunkID := c.getAndIncrChunkID()
-		binary.BigEndian.PutUint32(chunkIDBytes, chunkID)
-		actualHmacSha1 := HmacSha1(append(c.GetIV(), chunkIDBytes...), b[:dataLen])
-		if !bytes.Equal(expectedHmacSha1, actualHmacSha1) {
-			return 0, ErrPacketOtaFailed
-		}
-		return int(dataLen), nil
+	if c.timeout > 0 {
+		c.Conn.SetReadDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
 	}
-	return c.read(b)
-}
 
-// read read the data from ss connection, decrypted
-func (c *SecureConn) read(b []byte) (n int, err error) {
 	if c.DecInited() {
 		iv := make([]byte, c.GetIVLen())
 		if _, err = io.ReadFull(c.Conn, iv); err != nil {
@@ -111,11 +61,7 @@ func (c *SecureConn) read(b []byte) (n int, err error) {
 		}
 	}
 
-	if c.timeout > 0 {
-		c.SetReadDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
-	}
-	// TODO why Conn.Read
-	n, err = c.Conn.Read(b)
+	n, err = c.Read(b)
 	if n > 0 {
 		// decrypt the data with given cipher
 		c.Decrypt(b[0:n], b[0:n])
@@ -124,21 +70,6 @@ func (c *SecureConn) read(b []byte) (n int, err error) {
 }
 
 func (c *SecureConn) Write(b []byte) (n int, err error) {
-	if c.ota && !c.isServerSide {
-		chunkID := c.getAndIncrChunkID()
-		header := otaReqChunkAuth(c.GetIV(), chunkID, b)
-		headerLen := len(header)
-		n, err = c.write(append(header, b...))
-		// Make sure <= 0 <= len(b), where b is the slice passed in.
-		if n >= headerLen {
-			n -= headerLen
-		}
-		return
-	}
-	return c.write(b)
-}
-
-func (c *SecureConn) write(b []byte) (n int, err error) {
 	var iv []byte
 	if c.EncInited() {
 		iv, err = c.InitEncrypt()
@@ -161,10 +92,9 @@ func (c *SecureConn) write(b []byte) (n int, err error) {
 		copy(cipherData, iv)
 	}
 	// FIXME without the length of data?
-
 	c.Encrypt(cipherData[len(iv):], b)
 	if c.timeout > 0 {
-		c.SetWriteDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
+		c.Conn.SetWriteDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
 	}
 	n, err = c.Conn.Write(cipherData)
 	return
@@ -175,7 +105,6 @@ type Listener struct {
 	net.Listener
 	cipher  *encrypt.Cipher
 	timeout int
-	ota     bool
 }
 
 // Accept just like net.Listener.Accept(), but with additional return variable host.
@@ -185,8 +114,8 @@ func (ln *Listener) Accept() (conn net.Conn, host string, err error) {
 	if err != nil {
 		return nil, "", err
 	}
-	ss := NewSecureConn(conn, ln.cipher.Copy(), false, ln.timeout, true)
-	host, err = getRequets(ss, ln.ota)
+	ss := NewSecureConn(conn, ln.cipher.Copy(), ln.timeout)
+	host, err = getRequets(ss)
 	if err != nil {
 		ss.Close()
 		return nil, host, err
@@ -198,7 +127,7 @@ func (ln *Listener) Accept() (conn net.Conn, host string, err error) {
 // Net must be "tcp", "tcp4", or "tcp6".
 // If laddr has a port of 0, ListenTCP will choose an available port.
 // The caller can use the Addr method of TCPListener to retrieve the chosen address.
-func Listen(network, laddr string, cipher *encrypt.Cipher, timeout int, ota bool) (*Listener, error) {
+func Listen(network, laddr string, cipher *encrypt.Cipher, timeout int) (*Listener, error) {
 	if cipher == nil {
 		return nil, ErrNilCipher
 	}
@@ -206,5 +135,5 @@ func Listen(network, laddr string, cipher *encrypt.Cipher, timeout int, ota bool
 	if err != nil {
 		return nil, err
 	}
-	return &Listener{ln, cipher, timeout, ota}, nil
+	return &Listener{ln, cipher, timeout}, nil
 }

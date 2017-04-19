@@ -25,12 +25,14 @@ func SetLogger() {
 		lv.SetLevel(zap.DebugLevel)
 	case "info", "Info", "INFO":
 		lv.SetLevel(zap.InfoLevel)
+	case "error", "Error", "ERROR":
+		lv.SetLevel(zap.ErrorLevel)
 	default:
 		lv.SetLevel(zap.ErrorLevel)
 	}
 
 	timeEncoder := func(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
-		enc.AppendString(t.Local().Format("2006-01-02 15:04:05.999999999"))
+		enc.AppendString(t.Local().Format("2006-01-02 15:04:05"))
 	}
 
 	encoderCfg := zapcore.EncoderConfig{
@@ -41,12 +43,13 @@ func SetLogger() {
 		TimeKey:        "TimeStamp",
 		CallerKey:      "Caller",
 		EncodeTime:     timeEncoder,
-		EncodeLevel:    zapcore.CapitalLevelEncoder,
+		EncodeLevel:    zapcore.CapitalColorLevelEncoder,
 		EncodeDuration: zapcore.StringDurationEncoder,
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
 
-	encoder = zapcore.NewJSONEncoder(encoderCfg)
+	//encoder = zapcore.NewJSONEncoder(encoderCfg)
+	encoder = zapcore.NewConsoleEncoder(encoderCfg)
 
-	Logger = zap.New(zapcore.NewCore(encoder, output, lv))
+	Logger = zap.New(zapcore.NewCore(encoder, output, lv), zap.AddCaller())
 }

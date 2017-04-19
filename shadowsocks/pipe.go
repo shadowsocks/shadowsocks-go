@@ -1,6 +1,7 @@
 package shadowsocks
 
 import (
+	"io"
 	"net"
 	"syscall"
 	"time"
@@ -29,16 +30,16 @@ func PipeThenClose(src, dst net.Conn, timeout int) {
 			// Always "use of closed network connection", but no easy way to
 			// identify this specific error. So just leave the error along for now.
 			// More info here: https://code.google.com/p/go/issues/detail?id=4373
-			/*
-				if bool(Debug) && err != io.EOF {
-					Debug.Println("read:", err)
-				}
-			*/
+			if err != io.EOF {
+				Logger.Error("read error form src", zap.Stringer("src", src.LocalAddr()), zap.Stringer("dst", dst.RemoteAddr()), zap.Error(err))
+			}
 			if err == errBufferTooSmall || err == ErrPacketOtaFailed {
 				Logger.Error("erro in pipe then close", zap.Error(err))
 			}
 			break
 		}
+		Logger.Debug("write n from src to dest", zap.Int("n", n), zap.Stringer("src", src.LocalAddr()),
+			zap.Stringer("dst", dst.RemoteAddr()), zap.Error(err))
 	}
 }
 
