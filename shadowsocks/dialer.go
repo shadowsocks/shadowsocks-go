@@ -14,12 +14,10 @@ type Dialer struct {
 	cipher  *encrypt.Cipher
 	server  string
 	timeout int
-	ota     bool
 }
 
-// XXX
 // NewDialer initializes a new Dialer
-func NewDialer(server string, cipher *encrypt.Cipher, timeout int, ota bool) (dialer *Dialer, err error) {
+func NewDialer(server string, cipher *encrypt.Cipher, timeout int) (dialer *Dialer, err error) {
 	// Currently shadowsocks-go supports UDP
 	// But you should not use Dialer to open an UDP connection
 	if cipher == nil {
@@ -29,11 +27,9 @@ func NewDialer(server string, cipher *encrypt.Cipher, timeout int, ota bool) (di
 		cipher:  cipher,
 		server:  server,
 		timeout: timeout,
-		ota:     ota,
 	}, nil
 }
 
-// XXX
 // Dial is intended for the Dialer interface described in golang.org/x/net/proxy
 func (d *Dialer) Dial(network, addr string) (c net.Conn, err error) {
 	if strings.HasPrefix(network, "tcp") {
@@ -72,18 +68,6 @@ func (d *Dialer) DialWithRawAddr(rawaddr []byte) (conn net.Conn, err error) {
 		return
 	}
 	c := NewSecureConn(conn, d.cipher.Copy(), d.timeout)
-	if d.ota {
-		if c.EncInited() {
-			if _, err = c.InitEncrypt(); err != nil {
-				conn.Close()
-				return
-			}
-		}
-		// since we have initEncrypt, we must send iv manually
-		conn.Write(c.GetIV())
-		rawaddr[idType] |= OneTimeAuthMask
-		rawaddr = otaConnectAuth(c.GetIV(), c.GetKey(), rawaddr)
-	}
 	if _, err = c.Write(rawaddr); err != nil {
 		c.Close()
 		return nil, err
