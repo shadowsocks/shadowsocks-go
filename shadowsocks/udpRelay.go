@@ -202,10 +202,8 @@ func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []
 }
 
 // UDPGetRequest deocde the request header from buffer
-func UDPGetRequest(buf []byte, auth bool) (host string, headerLen int, compatibleMode bool, err error) {
+func UDPGetRequest(buf []byte) (host string, headerLen int, err error) {
 	addrType := buf[idType]
-	ota := addrType&OneTimeAuthMask > 0
-	compatibleMode = !auth && ota
 	switch addrType & AddrMask {
 	case typeIPv4:
 		headerLen = headerLenIPv4

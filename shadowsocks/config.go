@@ -2,6 +2,7 @@ package shadowsocks
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -23,13 +24,16 @@ type Config struct {
 	Method     string `json:"method"`      // encryption method for ss local & ss server communication
 	Timeout    int    `json:"timeout"`     // shadowsocks conversation timeout limit
 
-	OTA bool `json:"auth"` // enable one time auth , will be abandoned in next release
-
 	// following options are only used by server
 	PortPassword map[string]string `json:"port_password"` // shadowsocks mutli user password
 
 	// following options are only used by client
 	ServerPassword map[string]string `json:"server_password"` // shadowsocks local mutli server password
+}
+
+func (c *Config) String() string {
+	return fmt.Sprintf("Server: %s, ServerPort: %s, Local: %s, LocalPort: %d, Password: %s, Method: %s, Timeout: %d, portpwds: %v, serverpwds: %v",
+		c.Server, c.ServerPort, c.Local, c.LocalPort, c.Password, c.Method, c.Timeout, c.PortPassword, c.ServerPassword)
 }
 
 type ConfOption func(c *Config)
@@ -82,11 +86,6 @@ func WithLocalPort(port int) ConfOption {
 func WithEncryptMethod(method string) ConfOption {
 	return func(c *Config) {
 		c.Method = method
-	}
-}
-func WithOTA() ConfOption {
-	return func(c *Config) {
-		c.OTA = true
 	}
 }
 func WithTimeOut(t int) ConfOption {
@@ -142,16 +141,13 @@ func ParseConfig(path string) (conf *Config, err error) {
 
 // ProcessConfig fill in the map after the config is unmarshaled
 func ProcessConfig(c *Config) {
-	//TODO will be abandoned in next release
-	if strings.HasSuffix(strings.ToLower(c.Method), "-auth") {
-		c.Method = c.Method[:len(c.Method)-5]
-		c.OTA = true
-	}
-
 	servers := c.GetServerArray()
 	serverports := c.GetServerPortArray()
 	passwds := c.GetPasswordArray()
 
+	if c.ServerPassword != nil {
+		return
+	}
 	// check and set for the ss local config
 	if len(servers) > 0 && len(serverports) > 0 && len(passwds) > 0 {
 		if len(servers) != len(serverports) || len(servers) != len(passwds) {
@@ -163,16 +159,17 @@ func ProcessConfig(c *Config) {
 		}
 	}
 
+	if c.PortPassword != nil {
+		return
+	}
 	// check and set for the ss remote server config
 	if len(serverports) > 0 && len(passwds) > 0 {
 		if len(servers) != len(passwds) {
 			Logger.Fatal("error in proces the config file, Invalid config")
 		}
-		for _, serveraddr := range servers {
-			for i := 0; i < len(serverports); i++ {
-				addr := serveraddr + ":" + serverports[i]
-				c.PortPassword[addr] = passwds[i]
-			}
+		for i, port := range serverports {
+			addr := ":" + port
+			c.PortPassword[addr] = passwds[i]
 		}
 	}
 }

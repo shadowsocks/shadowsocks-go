@@ -1,7 +1,6 @@
 package shadowsocks
 
 import (
-	"bytes"
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/binary"
@@ -91,7 +90,7 @@ func readFull(c *SecureConn, b []byte) (n int, err error) {
 	min := len(b)
 	for n < min {
 		var nn int
-		nn, err = c.read(b[n:])
+		nn, err = c.Read(b[n:])
 		n += nn
 	}
 
@@ -105,7 +104,7 @@ func readFull(c *SecureConn, b []byte) (n int, err error) {
 }
 
 // decryption for ss protocol
-func getRequets(ss *SecureConn, auth bool) (host string, err error) {
+func getRequets(ss *SecureConn) (host string, err error) {
 	// read till we get possible domain length field
 	buf := make([]byte, 269)
 
@@ -154,29 +153,6 @@ func getRequets(ss *SecureConn, auth bool) (host string, err error) {
 	// the request host and port
 	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 
-	ota := addrType&OneTimeAuthMask > 0
-	// this is the server option wether openup the one time auth certificate
-	if auth {
-		if !ota {
-			err = ErrPacketOtaFailed
-			return
-		}
-	}
-
-	// if client set the OTA ,server must handle this with OTA option
-	if ota {
-		if _, err = readFull(ss, buf[reqEnd:reqEnd+lenHmacSha1]); err != nil {
-			return
-		}
-		iv := ss.GetIV()
-		key := ss.GetKey()
-		actualHmacSha1Buf := HmacSha1(append(iv, key...), buf[:reqEnd])
-		if !bytes.Equal(buf[reqEnd:reqEnd+lenHmacSha1], actualHmacSha1Buf) {
-			err = ErrPacketOtaFailed
-			return
-		}
-		ss.EnableOTA()
-	}
 	return
 }
 

@@ -50,22 +50,19 @@ func (d *Dialer) Dial(network, addr string) (c net.Conn, err error) {
 	return nil, fmt.Errorf("unsupported connection type: %s", network)
 }
 
-// XXX
 // DialUDP is used to open an UDP connection on client side to and remote dst
 func (d *Dialer) DialUDP(network, laddr, raddr string) (c net.PacketConn, err error) {
 	return nil, fmt.Errorf("not implemented yet")
 }
 
-// XXX
 // ListenPacket is used to open an UDP connection on client side
 func (d *Dialer) ListenPacket(network, laddr string) (c net.PacketConn, err error) {
 	if strings.HasPrefix(network, "udp") {
-		return ListenPacket(network, laddr, d.cipher.Copy(), d.ota)
+		return ListenPacket(network, laddr, d.cipher.Copy())
 	}
 	return nil, fmt.Errorf("unsupported connection type: %s", network)
 }
 
-// XXX ???
 // DialWithRawAddr is intended for use by users implementing a local socks proxy.
 // rawaddr shoud contain part of the data in socks request, starting from the
 // ATYP field. (Refer to rfc1928 for more information.)
@@ -74,7 +71,7 @@ func (d *Dialer) DialWithRawAddr(rawaddr []byte) (conn net.Conn, err error) {
 	if err != nil {
 		return
 	}
-	c := NewSecureConn(conn, d.cipher.Copy(), d.ota, d.timeout, false)
+	c := NewSecureConn(conn, d.cipher.Copy(), d.timeout)
 	if d.ota {
 		if c.EncInited() {
 			if _, err = c.InitEncrypt(); err != nil {
@@ -87,7 +84,7 @@ func (d *Dialer) DialWithRawAddr(rawaddr []byte) (conn net.Conn, err error) {
 		rawaddr[idType] |= OneTimeAuthMask
 		rawaddr = otaConnectAuth(c.GetIV(), c.GetKey(), rawaddr)
 	}
-	if _, err = c.write(rawaddr); err != nil {
+	if _, err = c.Write(rawaddr); err != nil {
 		c.Close()
 		return nil, err
 	}
