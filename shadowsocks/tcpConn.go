@@ -61,7 +61,7 @@ func (c *SecureConn) Read(b []byte) (n int, err error) {
 		}
 	}
 
-	n, err = c.Read(b)
+	n, err = c.Conn.Read(b)
 	if n > 0 {
 		// decrypt the data with given cipher
 		c.Decrypt(b[0:n], b[0:n])

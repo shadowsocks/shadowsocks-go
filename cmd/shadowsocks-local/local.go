@@ -4,13 +4,11 @@ import (
 	"errors"
 	"flag"
 	"io"
-	"log"
 	"math/rand"
 	"net"
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -189,18 +187,18 @@ func prepareToConnect(c *ss.Config) (map[string]*encrypt.Cipher, error) {
 }
 
 // dial the server establish the ss connection
-func connectToServer(addr string, ciph *encrypt.Cipher, ota bool, timeout int) (*ss.SecureConn, error) {
+func connectToServer(addr string, ciph *encrypt.Cipher, timeout int) (*ss.SecureConn, error) {
 	nc, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
-	conn := ss.NewSecureConn(nc, ciph, ota, timeout, false)
-	ss.Logger.Debug("ss local connecting to server", zap.String("server", addr), zap.Bool("ota", ota), zap.Int("timeout", timeout))
+	conn := ss.NewSecureConn(nc, ciph, timeout)
+	ss.Logger.Debug("ss local connecting to server", zap.String("server", addr), zap.Int("timeout", timeout))
 	return conn, nil
 }
 
 // handle the local socks5 connection and request remote server
-func handleConnection(server string, conn net.Conn, ota bool, timeout int) {
+func handleConnection(server string, conn net.Conn, timeout int) {
 	ss.Logger.Debug("handle socks5 connect", zap.Stringer("source", conn.LocalAddr()), zap.Stringer("remote", conn.RemoteAddr()))
 
 	var err error
@@ -214,7 +212,7 @@ func handleConnection(server string, conn net.Conn, ota bool, timeout int) {
 	// Hand shake happened when accept the socks5 negotiation request
 	// ss server will accept the negotiation or ask client to reset the connection
 	if err = handShake(conn); err != nil {
-		log.Println("socks handshake:", err)
+		ss.Logger.Error("error in socks5 handShake", zap.Stringer("socks5client", conn.LocalAddr()), zap.Error(err))
 		return
 	}
 
@@ -222,7 +220,7 @@ func handleConnection(server string, conn net.Conn, ota bool, timeout int) {
 	// rawaddr is the socks5 request addr+port
 	rawaddr, err := getRequest(conn)
 	if err != nil {
-		log.Println("error getting request:", err)
+		ss.Logger.Error("error in getting socks5 request", zap.Error(err))
 		return
 	}
 
@@ -231,7 +229,7 @@ func handleConnection(server string, conn net.Conn, ota bool, timeout int) {
 	// But if connection failed, the client will get connection reset error.
 
 	// Notice that the server response bind addr & port could be ignore by the socks5 client
-	// 0x00 0x00 0x00 0x00 0x10 0x10 is meaning less
+	// 0x00 0x00 0x00 0x00 0x10 0x10 is meaning less for bind addr.
 	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10})
 	if err != nil {
 		ss.Logger.Error("send connection confirmation", zap.Error(err))
@@ -239,12 +237,7 @@ func handleConnection(server string, conn net.Conn, ota bool, timeout int) {
 	}
 
 	// after socks5 hand shake, we'd get a ss server connection
-	// new server config for new server
-
-	// get server connection
-	cip := ciphers[server]
-
-	ssconn, err := connectToServer(server, cip, ota, timeout)
+	ssconn, err := connectToServer(server, ciphers[server], timeout)
 	if err != nil {
 		return
 	}
@@ -253,20 +246,23 @@ func handleConnection(server string, conn net.Conn, ota bool, timeout int) {
 			ssconn.Close()
 		}
 	}()
+	ss.Logger.Debug("connect to ss remote server", zap.Stringer("serverremote", ssconn.RemoteAddr()))
 
 	// FIXME here we get the fatal if can not connect the server
 	if _, err := ssconn.Write(rawaddr); err != nil {
-		ss.Logger.Fatal("request ss remote failed", zap.Stringer("serverlocal", ssconn.LocalAddr()),
+		ss.Logger.Error("request ss remote failed", zap.Stringer("serverlocal", ssconn.LocalAddr()),
 			zap.Stringer("serverremote", ssconn.RemoteAddr()), zap.ByteString("rawaddr", rawaddr))
+		return
 	}
 
-	// ask the request with rawaddr & payload
+	// ask the request with payload
 	// then read the connection and write back
 	go ss.PipeThenClose(conn, ssconn, timeout)
 	ss.PipeThenClose(ssconn, conn, timeout)
 
 	closed = true
 	ss.Logger.Debug("closed server connection", zap.Stringer("serverlocal", ssconn.LocalAddr()), zap.Stringer("serverremote", ssconn.RemoteAddr()))
+	return
 }
 
 var ciphers map[string]*encrypt.Cipher
@@ -287,14 +283,16 @@ func run(config *ss.Config) {
 	ciphers = cps
 	servers := config.GetServerArray()
 	serverlen := len(servers)
-	// get a connection to connect the server
+
+	// FIXME should not be like this?
+	// get a random server connection
 	for {
 		server := servers[rand.Int()%serverlen]
 		conn, err := ln.Accept()
 		if err != nil {
 			ss.Logger.Error("error in local server accept", zap.Error(err))
 		} else {
-			go handleConnection(server, conn, config.OTA, config.Timeout)
+			go handleConnection(server, conn, config.Timeout)
 		}
 	}
 }
@@ -305,6 +303,7 @@ func main() {
 	var ServerPort, Timeout, LocalPort int
 	var printVer bool
 	var config *ss.Config
+	var err error
 
 	flag.BoolVar(&printVer, "v", false, "print version")
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
@@ -332,7 +331,6 @@ func main() {
 	ss.SetLogger()
 	ss.Logger.Debug("Starting the local server")
 
-	var err error
 	// set the options for the config new
 	var opts []ss.ConfOption
 
@@ -342,11 +340,6 @@ func main() {
 		opts = append(opts, ss.WithEncryptMethod("aes-256-cfb"))
 	}
 
-	// handle the auth optnion when method is
-	if strings.HasSuffix(Method, "-auth") {
-		Method = Method[:len(Method)-5]
-		opts = append(opts, ss.WithOTA())
-	}
 	if err = encrypt.CheckCipherMethod(Method); err != nil {
 		ss.Logger.Error("error in check the cipher method", zap.String("method", Method), zap.Error(err))
 		os.Exit(1)
@@ -375,6 +368,7 @@ func main() {
 	}
 
 	go run(config)
+	// TODO add the udp service
 	waitSignal()
 }
 

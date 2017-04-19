@@ -11,11 +11,15 @@ import (
 
 // PipeThenClose copies data from src to dst, close dst when done.
 func PipeThenClose(src, dst net.Conn, timeout int) {
-	defer dst.Close()
+	// FIXME when to close the connection
+	//defer dst.Close()
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
 	for {
-		src.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+		if timeout > 0 {
+			src.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+			dst.SetWriteDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+		}
 		n, err := src.Read(buf)
 		// read may return EOF with n > 0
 		// should always process n > 0 bytes before handling error
