@@ -1,7 +1,6 @@
 package shadowsocks
 
 import (
-	"io"
 	"net"
 	"time"
 
@@ -50,7 +49,7 @@ func (c *SecureConn) Read(b []byte) (n int, err error) {
 
 	if c.DecInited() {
 		iv := make([]byte, c.GetIVLen())
-		if _, err = io.ReadFull(c.Conn, iv); err != nil {
+		if _, err = c.Conn.Read(iv); err != nil {
 			return
 		}
 		if err = c.InitDecrypt(iv); err != nil {
@@ -64,15 +63,16 @@ func (c *SecureConn) Read(b []byte) (n int, err error) {
 	n, err = c.Conn.Read(b)
 	if n > 0 {
 		// decrypt the data with given cipher
-		c.Decrypt(b[0:n], b[0:n])
+		c.Decrypt(b[:n], b[:n])
 	}
 	return
 }
 
 func (c *SecureConn) Write(b []byte) (n int, err error) {
 	var iv []byte
-	if c.EncInited() {
-		iv, err = c.InitEncrypt()
+
+	if c.Cipher.EncInited() {
+		iv, err = c.Cipher.InitEncrypt()
 		if err != nil {
 			return
 		}
@@ -86,17 +86,21 @@ func (c *SecureConn) Write(b []byte) (n int, err error) {
 		cipherData = cipherData[:dataSize]
 	}
 
-	if iv != nil {
+	if len(iv) > 0 {
 		// Put initialization vector in buffer, do a single write to send both
 		// iv and data.
 		copy(cipherData, iv)
+		//} else {
+		//	Logger.Error("error in set the iv into cipher data", zap.Int("iv len", len(iv)))
 	}
-	// FIXME without the length of data?
+
 	c.Encrypt(cipherData[len(iv):], b)
 	if c.timeout > 0 {
 		c.Conn.SetWriteDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
 	}
-	n, err = c.Conn.Write(cipherData)
+	n, err = c.Conn.Write(cipherData[:dataSize])
+	// dec the iv lenth
+	n -= len(iv)
 	return
 }
 
@@ -111,6 +115,8 @@ type Listener struct {
 // It will handle the request header for you.
 func (ln *Listener) Accept() (conn net.Conn, host string, err error) {
 	conn, err = ln.Listener.Accept()
+	// set the tcp keep alive option
+	conn.(*net.TCPConn).SetKeepAlive(true)
 	if err != nil {
 		return nil, "", err
 	}
