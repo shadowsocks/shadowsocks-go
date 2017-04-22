@@ -31,11 +31,7 @@ var errEmptyPassword = errors.New("empty key")
 
 // CheckCipherMethod checks if the cipher method is supported
 func CheckCipherMethod(method string) error {
-	if method == "" {
-		method = "aes-256-cfb"
-	}
-	_, ok := cipherMethod[method]
-	if !ok {
+	if _, ok := cipherMethod[method]; !ok {
 		return errors.New("Unsupported encryption method: " + method)
 	}
 	return nil
@@ -75,13 +71,11 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 
 // InitEncrypt initializes the block cipher, returns IV.
 func (c *Cipher) InitEncrypt() (iv []byte, err error) {
-	if c.iv == nil {
-		iv = make([]byte, c.info.ivLen)
-		if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-			return nil, err
-		}
-		c.iv = iv
+	iv = make([]byte, c.info.ivLen)
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return nil, err
 	}
+	c.iv = iv
 	c.enc, err = c.info.newStream(c.key, c.iv, Encrypt)
 	return
 }
@@ -194,6 +188,16 @@ func newStream(block cipher.Block, key, iv []byte, doe DecOrEnc) (cipher.Stream,
 		return cipher.NewCFBEncrypter(block, iv), nil
 	}
 	return cipher.NewCFBDecrypter(block, iv), nil
+}
+
+// WIP
+func newAEADStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
+	//hkdf.New()
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	return newStream(block, key, iv, doe)
 }
 
 func newAESCFBStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
@@ -309,4 +313,9 @@ var cipherMethod = map[string]*cipherInfo{
 	"chacha20":      {32, 8, newChaCha20Stream},
 	"chacha20-ietf": {32, 12, newChaCha20IETFStream},
 	"salsa20":       {32, 8, newSalsa20Stream},
+
+	//"chacha20-ietf-poly1305": {32, 32, nil},
+	//"aes-256-gcm":            {32, 32, nil},
+	//"aes-192-gcm":            {24, 24, nil},
+	//"aes-128-gcm":            {16, 16, nil},
 }
