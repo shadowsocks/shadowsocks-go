@@ -7,7 +7,6 @@ cd "$( dirname "${BASH_SOURCE[0]}" )"
 
 LOCAL_PORT="1090"
 SERVER_PORT="8389"
-OPTION="-p $SERVER_PORT -k foobar"
 SOCKS="127.0.0.1:$LOCAL_PORT"
 HTTP_PORT="8123"
 
@@ -70,11 +69,13 @@ test_shadowsocks() {
     url=$1
     method=$2
 
-    $SERVER $OPTION -m "$method" &
+    $SERVER -k foo -p $SERVER_PORT -m "$method" -l debug &
+    echo "$SERVER -k foo -p $SERVER_PORT -m "$method" -l debug"
     server_pid=$!
     wait_server $SERVER_PORT
 
-    $LOCAL $OPTION -s 127.0.0.1 -l $LOCAL_PORT -m "$method" -A &
+    $LOCAL -k foo -saddr 127.0.0.1 -sport $SERVER_PORT -port $LOCAL_PORT -m "$method" -l debug &
+    echo "$LOCAL -k foo -saddr 127.0.0.1 -sport $SERVER_PORT -port $LOCAL_PORT -m "$method" -l debug"
     local_pid=$!
     wait_server $LOCAL_PORT
 
