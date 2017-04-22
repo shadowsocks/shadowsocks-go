@@ -10,40 +10,21 @@ import (
 )
 
 // PipeThenClose copies data from src to dst, close dst when done.
-func PipeThenClose(src, dst net.Conn, timeout int) {
-	// FIXME when to close the connection
-	//defer dst.Close()
+func PipeThenClose(src, dst net.Conn, timeout int, done func()) {
+	defer done()
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
-	for {
-		if timeout > 0 {
-			src.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
-			dst.SetWriteDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
-		}
-		n, err := src.Read(buf)
-		// read may return EOF with n > 0
-		// should always process n > 0 bytes before handling error
-		if n > 0 {
-			// Note: avoid overwrite err returned by Read.
-			if _, err := dst.Write(buf[0:n]); err != nil {
-				Logger.Error("erro in pipe then close, dst write", zap.Error(err))
-				break
-			}
-		}
-		if err != nil {
-			// Always "use of closed network connection", but no easy way to
-			// identify this specific error. So just leave the error along for now.
-			// More info here: https://code.google.com/p/go/issues/detail?id=4373
-			if err != io.EOF {
-				Logger.Error("read error form src", zap.Stringer("src", src.LocalAddr()), zap.Stringer("dst", dst.RemoteAddr()), zap.Error(err))
-			}
-			if err == errBufferTooSmall || err == ErrPacketOtaFailed {
-				Logger.Error("erro in pipe then close", zap.Error(err))
-			}
-			break
-		}
-		Logger.Debug("write n from src to dest", zap.Int("n", n), zap.Stringer("src", src.LocalAddr()),
-			zap.Stringer("dst", dst.RemoteAddr()), zap.Error(err))
+	if timeout > 0 {
+		src.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+		dst.SetWriteDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+	}
+
+	n, err := io.Copy(dst, src)
+	if err != nil {
+		Logger.Error("error in copy from src to dest", zap.Int64("n", n), zap.Stringer("src", src.LocalAddr()), zap.Stringer("dst", dst.RemoteAddr()), zap.Error(err))
+		return
+	} else {
+		Logger.Debug("copy n from src to dest", zap.Int64("n", n), zap.Stringer("src", src.LocalAddr()), zap.Stringer("dst", dst.RemoteAddr()))
 	}
 }
 
@@ -68,7 +49,6 @@ func PipeThenClose(src, dst net.Conn, timeout int) {
 //		write.WriteTo(buf[:n], writeAddr) //	}
 //}
 
-// XXX is this suould be here?
 func UDPReceiveThenClose(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
