@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"syscall"
 
@@ -23,6 +24,7 @@ const logCntDelta int32 = 100
 var connCnt int32
 var nextLogConnCnt = logCntDelta
 
+// handleConnection forward the request to the destination
 func handleConnection(conn net.Conn, host string, timeout int) {
 	atomic.AddInt32(&connCnt, 1)
 	if atomic.LoadInt32(&connCnt)-nextLogConnCnt >= 0 {
@@ -32,19 +34,20 @@ func handleConnection(conn net.Conn, host string, timeout int) {
 		ss.Logger.Warn("Number of client connections reaches ", zap.Int32("count", nextLogConnCnt))
 		nextLogConnCnt += logCntDelta
 	}
+	closed := false
 
 	// function arguments are always evaluated, so surround debug statement
 	// with if statement
-	closed := false
 	defer func() {
-		ss.Logger.Info("closeing connection:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
 		atomic.AddInt32(&connCnt, -1)
 		if !closed {
+			ss.Logger.Warn("unexpect closeing connection:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
 			conn.Close()
 		}
 	}()
 
-	ss.Logger.Info("connecting to the request host", zap.String("host", host))
+	// request the remote
+	ss.Logger.Debug("connecting to the request host", zap.String("host", host))
 	remote, err := net.Dial("tcp", host)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
@@ -58,13 +61,19 @@ func handleConnection(conn net.Conn, host string, timeout int) {
 	}
 	defer func() {
 		if !closed {
+			ss.Logger.Warn("unexpect closeing connection:", zap.Stringer("remote", remote.RemoteAddr()), zap.String("host", host))
 			remote.Close()
 		}
 	}()
-	ss.Logger.Info("piping remote to host:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
+	ss.Logger.Debug("piping remote to host:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
+	remote.(*net.TCPConn).SetKeepAlive(true)
 
-	go ss.PipeThenClose(conn, remote, timeout)
-	ss.PipeThenClose(remote, conn, timeout)
+	// close the server at the right time
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go ss.PipeThenClose(conn, remote, timeout, func() { wg.Done() })
+	ss.PipeThenClose(remote, conn, timeout, func() { remote.Close() })
+	wg.Wait()
 
 	closed = true
 	return
@@ -89,6 +98,7 @@ func waitSignal() {
 	}
 }
 
+// serveTCP accept incoming request and handle
 func serveTCP(ln *ss.Listener, timeout int) {
 	defer ln.Close()
 	for {
@@ -100,9 +110,9 @@ func serveTCP(ln *ss.Listener, timeout int) {
 			}
 			// listener maybe closed to update password
 			ss.Logger.Error("serve TCP accept error", zap.Error(err))
-			return
+			continue
 		}
-		ss.Logger.Info("ss server accept connection", zap.Stringer("local", conn.LocalAddr()), zap.String("host", host))
+		ss.Logger.Info("ss server accept connection", zap.Stringer("src", conn.RemoteAddr()), zap.String("dst", host))
 
 		go handleConnection(conn, host, timeout)
 	}
@@ -268,7 +278,6 @@ func main() {
 	// start the shadowsocks server
 	go run(config)
 	if udp {
-		// TODO need to check if necessary
 		go runUDP(config)
 	}
 
