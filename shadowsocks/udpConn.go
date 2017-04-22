@@ -6,10 +6,6 @@ import (
 	"github.com/shadowsocks/shadowsocks-go/encrypt"
 )
 
-const (
-	maxPacketSize = 4096 // increase it if error occurs
-)
-
 // SecurePacketConn is the implementation of
 // net.PacketConn interfaces for shadowsocks UDP network connections.
 type SecurePacketConn struct {
