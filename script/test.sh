@@ -11,12 +11,10 @@ SOCKS="127.0.0.1:$LOCAL_PORT"
 HTTP_PORT="8123"
 
 wait_server() {
-    local port
-    port=$1
-    for i in {1..20}; do
+    for i in {1..5}; do
         # sleep first because this maybe called immediately after server start
-        sleep 0.1
-        nc -z -w 4 127.0.0.1 $port && break
+        sleep 1
+        nc -z -w 3 127.0.0.1 $1 && break
     done
 }
 
@@ -51,7 +49,7 @@ test_get() {
     html=`echo $cont | grep -E -o -i "$target"`
     if [[ -z $ok || -z $html ]] ; then
         echo "=============================="
-        echo "GET $url FAILED!!!"
+        echo "FAILED!!! GET $url FAILED"
         echo "$ok"
         echo "$html"
         echo $cont
@@ -69,13 +67,11 @@ test_shadowsocks() {
     url=$1
     method=$2
 
-    $SERVER -k foo -p $SERVER_PORT -m "$method" -l debug &
-    echo "$SERVER -k foo -p $SERVER_PORT -m "$method" -l debug"
+    $SERVER -k foo -p $SERVER_PORT -m "$method" -l fatal &
     server_pid=$!
     wait_server $SERVER_PORT
 
-    $LOCAL -k foo -saddr 127.0.0.1 -sport $SERVER_PORT -port $LOCAL_PORT -m "$method" -l debug &
-    echo "$LOCAL -k foo -saddr 127.0.0.1 -sport $SERVER_PORT -port $LOCAL_PORT -m "$method" -l debug"
+    $LOCAL -k foo -saddr 127.0.0.1 -sport $SERVER_PORT -port $LOCAL_PORT -m "$method" -l fatal &
     local_pid=$!
     wait_server $LOCAL_PORT
 
@@ -87,12 +83,12 @@ test_shadowsocks() {
             exit 1
         fi
     done
-    echo "=============================="
-    echo "GET $url $method passed"
-    echo "=============================="
+    echo
+    echo "PASSED! check GET $url $method passed!"
+    echo
     kill -SIGTERM $server_pid
     kill -SIGTERM $local_pid
-    sleep 0.1
+    sleep 1
 }
 
 test_server_local_pair() {
