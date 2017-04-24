@@ -38,7 +38,7 @@ const (
 
 // PrintVersion prints the current version of shadowsocks-go
 func PrintVersion() {
-	const version = "1.2.1"
+	const version = "2.0.0"
 	fmt.Println("shadowsocks-go version", version)
 }
 
@@ -64,28 +64,6 @@ func HmacSha1(key []byte, data []byte) []byte {
 	return hmacSha1.Sum(nil)[:10]
 }
 
-func otaConnectAuth(iv, key, data []byte) []byte {
-	return append(data, HmacSha1(append(iv, key...), data)...)
-}
-
-func otaReqChunkAuth(iv []byte, chunkID uint32, data []byte) (header []byte) {
-	nb := make([]byte, 2)
-	binary.BigEndian.PutUint16(nb, uint16(len(data)))
-	chunkIDBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(chunkIDBytes, chunkID)
-	header = append(nb, HmacSha1(append(iv, chunkIDBytes...), data)...)
-	return
-}
-
-func methodOTAEnabled(method string) bool {
-	if strings.HasSuffix(strings.ToLower(method), "-auth") {
-		method = method[:len(method)-5] // len("-auth") = 5
-		return true
-	}
-	return false
-}
-
-// XXX
 // rawAddr split the addr into a byte based buffer catch all info
 func rawAddr(addr string) (buf []byte, err error) {
 	host, portStr, err := net.SplitHostPort(addr)
@@ -107,7 +85,6 @@ func rawAddr(addr string) (buf []byte, err error) {
 	return
 }
 
-// XXX
 // read full will read until got b length buffer
 func readFull(c *SecureConn, b []byte) (n int, err error) {
 	min := len(b)
@@ -126,8 +103,8 @@ func readFull(c *SecureConn, b []byte) (n int, err error) {
 	return
 }
 
-// decryption for ss protocol
-func getRequets(ss *SecureConn) (host string, err error) {
+// GetRequest can handler the ss request header and decryption for ss protocol
+func GetRequest(ss *SecureConn) (host string, err error) {
 	// read till we get possible domain length field
 	buf := make([]byte, 269)
 

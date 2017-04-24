@@ -29,10 +29,11 @@ var (
 	ErrServerInfoIllegal = errors.New("shadowsocks server address illegal or server port illigal")
 	ErrInvalidArguments  = errors.New("arguments illega")
 	ErrInvalidPassword   = errors.New("password illegal")
+	ErrReadUnexpectEOF   = errors.New("unexpect EOF occoured")
 )
 
 const (
-	idVer     = 0
+	idVer     = 0 // socks version index
 	idNmethod = 1
 	idCmd     = 1
 	idType    = 3 // address type index
@@ -72,8 +73,11 @@ func handShake(conn net.Conn) (err error) {
 
 	// make sure we get the nmethod field
 	if n, err = io.ReadAtLeast(conn, buf, idNmethod+1); err != nil {
-		return
+		if n == 0 {
+			return
+		}
 	}
+
 	// check the version
 	if buf[idVer] != socksVer5 {
 		return ErrVer
@@ -165,7 +169,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, err error) {
 	port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
 	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 
-	ss.Logger.Debug("get request addr", zap.ByteString("host", rawaddr), zap.String("host", host))
+	ss.Logger.Debug("get request addr", zap.String("host", host))
 	return
 }
 
@@ -178,6 +182,16 @@ type ServerCipher struct {
 func prepareToConnect(c *ss.Config) (map[string]*encrypt.Cipher, error) {
 	// connect to server will establish all the server connection with given server address and port
 	cips := make(map[string]*encrypt.Cipher, len(c.GetServerArray()))
+
+	if c.Server != "" && c.ServerPort != "" {
+		ss := c.Server + ":" + c.ServerPort
+		cipher, err := encrypt.NewCipher(c.Method, c.Password)
+		if err != nil {
+			return nil, err
+		}
+		cips[ss] = cipher
+	}
+
 	for server, passwd := range c.ServerPassword {
 		cipher, err := encrypt.NewCipher(c.Method, passwd)
 		if err != nil {
@@ -208,6 +222,7 @@ func connectToServer(addr string, ciph *encrypt.Cipher, timeout int, enableUDP b
 	if err != nil {
 		return nil, err
 	}
+
 	conn := ss.NewSecureConn(nc, ciph.Copy(), timeout)
 	ss.Logger.Debug("ss local connecting to server with TCP", zap.String("server", addr), zap.Int("timeout", timeout))
 	return conn, nil
@@ -360,7 +375,6 @@ func main() {
 
 	// init the logger
 	ss.SetLogger()
-	ss.Logger.Debug("Starting the local server")
 
 	// set the options for the config new
 	var opts []ss.ConfOption
@@ -376,10 +390,22 @@ func main() {
 	}
 	opts = append(opts, ss.WithEncryptMethod(Method))
 
-	// add the passwd
+	if ServerAddr != "" {
+		opts = append(opts, ss.WithServer(ServerAddr))
+	}
+	if ServerPort > 0 {
+		opts = append(opts, ss.WithServerPort(strconv.Itoa(ServerPort)))
+	}
 	if Password != "" {
 		opts = append(opts, ss.WithPassword(Password))
 	}
+	if LocalAddr != "" {
+		opts = append(opts, ss.WithLocalAddr(LocalAddr))
+	}
+	if LocalPort != 0 {
+		opts = append(opts, ss.WithLocalPort(LocalPort))
+	}
+
 	config = ss.NewConfig(opts...)
 
 	// parse the config from the config file
@@ -394,6 +420,7 @@ func main() {
 		ss.Logger.Fatal("error in check the config for the local shadowsocks server", zap.Error(err))
 	}
 
+	ss.Logger.Debug("show the ss config", zap.Stringer("config", config))
 	// start the socks5 server
 	go run(config, UDP)
 
@@ -429,7 +456,7 @@ func checkConfig(config *ss.Config) error {
 
 	if config.ServerPassword == nil {
 		if config.Server == "" || config.ServerPort == "" {
-			return ErrServerInfoIllegal
+			return ErrInvalidPassword
 		}
 
 		if config.Password == "" {

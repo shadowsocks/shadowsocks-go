@@ -27,6 +27,8 @@ func SetLogger() {
 		lv.SetLevel(zap.InfoLevel)
 	case "error", "Error", "ERROR":
 		lv.SetLevel(zap.ErrorLevel)
+	case "fatal", "Fatal", "FATAL":
+		lv.SetLevel(zap.FatalLevel)
 	default:
 		lv.SetLevel(zap.ErrorLevel)
 	}

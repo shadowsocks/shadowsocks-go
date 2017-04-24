@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -25,13 +24,21 @@ var connCnt int32
 var nextLogConnCnt = logCntDelta
 
 // handleConnection forward the request to the destination
-func handleConnection(conn net.Conn, host string, timeout int) {
+func handleConnection(conn *ss.SecureConn, timeout int) {
+	// first do the decode for ss protocol
+	host, err := ss.GetRequest(conn)
+	if err != nil {
+		ss.Logger.Error("ss server get request failed", zap.Stringer("src", conn.RemoteAddr()), zap.Error(err))
+		return
+	}
+	ss.Logger.Info("ss server accept the ss request", zap.Stringer("src", conn.RemoteAddr()), zap.String("dst", host))
+
 	atomic.AddInt32(&connCnt, 1)
 	if atomic.LoadInt32(&connCnt)-nextLogConnCnt >= 0 {
 		// XXX There's no xadd in the atomic package, so it's difficult to log
 		// the message only once with low cost. Also note nextLogConnCnt maybe
 		// added twice for current peak connection number level.
-		ss.Logger.Warn("Number of client connections reaches ", zap.Int32("count", nextLogConnCnt))
+		ss.Logger.Warn("Number of client connections reaches", zap.Int32("count", nextLogConnCnt))
 		nextLogConnCnt += logCntDelta
 	}
 	closed := false
@@ -102,19 +109,15 @@ func waitSignal() {
 func serveTCP(ln *ss.Listener, timeout int) {
 	defer ln.Close()
 	for {
-		conn, host, err := ln.Accept()
+		// accept should not be blocked, so here just return a ss warped connection
+		// getRequest should do after this
+		sconn, err := ln.Accept()
 		if err != nil {
-			if err == ss.ErrPacketOtaFailed {
-				ss.Logger.Warn("serve ota", zap.Error(err))
-				continue
-			}
-			// listener maybe closed to update password
-			ss.Logger.Error("serve TCP accept error", zap.Error(err))
+			ss.Logger.Error("error in ss server accept connection", zap.Error(err))
+			// XXX should not exit?
 			continue
 		}
-		ss.Logger.Info("ss server accept connection", zap.Stringer("src", conn.RemoteAddr()), zap.String("dst", host))
-
-		go handleConnection(conn, host, timeout)
+		go handleConnection(sconn, timeout)
 	}
 }
 
@@ -125,7 +128,7 @@ func run(conf *ss.Config) {
 		if err != nil {
 			ss.Logger.Fatal("Failed create cipher", zap.Error(err))
 		}
-		ln, err := ss.Listen("tcp", addr, cipher, conf.Timeout)
+		ln, err := ss.Listen("tcp", net.JoinHostPort("", addr), cipher.Copy(), conf.Timeout)
 		if err != nil {
 			ss.Logger.Fatal("error listening port", zap.String("port", addr), zap.Error(err))
 		}
@@ -190,30 +193,31 @@ func checkConfig(config *ss.Config) error {
 		return errors.New("server array and password array is illegal")
 	}
 
-	for addr, pass := range config.PortPassword {
-		if _, portStr, err := net.SplitHostPort(addr); err == nil {
-			if port, err := strconv.Atoi(portStr); err != nil || port == 0 || pass == "" {
-				return fmt.Errorf("given config is invalid: address(%s) password(%s)", addr, pass)
-			}
-		} else {
-			return fmt.Errorf("given config is invalid: address(%s) password(%s)", addr, pass)
-		}
-	}
+	// check the port if has a suffix and :
+	//for addr, pass := range config.PortPassword {
+	//	if _, portStr, err := net.SplitHostPort(addr); err == nil {
+	//		if port, err := strconv.Atoi(portStr); err != nil || port == 0 || pass == "" {
+	//			return fmt.Errorf("given config is invalid: address(%s) password(%s)", addr, pass)
+	//		}
+	//	} else {
+	//		return fmt.Errorf("given config is invalid: address(%s) password(%s)", addr, pass)
+	//	}
+	//}
 	return nil
 }
 
 func main() {
 	var err error
 	var udp, printVer bool
-	var ServerPort, Timeout, core int
-	var configFile, Password, Method string
+	var Timeout, core int
+	var ServerPort, configFile, Password, Method string
 
 	var config *ss.Config
 
 	flag.BoolVar(&printVer, "v", false, "print version")
 	flag.StringVar(&configFile, "c", "", "specify config file")
 	flag.StringVar(&Password, "k", "", "password")
-	flag.IntVar(&ServerPort, "p", 0, "server port")
+	flag.StringVar(&ServerPort, "p", "", "server port")
 	flag.IntVar(&Timeout, "t", 300, "timeout in seconds")
 	flag.StringVar(&Method, "m", "aes-256-cfb", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
@@ -250,6 +254,10 @@ func main() {
 	// check the passwd if not set
 	if Password != "" {
 		opts = append(opts, ss.WithPassword(Password))
+		if ServerPort != "" {
+			opts = append(opts, ss.WithServerPort(ServerPort))
+			opts = append(opts, ss.WithPortPassword(ServerPort, Password))
+		}
 	}
 
 	config = ss.NewConfig(opts...)
