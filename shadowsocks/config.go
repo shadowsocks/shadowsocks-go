@@ -39,8 +39,10 @@ func (c *Config) String() string {
 type ConfOption func(c *Config)
 
 func NewConfig(opts ...ConfOption) *Config {
-	var config Config
-
+	var config = Config{
+		PortPassword:   make(map[string]string),
+		ServerPassword: make(map[string]string),
+	}
 	for _, v := range opts {
 		v(&config)
 	}

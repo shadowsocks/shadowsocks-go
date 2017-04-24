@@ -106,27 +106,39 @@ func (c *SecureConn) Write(b []byte) (n int, err error) {
 
 // Listener is like net.Listener, but a little different
 type Listener struct {
-	net.Listener
+	tcpln   net.Listener
 	cipher  *encrypt.Cipher
 	timeout int
 }
 
 // Accept just like net.Listener.Accept(), but with additional return variable host.
 // It will handle the request header for you.
-func (ln *Listener) Accept() (conn net.Conn, host string, err error) {
-	conn, err = ln.Listener.Accept()
+// BUG the Accept can be blocked by catching a not SS protocol, the acceptr could be blocked
+func (ln *Listener) Accept() (sconn *SecureConn, err error) {
+	conn, err := ln.tcpln.Accept()
+	if err != nil {
+		return nil, err
+	}
+
 	// set the tcp keep alive option
 	conn.(*net.TCPConn).SetKeepAlive(true)
-	if err != nil {
-		return nil, "", err
+	if ln.timeout > 0 {
+		conn.SetReadDeadline(time.Now().Add(time.Duration(ln.timeout)))
+		conn.SetWriteDeadline(time.Now().Add(time.Duration(ln.timeout)))
 	}
 	ss := NewSecureConn(conn, ln.cipher.Copy(), ln.timeout)
-	host, err = getRequets(ss)
-	if err != nil {
-		ss.Close()
-		return nil, host, err
-	}
-	return ss, host, nil
+
+	return ss, nil
+}
+
+// warped net.Listener
+func (ln *Listener) Addr() net.Addr {
+	return ln.tcpln.Addr()
+}
+
+// warped net.Listener
+func (ln *Listener) Close() error {
+	return ln.tcpln.Close()
 }
 
 // Listen announces on the TCP address laddr and returns a TCP listener.
@@ -141,5 +153,9 @@ func Listen(network, laddr string, cipher *encrypt.Cipher, timeout int) (*Listen
 	if err != nil {
 		return nil, err
 	}
-	return &Listener{ln, cipher, timeout}, nil
+	return &Listener{
+		tcpln:   ln,
+		cipher:  cipher,
+		timeout: timeout,
+	}, nil
 }
