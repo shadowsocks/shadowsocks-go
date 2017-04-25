@@ -96,6 +96,7 @@ func (r *requestHeaderList) Put(dstaddr string, req []byte) {
 	return
 }
 
+// make up the ss address block
 func parseHeaderFromAddr(addr net.Addr) []byte {
 	// if the request address type is domain, it cannot be reverselookuped
 	ip, port, err := net.SplitHostPort(addr.String())
@@ -120,9 +121,10 @@ func parseHeaderFromAddr(addr net.Addr) []byte {
 	return buf[:1+iplen+2]
 }
 
-// ForwardUDPConn forwards the payload (should with header) to the dst.
+// ForwardUDPConn forwards the payload (should with header) to the dst with UDP.
 // meanwhile, the request header is cached and the connection is alse cached for futher use.
-func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []byte, headerLen int) error {
+func ForwardUDPConn(income net.PacketConn, incomeaddr net.Addr, host string, payload []byte, headerLen int) error {
+	// resolve the host into dst ip
 	hostname, portStr, err := net.SplitHostPort(host)
 	if err != nil {
 		return err
@@ -137,31 +139,39 @@ func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []
 		IP:   dstIP,
 		Port: dstPort,
 	}
-	if _, ok := reqList.Get(dst.String()); !ok {
-		req := make([]byte, headerLen)
-		copy(req, payload)
-		req[0] &= ^OneTimeAuthMask
-		reqList.Put(dst.String(), req)
-	}
 
-	remote, exist := natlist.Get(src.String())
+	// check if the destination address request header has been cached
+	// TODO
+	//if _, ok := reqList.Get(dst.String()); !ok {
+	//	req := make([]byte, headerLen)
+	//	copy(req, payload)
+	//	reqList.Put(dst.String(), req)
+	//}
+
+	// natlist is to reserve the net connection to source if connected
+	// to avoid connect to source each packate
+	remote, exist := natlist.Get(incomeaddr.String())
 	if !exist {
 		c, err := net.ListenPacket("udp", "")
 		if err != nil {
 			return err
 		}
 		remote = c
-		natlist.Put(src.String(), remote)
-		Logger.Info("[udp] new client", zap.Stringer("source", src), zap.Stringer("dest", dst),
+		natlist.Put(incomeaddr.String(), remote)
+		Logger.Info("[udp] new client", zap.Stringer("source", incomeaddr), zap.Stringer("dest", dst),
 			zap.Stringer("via", remote.LocalAddr()))
 		go func() {
-			UDPReceiveThenClose(handle, src, remote)
-			natlist.Delete(src.String())
+			UDPReceiveThenClose(income, incomeaddr, remote)
+			defer func() {
+				remote.Close()
+				natlist.Delete(incomeaddr.String())
+			}()
 		}()
 	} else {
-		Logger.Info("[udp] using cached client", zap.Stringer("source", src), zap.Stringer("dest", dst),
+		Logger.Info("[udp] using cached client", zap.Stringer("source", incomeaddr), zap.Stringer("dest", dst),
 			zap.Stringer("via", remote.LocalAddr()))
 	}
+
 	_, err = remote.WriteTo(payload[headerLen:], dst)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
@@ -171,7 +181,7 @@ func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []
 		} else {
 			Logger.Error("[udp]error connecting to:", zap.Stringer("dest", dst), zap.Error(err))
 		}
-		if conn := natlist.Delete(src.String()); conn != nil {
+		if conn := natlist.Delete(incomeaddr.String()); conn != nil {
 			conn.Close()
 		}
 	}
@@ -179,6 +189,7 @@ func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []
 }
 
 // UDPGetRequest deocde the request header from buffer
+// the Header is the SS address header
 func UDPGetRequest(buf []byte) (host string, headerLen int, err error) {
 	addrType := buf[idType]
 	switch addrType & AddrMask {

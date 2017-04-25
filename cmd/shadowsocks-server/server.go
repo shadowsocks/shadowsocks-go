@@ -137,24 +137,22 @@ func run(conf *ss.Config) {
 	}
 }
 
-func serveUDP(SecurePacketConn *ss.SecurePacketConn) {
-	defer SecurePacketConn.Close()
+func serveUDP(servein *ss.SecurePacketConn) {
+	defer servein.Close()
 	buf := make([]byte, 4096)
 	for {
-		n, src, err := SecurePacketConn.ReadFrom(buf)
+		n, srcAddr, err := servein.ReadFrom(buf)
 		if err != nil {
-			if err == ss.ErrPacketOtaFailed {
-				continue
-			}
 			ss.Logger.Error("[udp]read error", zap.Error(err))
 			return
 		}
-		host, headerLen, err := ss.UDPGetRequest(buf[:n])
+		// ss protocol
+		dstHost, headerLen, err := ss.UDPGetRequest(buf[:n])
 		if err != nil {
 			ss.Logger.Error("[udp]faided to decode request", zap.Error(err))
 			continue
 		}
-		ss.ForwardUDPConn(SecurePacketConn, src, host, buf[:n], headerLen)
+		ss.ForwardUDPConn(servein, srcAddr, dstHost, buf[:n], headerLen)
 	}
 }
 
@@ -166,7 +164,7 @@ func runUDP(conf *ss.Config) {
 		if err != nil {
 			ss.Logger.Error("Failed create cipher", zap.Error(err))
 		}
-		SecurePacketConn, err := ss.ListenPacket("udp", addr, cipher)
+		SecurePacketConn, err := ss.ListenPacket("udp", addr, cipher, conf.Timeout)
 		if err != nil {
 			ss.Logger.Error("error listening packetconn ", zap.String("addrsee", addr), zap.Error(err))
 			os.Exit(1)

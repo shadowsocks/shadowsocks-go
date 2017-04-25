@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"os/signal"
@@ -203,33 +204,42 @@ func prepareToConnect(c *ss.Config) (map[string]*encrypt.Cipher, error) {
 }
 
 // dial the server establish the ss connection
-func connectToServer(addr string, ciph *encrypt.Cipher, timeout int, enableUDP bool) (*ss.SecureConn, error) {
+func connectToServer(addr string, ciph *encrypt.Cipher, timeout int) (*ss.SecureConn, error) {
 	if ciph == nil {
 		return nil, ErrNilCipher
 	}
-
-	if enableUDP {
-		nc, err := net.Dial("udp", addr)
-		if err != nil {
-			return nil, err
-		}
-		conn := ss.NewSecureConn(nc, ciph.Copy(), timeout)
-		ss.Logger.Debug("ss local connecting to server with UDP", zap.String("server", addr), zap.Int("timeout", timeout))
-		return conn, nil
-	}
-
 	nc, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
-
 	conn := ss.NewSecureConn(nc, ciph.Copy(), timeout)
 	ss.Logger.Debug("ss local connecting to server with TCP", zap.String("server", addr), zap.Int("timeout", timeout))
 	return conn, nil
 }
 
+// dial the server establish the ss connection
+func connectToServerUDP(ciph *encrypt.Cipher, timeout int) (*ss.SecurePacketConn, error) {
+	if ciph == nil {
+		return nil, ErrNilCipher
+	}
+
+	//raddr, err := net.ResolveUDPAddr("udp", addr)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//nc, err := net.DialUDP("udp", nil, raddr)
+	//sconn := ss.NewSecurePacketConn(nc, ciph.Copy(), timeout)
+
+	sconn, err := ss.ListenPacket("udp", "", ciph.Copy(), timeout)
+	if err != nil {
+		return nil, err
+	}
+	ss.Logger.Debug("ss local connecting to server with UDP", zap.Int("timeout", timeout))
+	return sconn, nil
+}
+
 // handle the local socks5 connection and request remote server
-func handleConnection(server string, conn net.Conn, timeout int, enableUDP bool) {
+func handleConnection(server string, conn net.Conn, timeout int) {
 	ss.Logger.Debug("handle socks5 connect", zap.Stringer("source", conn.LocalAddr()), zap.Stringer("remote", conn.RemoteAddr()))
 	var err error
 	var closed bool
@@ -247,8 +257,8 @@ func handleConnection(server string, conn net.Conn, timeout int, enableUDP bool)
 	}
 
 	// After handshake ss will read the requset fron client to establish the proxy connection
-	// rawaddr is the socks5 request addr+port
-	rawaddr, err := getRequest(conn)
+	// target is the socks5 request addr+port
+	target, err := getRequest(conn)
 	if err != nil {
 		ss.Logger.Error("error in getting socks5 request", zap.Error(err))
 		return
@@ -268,7 +278,127 @@ func handleConnection(server string, conn net.Conn, timeout int, enableUDP bool)
 
 	// after socks5 hand shake, we'd get a ss server connection
 	// cipher should be copied pass
-	ssconn, err := connectToServer(server, ciphers[server], timeout, enableUDP)
+
+	ssconn, err := connectToServer(server, ciphers[server], timeout)
+	if err != nil {
+		ss.Logger.Error("erro in connect to ss server", zap.String("server", server), zap.Error(err))
+		return
+	}
+	defer func() {
+		if !closed {
+			ssconn.Close()
+		}
+	}()
+
+	if _, err := ssconn.Write(target); err != nil {
+		ss.Logger.Error("request ss remote failed", zap.Stringer("serverlocal", ssconn.LocalAddr()),
+			zap.Stringer("serverremote", ssconn.RemoteAddr()), zap.ByteString("target", target))
+		return
+	}
+
+	// ask the request with payload
+	// then read the connection and write back
+	// close the server at the right time
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go ss.PipeThenClose(conn, ssconn, timeout, func() {
+		wg.Done()
+		conn.Close()
+	})
+	ss.PipeThenClose(ssconn, conn, timeout, func() { ssconn.Close() })
+	wg.Wait()
+
+	closed = true
+	ss.Logger.Debug("closed server connection", zap.Stringer("serverlocal", ssconn.LocalAddr()), zap.Stringer("serverremote", ssconn.RemoteAddr()))
+	return
+}
+
+// handle the local socks5 connection and request remote server
+func handleUDPConnection(server string, conn net.Conn, timeout int) {
+	ss.Logger.Debug("handle socks5 connect", zap.Stringer("source", conn.LocalAddr()), zap.Stringer("remote", conn.RemoteAddr()))
+	var err error
+	var closed bool
+	defer func() {
+		if !closed {
+			conn.Close()
+		}
+	}()
+
+	// Hand shake happened when accept the socks5 negotiation request
+	// ss local will accept the negotiation or ask client to reset the connection when unexpect error occours
+	if err = handShake(conn); err != nil {
+		ss.Logger.Error("error in socks5 handShake", zap.Stringer("socks5client", conn.LocalAddr()), zap.Error(err))
+		return
+	}
+
+	// After handshake ss will read the requset fron client to establish the proxy connection
+	// target is the socks5 request addr+port
+	target, err := getRequest(conn)
+	if err != nil {
+		ss.Logger.Error("error in getting socks5 request", zap.Error(err))
+		return
+	}
+
+	// Sending connection established message immediately to client.
+	// This cost some round trip time for creating socks connection with the client.
+	// But if connection failed, the client will get connection reset error.
+	//
+	// Notice that the server response bind addr & port could be ignore by the socks5 client
+	// 0x00 0x00 0x00 0x00 0x10 0x10 is meaning less for bind addr block.
+	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10})
+	if err != nil {
+		ss.Logger.Error("send connection confirmation", zap.Error(err))
+		return
+	}
+
+	// after socks5 hand shake, we'd get a ss server connection
+	// cipher should be copied pass
+
+	// use the UDP forward to handle this-
+	if true {
+		serveraddr, err := net.ResolveUDPAddr("udp", server)
+		if err != nil {
+			return
+		}
+
+		ssconn, err := connectToServerUDP(ciphers[server], timeout)
+		if err != nil {
+			ss.Logger.Error("erro in connect to ss server", zap.String("server", server), zap.Error(err))
+			return
+		}
+		defer ssconn.Close()
+
+		// add the pool here
+		// read all the request from the incomming connection
+		bufin, err := ioutil.ReadAll(conn)
+		if err != nil {
+			return
+		}
+
+		n, err := ssconn.WriteTo(append(target, bufin...), serveraddr)
+		if err != nil {
+			ss.Logger.Error("[udp]write to server error", zap.Error(err))
+			return
+		}
+
+		bufout := make([]byte, 4096)
+		for {
+			n, src, err := ssconn.ReadFrom(bufout)
+		}
+		go func() {
+
+		}()
+
+		dstHost, headerLen, err := ss.UDPGetRequest(buf[:n])
+		if err != nil {
+			ss.Logger.Error("[udp]faided to decode request", zap.Error(err))
+			continue
+		}
+		ss.ForwardUDPConn(SecurePacketConn, srcAddr, dstHost, buf[:n], headerLen)
+		//////////
+	}
+
+	ssconn, err := connectToServer(server, ciphers[server], timeout)
 	if err != nil {
 		ss.Logger.Error("erro in connect to ss server", zap.String("server", server), zap.Error(err))
 		return

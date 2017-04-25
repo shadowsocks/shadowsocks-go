@@ -48,13 +48,14 @@ func (d *Dialer) Dial(network, addr string) (c net.Conn, err error) {
 
 // DialUDP is used to open an UDP connection on client side to and remote dst
 func (d *Dialer) DialUDP(network, laddr, raddr string) (c net.PacketConn, err error) {
-	return nil, fmt.Errorf("not implemented yet")
+	udpraddr, err := net.ResolveUDPAddr("udp", raddr)
+	return net.DialUDP("udp", nil, udpraddr)
 }
 
 // ListenPacket is used to open an UDP connection on client side
 func (d *Dialer) ListenPacket(network, laddr string) (c net.PacketConn, err error) {
 	if strings.HasPrefix(network, "udp") {
-		return ListenPacket(network, laddr, d.cipher.Copy())
+		return ListenPacket(network, laddr, d.cipher.Copy(), d.timeout)
 	}
 	return nil, fmt.Errorf("unsupported connection type: %s", network)
 }
