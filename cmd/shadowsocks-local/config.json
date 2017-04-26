@@ -6,10 +6,7 @@
     "password":"foo",
     "method":"aes-256-cfb",
     "timeout":0,
-    "port_password":{
-        ":16886":"arthur"
-    },
     "server_password":{
-        "127.0.0.1:16886":"arthur"
+        "127.0.0.1:16886":"foo"
     }
 }

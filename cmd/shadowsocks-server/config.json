@@ -1,15 +1,9 @@
 {
-    "server_addr":"127.0.0.1",
     "server_port":"16886",
-    "local_addr":"127.0.0.1",
-    "local_port":16636,
     "password":"foo",
     "method":"aes-256-cfb",
     "timeout":0,
     "port_password":{
-        ":16886":"arthur"
-    },
-    "server_password":{
-        "172.0.0.1:16886":"arthur"
+        "16886":"foo"
     }
 }

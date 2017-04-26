@@ -16,19 +16,19 @@ import (
 // Server and ServerPort and Password shoud be care when is used in ss local server module
 // NOTICE if the config file option is setted, the config option will be disabled automaticly
 type Config struct {
-	Server     string `json:"server_addr"` // shadowsocks remote Server address, for multi server split them with comma
-	ServerPort string `json:"server_port"` // shadowsocks remote Server port, split with comma when multi user is enabled
-	Local      string `json:"local_addr"`  // shadowsocks local socks5 Server address
-	LocalPort  int    `json:"local_port"`  // shadowsocks local socks5 Server port
-	Password   string `json:"password"`    // shadowsocks remote server password, for multi server password should plase in order and split eith comma
-	Method     string `json:"method"`      // encryption method for ss local & ss server communication
-	Timeout    int    `json:"timeout"`     // shadowsocks conversation timeout limit
+	Server     string `json:"server_addr"` // Both side. shadowsocks remote Server address, for multi server split them with comma
+	ServerPort string `json:"server_port"` // Server side. shadowsocks remote Server port, split with comma when multi user is enabled
+	Local      string `json:"local_addr"`  // Local side. shadowsocks local socks5 Server address
+	LocalPort  int    `json:"local_port"`  // Local side. shadowsocks local socks5 Server port
+	Password   string `json:"password"`    // Both side. shadowsocks remote server password, for multi server password should plase in order and split eith comma
+	Method     string `json:"method"`      // Both side. encryption method for ss local & ss server communication
+	Timeout    int    `json:"timeout"`     // Both side. shadowsocks conversation timeout limit
 
 	// following options are only used by server
-	PortPassword map[string]string `json:"port_password"` // shadowsocks mutli user password
+	PortPassword map[string]string `json:"port_password"` // Server side. shadowsocks mutli user password
 
 	// following options are only used by client
-	ServerPassword map[string]string `json:"server_password"` // shadowsocks local mutli server password
+	ServerPassword map[string]string `json:"server_password"` // Local side. shadowsocks local mutli server password
 }
 
 func (c *Config) String() string {
@@ -143,6 +143,13 @@ func ParseConfig(path string) (conf *Config, err error) {
 
 // ProcessConfig fill in the map after the config is unmarshaled
 func ProcessConfig(c *Config) {
+	if c.PortPassword == nil {
+		c.PortPassword = make(map[string]string)
+	}
+	if c.ServerPassword == nil {
+		c.ServerPassword = make(map[string]string)
+	}
+
 	servers := c.GetServerArray()
 	serverports := c.GetServerPortArray()
 	passwds := c.GetPasswordArray()
