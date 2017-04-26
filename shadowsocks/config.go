@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
+	"sort"
 	"strings"
+	"time"
 )
 
 // Config is used in both ss-server & ss-local server, notice the different role in ss
@@ -14,7 +17,9 @@ import (
 // ServerPort and Password shoud be placed in order if multi user is enabled
 // 2) ss local server:
 // Server and ServerPort and Password shoud be care when is used in ss local server module
-// NOTICE if the config file option is setted, the config option will be disabled automaticly
+//
+// NOTICE if the config file is setted, the config option will be disabled automaticly
+
 type Config struct {
 	Server     string `json:"server_addr"` // shadowsocks remote Server address, for multi server split them with comma
 	ServerPort string `json:"server_port"` // shadowsocks remote Server port, split with comma when multi user is enabled
@@ -174,4 +179,47 @@ func ProcessConfig(c *Config) {
 			c.PortPassword[addr] = passwds[i]
 		}
 	}
+}
+
+// Detect used only when multi tcp based ss server is setted for the client
+// Detect will try to dial each server to caculate a delay and sort server
+func (c *Config) Detect() error {
+	if len(c.GetServerArray()) < 2 {
+		return nil
+	}
+
+	Logger.Info("detecting the server delay and choose best server")
+	type pair struct {
+		server string
+		delay  time.Duration
+	}
+
+	ping := func(addr string) time.Duration {
+		t := time.Now()
+		_, err := net.Dial("tcp", addr)
+		ts := time.Now().Sub(t)
+		if err != nil {
+			return 0xfffffff
+		}
+		return ts
+	}
+
+	var ss []pair
+	for _, v := range c.GetServerArray() {
+		t := ping(v)
+		ss = append(ss, pair{v, t})
+	}
+	sort.Slice(ss, func(i, j int) bool { return ss[i].delay < ss[j].delay })
+
+	var sortedserver string
+	for i, v := range ss {
+		if i == 0 {
+			sortedserver += v.server
+		}
+		sortedserver += ","
+		sortedserver += v.server
+	}
+	c.Server = sortedserver
+
+	return nil
 }
