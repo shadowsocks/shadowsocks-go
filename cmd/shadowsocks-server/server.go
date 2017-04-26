@@ -5,10 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -210,7 +212,7 @@ func checkConfig(config *ss.Config) error {
 func main() {
 	var err error
 	var udp, printVer bool
-	var Timeout, core int
+	var Timeout, core, matrixport int
 	var ServerPort, configFile, Password, Method string
 
 	var config *ss.Config
@@ -222,6 +224,7 @@ func main() {
 	flag.IntVar(&Timeout, "t", 300, "timeout in seconds")
 	flag.StringVar(&Method, "m", "aes-256-cfb", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
+	flag.IntVar(&matrixport, "pprof", 0, "set the metrix port to Enable the pprof and matrix(TODO), keep it 0 will disable this feature")
 	flag.StringVar(&ss.Level, "l", "info", "given the logger level for ss to logout info, can be set in debug info warn error")
 	flag.BoolVar(&udp, "u", false, "enable UDP service")
 	flag.Parse()
@@ -237,6 +240,11 @@ func main() {
 	// init the logger
 	ss.SetLogger()
 	ss.Logger.Info("Starting shadowsocks remote server")
+
+	// set the pprof
+	if matrixport > 0 {
+		go http.ListenAndServe(":"+strconv.Itoa(matrixport), nil)
+	}
 
 	// set the options for the config new
 	var opts []ss.ConfOption
