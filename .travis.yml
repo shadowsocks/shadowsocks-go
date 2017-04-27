@@ -1,6 +1,11 @@
 language: go
 go:
   - 1.7.4
+  - 1.8
+sudo: false
+
+before_install:
+  - go get -v -u github.com/shadowsocks/shadowsocks-go/cmd/shadowsocks-local
+  - go get -v -u github.com/shadowsocks/shadowsocks-go/cmd/shadowsocks-server
 script:
   - PATH=$PATH:$HOME/gopath/bin bash -x ./script/test.sh
-sudo: false
