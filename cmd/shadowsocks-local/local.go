@@ -4,109 +4,128 @@ import (
 	"encoding/binary"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
-	"log"
-	"math/rand"
 	"net"
 	"os"
-	"path"
+	"os/signal"
 	"strconv"
-	"strings"
+	"sync"
+	"syscall"
 	"time"
 
+	"go.uber.org/zap"
+
+	"github.com/shadowsocks/shadowsocks-go/encrypt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
-var debug ss.DebugLog
-
 var (
-	errAddrType      = errors.New("socks addr type not supported")
-	errVer           = errors.New("socks version not supported")
-	errMethod        = errors.New("socks only support 1 method now")
-	errAuthExtraData = errors.New("socks authentication get extra data")
-	errReqExtraData  = errors.New("socks request get extra data")
-	errCmd           = errors.New("socks command not supported")
+	ErrAddrType          = errors.New("socks addr type not supported")
+	ErrVer               = errors.New("socks version not supported")
+	ErrMethod            = errors.New("socks only support 1 method now")
+	ErrAuthExtraData     = errors.New("socks authentication get extra data")
+	ErrReqExtraData      = errors.New("socks request get extra data")
+	ErrCmd               = errors.New("socks command not supported")
+	ErrServerInfoIllegal = errors.New("shadowsocks server address illegal or server port illegal")
+	ErrInvalidArguments  = errors.New("arguments illegal")
+	ErrInvalidPassword   = errors.New("password illegal")
+	ErrReadUnexpectEOF   = errors.New("unexpect EOF occoured")
 )
 
 const (
-	socksVer5       = 5
-	socksCmdConnect = 1
+	idVer     = 0 // socks version index
+	idNmethod = 1
+	idCmd     = 1
+	idType    = 3 // address type index
+	idIP0     = 4 // ip addres start index
+	idDmLen   = 4 // domain address length index
+	idDm0     = 5 // domain address start index
+
+	socksVer5       = 0x05 // socks5 version
+	socksCmdConnect = 0x01 // socks5 connect command
+	typeIPv4        = 0x01 // type is ipv4 address
+	typeDm          = 0x03 // type is domain address
+	typeIPv6        = 0x04 // type is ipv6 address
+
+	lenIPv4   = 3 + 1 + net.IPv4len + 2 // 3(ver+cmd+rsv) + 1addrType + ipv4 + 2port
+	lenIPv6   = 3 + 1 + net.IPv6len + 2 // 3(ver+cmd+rsv) + 1addrType + ipv6 + 2port
+	lenDmBase = 3 + 1 + 1 + 2           // 3 + 1addrType + 1addrLen + 2port, plus addrLen
 )
 
-func init() {
-	rand.Seed(time.Now().Unix())
-}
+var (
+	// HandShakeTimeout give out the socks5 handshake time out
+	HandShakeTimeout = 15
+	// ErrNilCipher give out the illegal cipher
+	ErrNilCipher = errors.New("error nil cipher")
+)
 
+// handle the accepted connection ad socks5
 func handShake(conn net.Conn) (err error) {
-	const (
-		idVer     = 0
-		idNmethod = 1
-	)
+	var n int
 	// version identification and method selection message in theory can have
 	// at most 256 methods, plus version and nmethod field in total 258 bytes
 	// the current rfc defines only 3 authentication methods (plus 2 reserved),
 	// so it won't be such long in practice
-
 	buf := make([]byte, 258)
 
-	var n int
-	ss.SetReadTimeout(conn)
+	// set the handshake time out
+	conn.SetDeadline(time.Now().Add(time.Second * time.Duration(HandShakeTimeout)))
+
 	// make sure we get the nmethod field
 	if n, err = io.ReadAtLeast(conn, buf, idNmethod+1); err != nil {
-		return
+		if n == 0 {
+			return
+		}
 	}
+
+	// check the version
 	if buf[idVer] != socksVer5 {
-		return errVer
+		return ErrVer
 	}
+
+	//nmethods: The NMETHODS field contains the number of method identifier
+	// octets that appear in the METHODS field.
 	nmethod := int(buf[idNmethod])
 	msgLen := nmethod + 2
-	if n == msgLen { // handshake done, common case
-		// do nothing, jump directly to send confirmation
+	if n == msgLen {
+		// handshake done, normal case
+		// do nothing
+		// send confirmation
 	} else if n < msgLen { // has more methods to read, rare case
 		if _, err = io.ReadFull(conn, buf[n:msgLen]); err != nil {
 			return
 		}
-	} else { // error, should not get extra data
-		return errAuthExtraData
+	} else {
+		// tell client reset connection
+		// should not get extra data
+		conn.Write([]byte{socksVer5, 0xFF})
+		return ErrAuthExtraData
 	}
+
 	// send confirmation: version 5, no authentication required
-	_, err = conn.Write([]byte{socksVer5, 0})
+	_, err = conn.Write([]byte{socksVer5, 0x00})
 	return
 }
 
-func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
-	const (
-		idVer   = 0
-		idCmd   = 1
-		idType  = 3 // address type index
-		idIP0   = 4 // ip addres start index
-		idDmLen = 4 // domain address length index
-		idDm0   = 5 // domain address start index
-
-		typeIPv4 = 1 // type is ipv4 address
-		typeDm   = 3 // type is domain address
-		typeIPv6 = 4 // type is ipv6 address
-
-		lenIPv4   = 3 + 1 + net.IPv4len + 2 // 3(ver+cmd+rsv) + 1addrType + ipv4 + 2port
-		lenIPv6   = 3 + 1 + net.IPv6len + 2 // 3(ver+cmd+rsv) + 1addrType + ipv6 + 2port
-		lenDmBase = 3 + 1 + 1 + 2           // 3 + 1addrType + 1addrLen + 2port, plus addrLen
-	)
+// getRequest return the socks5 request from the client
+// return the type+addr+port as rawaddr as the request payload
+func getRequest(conn net.Conn) (rawaddr []byte, err error) {
 	// refer to getRequest in server.go for why set buffer size to 263
 	buf := make([]byte, 263)
 	var n int
-	ss.SetReadTimeout(conn)
-	// read till we get possible domain length field
+
+	// first of all we read the socks5 request
+	// read till we get possible domain length
 	if n, err = io.ReadAtLeast(conn, buf, idDmLen+1); err != nil {
 		return
 	}
 	// check version and cmd
 	if buf[idVer] != socksVer5 {
-		err = errVer
+		err = ErrVer
 		return
 	}
 	if buf[idCmd] != socksCmdConnect {
-		err = errCmd
+		err = ErrCmd
 		return
 	}
 
@@ -119,50 +138,332 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 	case typeDm:
 		reqLen = int(buf[idDmLen]) + lenDmBase
 	default:
-		err = errAddrType
+		err = ErrAddrType
 		return
 	}
 
 	if n == reqLen {
-		// common case, do nothing
+		// common case cause we have read all the info (host + port), do nothing
 	} else if n < reqLen { // rare case
+		ss.Logger.Warn("error in read the request arddr, less than expect")
 		if _, err = io.ReadFull(conn, buf[n:reqLen]); err != nil {
 			return
 		}
 	} else {
-		err = errReqExtraData
+		err = ErrReqExtraData
 		return
 	}
 
+	// only contain the host + port
 	rawaddr = buf[idType:reqLen]
 
-	if debug {
-		switch buf[idType] {
-		case typeIPv4:
-			host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
-		case typeIPv6:
-			host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
-		case typeDm:
-			host = string(buf[idDm0 : idDm0+buf[idDmLen]])
-		}
-		port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
-		host = net.JoinHostPort(host, strconv.Itoa(int(port)))
+	var host string
+	switch buf[idType] {
+	case typeIPv4:
+		host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
+	case typeIPv6:
+		host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
+	case typeDm:
+		host = string(buf[idDm0 : idDm0+buf[idDmLen]])
 	}
+	port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
+	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 
+	ss.Logger.Debug("get request addr", zap.String("host", host))
 	return
 }
 
 type ServerCipher struct {
 	server string
-	cipher *ss.Cipher
+	cipher *encrypt.Cipher
 }
 
-var servers struct {
-	srvCipher []*ServerCipher
-	failCnt   []int // failed connection count
+// prepare the infomation for connection to the servers set in the config
+func prepareToConnect(c *ss.Config) (map[string]*encrypt.Cipher, error) {
+	// connect to server will establish all the server connection with given server address and port
+	cips := make(map[string]*encrypt.Cipher, len(c.GetServerArray()))
+
+	if c.Server != "" && c.ServerPort != "" {
+		ss := c.Server + ":" + c.ServerPort
+		cipher, err := encrypt.NewCipher(c.Method, c.Password)
+		if err != nil {
+			return nil, err
+		}
+		cips[ss] = cipher
+	}
+
+	for server, passwd := range c.ServerPassword {
+		cipher, err := encrypt.NewCipher(c.Method, passwd)
+		if err != nil {
+			return nil, err
+		}
+		cips[server] = cipher
+	}
+	return cips, nil
 }
 
-func parseServerConfig(config *ss.Config) {
+// dial the server establish the ss connection
+func connectToServer(addr string, ciph *encrypt.Cipher, timeout int, enableUDP bool) (*ss.SecureConn, error) {
+	if ciph == nil {
+		return nil, ErrNilCipher
+	}
+
+	if enableUDP {
+		nc, err := net.Dial("udp", addr)
+		if err != nil {
+			return nil, err
+		}
+		conn := ss.NewSecureConn(nc, ciph.Copy(), timeout)
+		ss.Logger.Debug("ss local connecting to server with UDP", zap.String("server", addr), zap.Int("timeout", timeout))
+		return conn, nil
+	}
+
+	nc, err := net.Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+
+	conn := ss.NewSecureConn(nc, ciph.Copy(), timeout)
+	ss.Logger.Debug("ss local connecting to server with TCP", zap.String("server", addr), zap.Int("timeout", timeout))
+	return conn, nil
+}
+
+// handle the local socks5 connection and request remote server
+func handleConnection(server string, conn net.Conn, timeout int, enableUDP bool) {
+	ss.Logger.Debug("handle socks5 connect", zap.Stringer("source", conn.LocalAddr()), zap.Stringer("remote", conn.RemoteAddr()))
+	var err error
+	var closed bool
+	defer func() {
+		if !closed {
+			conn.Close()
+		}
+	}()
+
+	// Hand shake happened when accept the socks5 negotiation request
+	// ss local will accept the negotiation or ask client to reset the connection when unexpect error occours
+	if err = handShake(conn); err != nil {
+		ss.Logger.Error("error in socks5 handShake", zap.Stringer("socks5client", conn.LocalAddr()), zap.Error(err))
+		return
+	}
+
+	// After handshake ss will read the requset fron client to establish the proxy connection
+	// rawaddr is the socks5 request addr+port
+	rawaddr, err := getRequest(conn)
+	if err != nil {
+		ss.Logger.Error("error in getting socks5 request", zap.Error(err))
+		return
+	}
+
+	// Sending connection established message immediately to client.
+	// This cost some round trip time for creating socks connection with the client.
+	// But if connection failed, the client will get connection reset error.
+	//
+	// Notice that the server response bind addr & port could be ignore by the socks5 client
+	// 0x00 0x00 0x00 0x00 0x10 0x10 is meaning less for bind addr block.
+	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10})
+	if err != nil {
+		ss.Logger.Error("send connection confirmation", zap.Error(err))
+		return
+	}
+
+	// after socks5 hand shake, we'd get a ss server connection
+	// cipher should be copied pass
+	ssconn, err := connectToServer(server, ciphers[server], timeout, enableUDP)
+	if err != nil {
+		ss.Logger.Error("erro in connect to ss server", zap.String("server", server), zap.Error(err))
+		return
+	}
+	defer func() {
+		if !closed {
+			ssconn.Close()
+		}
+	}()
+
+	if _, err := ssconn.Write(rawaddr); err != nil {
+		ss.Logger.Error("request ss remote failed", zap.Stringer("serverlocal", ssconn.LocalAddr()),
+			zap.Stringer("serverremote", ssconn.RemoteAddr()), zap.ByteString("rawaddr", rawaddr))
+		return
+	}
+
+	// ask the request with payload
+	// then read the connection and write back
+	// close the server at the right time
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go ss.PipeThenClose(conn, ssconn, timeout, func() {
+		wg.Done()
+		conn.Close()
+	})
+	ss.PipeThenClose(ssconn, conn, timeout, func() { ssconn.Close() })
+	wg.Wait()
+
+	closed = true
+	ss.Logger.Debug("closed server connection", zap.Stringer("serverlocal", ssconn.LocalAddr()), zap.Stringer("serverremote", ssconn.RemoteAddr()))
+	return
+}
+
+var ciphers map[string]*encrypt.Cipher
+
+func run(config *ss.Config, enableUDP bool) {
+	laddr := net.JoinHostPort(config.Local, strconv.Itoa(config.LocalPort))
+	ln, err := net.Listen("tcp", laddr)
+	if err != nil {
+		ss.Logger.Fatal("error in shadwsocks local server listen", zap.Error(err))
+	}
+	ss.Logger.Info("starting local socks5 server", zap.String("listenAddr", laddr))
+
+	// prepare connect to the server ciphers
+	cps, err := prepareToConnect(config)
+	if err != nil {
+		ss.Logger.Fatal("error in shadwsocks local server prepaer the cipher", zap.Error(err))
+	}
+
+	ciphers = cps
+	servers := config.GetServerArray()
+	ports := config.GetServerPortArray()
+	for i, _ := range servers {
+		servers[i] = net.JoinHostPort(servers[i], ports[i])
+	}
+
+	// TODO we need a strategy auto ping each server
+	// and sort to choose the best server in use
+	// this should be done in background every hours
+	// go detectServer()
+
+	// main loop for socks5 accept incoming request
+	for {
+		server := servers[0]
+		conn, err := ln.Accept()
+		if err != nil {
+			ss.Logger.Error("error in local server accept socks5", zap.Error(err))
+		} else {
+			go handleConnection(server, conn, config.Timeout, enableUDP)
+		}
+	}
+}
+
+// main locical about the local server
+func main() {
+	var configFile, ServerAddr, LocalAddr, Password, Method string
+	var ServerPort, Timeout, LocalPort int
+	var printVer, UDP bool
+	var config *ss.Config
+	var err error
+
+	flag.BoolVar(&printVer, "v", false, "print version")
+	flag.StringVar(&configFile, "c", "", "specify config file")
+	flag.StringVar(&LocalAddr, "addr", "127.0.0.1", "local socks5 proxy serve address")
+	flag.IntVar(&LocalPort, "port", 0, "local socks5 proxy port")
+	flag.StringVar(&ServerAddr, "saddr", "", "server address")
+	flag.IntVar(&ServerPort, "sport", 0, "server port")
+	flag.StringVar(&Password, "k", "", "server password")
+	flag.IntVar(&Timeout, "t", 300, "timeout in seconds")
+	flag.StringVar(&Method, "m", "aes-256-cfb", "encryption method, default: aes-256-cfb. end with -auth mean enable OTA")
+	flag.StringVar(&ss.Level, "l", "info", "given the logger level for ss to logout info, can be set in debug info warn error panic")
+	flag.BoolVar(&UDP, "u", false, "use the udp to serve")
+
+	// show the help info when parse flags failed
+	flag.Parse()
+	if !flag.Parsed() {
+		flag.Usage()
+		os.Exit(0)
+	}
+	if printVer {
+		ss.PrintVersion()
+		os.Exit(0)
+	}
+
+	// init the logger
+	ss.SetLogger()
+
+	// set the options for the config new
+	var opts []ss.ConfOption
+
+	// choose the encrypt method then check
+	if Method == "" {
+		Method = "aes-256-cfb"
+		opts = append(opts, ss.WithEncryptMethod("aes-256-cfb"))
+	}
+
+	if err = encrypt.CheckCipherMethod(Method); err != nil {
+		ss.Logger.Fatal("error in check the cipher method", zap.String("method", Method), zap.Error(err))
+	}
+	opts = append(opts, ss.WithEncryptMethod(Method))
+
+	if ServerAddr != "" {
+		opts = append(opts, ss.WithServer(ServerAddr))
+	}
+	if ServerPort > 0 {
+		opts = append(opts, ss.WithServerPort(strconv.Itoa(ServerPort)))
+	}
+	if Password != "" {
+		opts = append(opts, ss.WithPassword(Password))
+	}
+	if LocalAddr != "" {
+		opts = append(opts, ss.WithLocalAddr(LocalAddr))
+	}
+	if LocalPort != 0 {
+		opts = append(opts, ss.WithLocalPort(LocalPort))
+	}
+
+	config = ss.NewConfig(opts...)
+
+	// parse the config from the config file
+	if configFile != "" {
+		if config, err = ss.ParseConfig(configFile); err != nil {
+			ss.Logger.Fatal("error in read the config file", zap.String("config file", configFile), zap.Error(err))
+		}
+	}
+
+	// check the config
+	if err = checkConfig(config); err != nil {
+		ss.Logger.Fatal("error in check the config for the local shadowsocks server", zap.Error(err))
+	}
+
+	ss.Logger.Debug("show the ss config", zap.Stringer("config", config))
+	// start the socks5 server
+	go run(config, UDP)
+
+	waitSignal()
+}
+
+func waitSignal() {
+	var sigChan = make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+	for {
+		s := <-sigChan
+		switch s {
+		case syscall.SIGHUP:
+			ss.Logger.Warn("receive the KILL -HUP rebooting")
+			fallthrough
+			// TODO add the reboot for the ss local
+		case syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT:
+			ss.Logger.Info("Caught signal , shuting down", zap.Stringer("signal", s))
+			os.Exit(0)
+		default:
+			ss.Logger.Error("Caught meaning lease signal", zap.Stringer("signal", s))
+		}
+	}
+}
+
+func checkConfig(config *ss.Config) error {
+	// server addr port
+	// passwd
+	// local port
+	if config.Local == "" || config.LocalPort < 0 {
+		return ErrServerInfoIllegal
+	}
+
+	if config.ServerPassword == nil {
+		if config.Server == "" || config.ServerPort == "" {
+			return ErrInvalidPassword
+		}
+
+		if config.Password == "" {
+			return ErrInvalidPassword
+		}
+	}
+
 	hasPort := func(s string) bool {
 		_, port, err := net.SplitHostPort(s)
 		if err != nil {
@@ -171,260 +472,14 @@ func parseServerConfig(config *ss.Config) {
 		return port != ""
 	}
 
-	if len(config.ServerPassword) == 0 {
-		method := config.Method
-		if config.Auth {
-			method += "-auth"
+	for addr, pwd := range config.ServerPassword {
+		if !hasPort(addr) {
+			delete(config.ServerPassword, addr)
 		}
-		// only one encryption table
-		cipher, err := ss.NewCipher(method, config.Password)
-		if err != nil {
-			log.Fatal("Failed generating ciphers:", err)
-		}
-		srvPort := strconv.Itoa(config.ServerPort)
-		srvArr := config.GetServerArray()
-		n := len(srvArr)
-		servers.srvCipher = make([]*ServerCipher, n)
-
-		for i, s := range srvArr {
-			if hasPort(s) {
-				log.Println("ignore server_port option for server", s)
-				servers.srvCipher[i] = &ServerCipher{s, cipher}
-			} else {
-				servers.srvCipher[i] = &ServerCipher{net.JoinHostPort(s, srvPort), cipher}
-			}
-		}
-	} else {
-		// multiple servers
-		n := len(config.ServerPassword)
-		servers.srvCipher = make([]*ServerCipher, n)
-
-		cipherCache := make(map[string]*ss.Cipher)
-		i := 0
-		for _, serverInfo := range config.ServerPassword {
-			if len(serverInfo) < 2 || len(serverInfo) > 3 {
-				log.Fatalf("server %v syntax error\n", serverInfo)
-			}
-			server := serverInfo[0]
-			passwd := serverInfo[1]
-			encmethod := ""
-			if len(serverInfo) == 3 {
-				encmethod = serverInfo[2]
-			}
-			if !hasPort(server) {
-				log.Fatalf("no port for server %s\n", server)
-			}
-			// Using "|" as delimiter is safe here, since no encryption
-			// method contains it in the name.
-			cacheKey := encmethod + "|" + passwd
-			cipher, ok := cipherCache[cacheKey]
-			if !ok {
-				var err error
-				cipher, err = ss.NewCipher(encmethod, passwd)
-				if err != nil {
-					log.Fatal("Failed generating ciphers:", err)
-				}
-				cipherCache[cacheKey] = cipher
-			}
-			servers.srvCipher[i] = &ServerCipher{server, cipher}
-			i++
-		}
-	}
-	servers.failCnt = make([]int, len(servers.srvCipher))
-	for _, se := range servers.srvCipher {
-		log.Println("available remote server", se.server)
-	}
-	return
-}
-
-func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn, err error) {
-	se := servers.srvCipher[serverId]
-	remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
-	if err != nil {
-		log.Println("error connecting to shadowsocks server:", err)
-		const maxFailCnt = 30
-		if servers.failCnt[serverId] < maxFailCnt {
-			servers.failCnt[serverId]++
-		}
-		return nil, err
-	}
-	debug.Printf("connected to %s via %s\n", addr, se.server)
-	servers.failCnt[serverId] = 0
-	return
-}
-
-// Connection to the server in the order specified in the config. On
-// connection failure, try the next server. A failed server will be tried with
-// some probability according to its fail count, so we can discover recovered
-// servers.
-func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) {
-	const baseFailCnt = 20
-	n := len(servers.srvCipher)
-	skipped := make([]int, 0)
-	for i := 0; i < n; i++ {
-		// skip failed server, but try it with some probability
-		if servers.failCnt[i] > 0 && rand.Intn(servers.failCnt[i]+baseFailCnt) != 0 {
-			skipped = append(skipped, i)
-			continue
-		}
-		remote, err = connectToServer(i, rawaddr, addr)
-		if err == nil {
-			return
-		}
-	}
-	// last resort, try skipped servers, not likely to succeed
-	for _, i := range skipped {
-		remote, err = connectToServer(i, rawaddr, addr)
-		if err == nil {
-			return
-		}
-	}
-	return nil, err
-}
-
-func handleConnection(conn net.Conn) {
-	if debug {
-		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
-	}
-	closed := false
-	defer func() {
-		if !closed {
-			conn.Close()
-		}
-	}()
-
-	var err error = nil
-	if err = handShake(conn); err != nil {
-		log.Println("socks handshake:", err)
-		return
-	}
-	rawaddr, addr, err := getRequest(conn)
-	if err != nil {
-		log.Println("error getting request:", err)
-		return
-	}
-	// Sending connection established message immediately to client.
-	// This some round trip time for creating socks connection with the client.
-	// But if connection failed, the client will get connection reset error.
-	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
-	if err != nil {
-		debug.Println("send connection confirmation:", err)
-		return
-	}
-
-	remote, err := createServerConn(rawaddr, addr)
-	if err != nil {
-		if len(servers.srvCipher) > 1 {
-			log.Println("Failed connect to all avaiable shadowsocks server")
-		}
-		return
-	}
-	defer func() {
-		if !closed {
-			remote.Close()
-		}
-	}()
-
-	go ss.PipeThenClose(conn, remote)
-	ss.PipeThenClose(remote, conn)
-	closed = true
-	debug.Println("closed connection to", addr)
-}
-
-func run(listenAddr string) {
-	ln, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("starting local socks5 server at %v ...\n", listenAddr)
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			log.Println("accept:", err)
-			continue
-		}
-		go handleConnection(conn)
-	}
-}
-
-func enoughOptions(config *ss.Config) bool {
-	return config.Server != nil && config.ServerPort != 0 &&
-		config.LocalPort != 0 && config.Password != ""
-}
-
-func main() {
-	log.SetOutput(os.Stdout)
-
-	var configFile, cmdServer, cmdLocal string
-	var cmdConfig ss.Config
-	var printVer bool
-
-	flag.BoolVar(&printVer, "version", false, "print version")
-	flag.StringVar(&configFile, "c", "config.json", "specify config file")
-	flag.StringVar(&cmdServer, "s", "", "server address")
-	flag.StringVar(&cmdLocal, "b", "", "local address, listen only to this address if specified")
-	flag.StringVar(&cmdConfig.Password, "k", "", "password")
-	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
-	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
-	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
-	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
-	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
-	flag.BoolVar(&cmdConfig.Auth, "A", false, "one time auth")
-
-	flag.Parse()
-
-	if printVer {
-		ss.PrintVersion()
-		os.Exit(0)
-	}
-
-	cmdConfig.Server = cmdServer
-	ss.SetDebug(debug)
-
-	if strings.HasSuffix(cmdConfig.Method, "-auth") {
-		cmdConfig.Method = cmdConfig.Method[:len(cmdConfig.Method)-5]
-		cmdConfig.Auth = true
-	}
-
-	exists, err := ss.IsFileExists(configFile)
-	// If no config file in current directory, try search it in the binary directory
-	// Note there's no portable way to detect the binary directory.
-	binDir := path.Dir(os.Args[0])
-	if (!exists || err != nil) && binDir != "" && binDir != "." {
-		oldConfig := configFile
-		configFile = path.Join(binDir, "config.json")
-		log.Printf("%s not found, try config file %s\n", oldConfig, configFile)
-	}
-
-	config, err := ss.ParseConfig(configFile)
-	if err != nil {
-		config = &cmdConfig
-		if !os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", configFile, err)
-			os.Exit(1)
-		}
-	} else {
-		ss.UpdateConfig(config, &cmdConfig)
-	}
-	if config.Method == "" {
-		config.Method = "aes-256-cfb"
-	}
-	if len(config.ServerPassword) == 0 {
-		if !enoughOptions(config) {
-			fmt.Fprintln(os.Stderr, "must specify server address, password and both server/local port")
-			os.Exit(1)
-		}
-	} else {
-		if config.Password != "" || config.ServerPort != 0 || config.GetServerArray() != nil {
-			fmt.Fprintln(os.Stderr, "given server_password, ignore server, server_port and password option:", config)
-		}
-		if config.LocalPort == 0 {
-			fmt.Fprintln(os.Stderr, "must specify local port")
-			os.Exit(1)
+		if pwd == "" {
+			ss.Logger.Fatal("Failed generating ciphers", zap.String("address", addr))
 		}
 	}
 
-	parseServerConfig(config)
-
-	run(cmdLocal + ":" + strconv.Itoa(config.LocalPort))
+	return nil
 }

@@ -1,455 +1,303 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"log"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
+	"go.uber.org/zap"
+
+	"github.com/shadowsocks/shadowsocks-go/encrypt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
-const (
-	idType  = 0 // address type index
-	idIP0   = 1 // ip addres start index
-	idDmLen = 1 // domain address length index
-	idDm0   = 2 // domain address start index
+const logCntDelta int32 = 100
 
-	typeIPv4 = 1 // type is ipv4 address
-	typeDm   = 3 // type is domain address
-	typeIPv6 = 4 // type is ipv6 address
+var connCnt int32
+var nextLogConnCnt = logCntDelta
 
-	lenIPv4     = net.IPv4len + 2 // ipv4 + 2port
-	lenIPv6     = net.IPv6len + 2 // ipv6 + 2port
-	lenDmBase   = 2               // 1addrLen + 2port, plus addrLen
-	lenHmacSha1 = 10
-)
-
-var debug ss.DebugLog
-var udp bool
-
-func getRequest(conn *ss.Conn, auth bool) (host string, ota bool, err error) {
-	ss.SetReadTimeout(conn)
-
-	// buf size should at least have the same size with the largest possible
-	// request size (when addrType is 3, domain name has at most 256 bytes)
-	// 1(addrType) + 1(lenByte) + 255(max length address) + 2(port) + 10(hmac-sha1)
-	buf := make([]byte, 269)
-	// read till we get possible domain length field
-	if _, err = io.ReadFull(conn, buf[:idType+1]); err != nil {
+// handleConnection forward the request to the destination
+func handleConnection(conn *ss.SecureConn, timeout int) {
+	// first do the decode for ss protocol
+	host, err := ss.GetRequest(conn)
+	if err != nil {
+		ss.Logger.Error("ss server get request failed", zap.Stringer("src", conn.RemoteAddr()), zap.Error(err))
 		return
 	}
+	ss.Logger.Info("ss server accept the ss request", zap.Stringer("src", conn.RemoteAddr()), zap.String("dst", host))
 
-	var reqStart, reqEnd int
-	addrType := buf[idType]
-	switch addrType & ss.AddrMask {
-	case typeIPv4:
-		reqStart, reqEnd = idIP0, idIP0+lenIPv4
-	case typeIPv6:
-		reqStart, reqEnd = idIP0, idIP0+lenIPv6
-	case typeDm:
-		if _, err = io.ReadFull(conn, buf[idType+1:idDmLen+1]); err != nil {
-			return
-		}
-		reqStart, reqEnd = idDm0, idDm0+int(buf[idDmLen])+lenDmBase
-	default:
-		err = fmt.Errorf("addr type %d not supported", addrType&ss.AddrMask)
-		return
-	}
-
-	if _, err = io.ReadFull(conn, buf[reqStart:reqEnd]); err != nil {
-		return
-	}
-
-	// Return string for typeIP is not most efficient, but browsers (Chrome,
-	// Safari, Firefox) all seems using typeDm exclusively. So this is not a
-	// big problem.
-	switch addrType & ss.AddrMask {
-	case typeIPv4:
-		host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
-	case typeIPv6:
-		host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
-	case typeDm:
-		host = string(buf[idDm0 : idDm0+int(buf[idDmLen])])
-	}
-	// parse port
-	port := binary.BigEndian.Uint16(buf[reqEnd-2 : reqEnd])
-	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
-	// if specified one time auth enabled, we should verify this
-	if auth || addrType&ss.OneTimeAuthMask > 0 {
-		ota = true
-		if _, err = io.ReadFull(conn, buf[reqEnd:reqEnd+lenHmacSha1]); err != nil {
-			return
-		}
-		iv := conn.GetIv()
-		key := conn.GetKey()
-		actualHmacSha1Buf := ss.HmacSha1(append(iv, key...), buf[:reqEnd])
-		if !bytes.Equal(buf[reqEnd:reqEnd+lenHmacSha1], actualHmacSha1Buf) {
-			err = fmt.Errorf("verify one time auth failed, iv=%v key=%v data=%v", iv, key, buf[:reqEnd])
-			return
-		}
-	}
-	return
-}
-
-const logCntDelta = 100
-
-var connCnt int
-var nextLogConnCnt int = logCntDelta
-
-func handleConnection(conn *ss.Conn, auth bool) {
-	var host string
-
-	connCnt++ // this maybe not accurate, but should be enough
-	if connCnt-nextLogConnCnt >= 0 {
+	atomic.AddInt32(&connCnt, 1)
+	if atomic.LoadInt32(&connCnt)-nextLogConnCnt >= 0 {
 		// XXX There's no xadd in the atomic package, so it's difficult to log
 		// the message only once with low cost. Also note nextLogConnCnt maybe
 		// added twice for current peak connection number level.
-		log.Printf("Number of client connections reaches %d\n", nextLogConnCnt)
+		ss.Logger.Warn("Number of client connections reaches", zap.Int32("count", nextLogConnCnt))
 		nextLogConnCnt += logCntDelta
 	}
+	closed := false
 
 	// function arguments are always evaluated, so surround debug statement
 	// with if statement
-	if debug {
-		debug.Printf("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
-	}
-	closed := false
 	defer func() {
-		if debug {
-			debug.Printf("closed pipe %s<->%s\n", conn.RemoteAddr(), host)
-		}
-		connCnt--
+		atomic.AddInt32(&connCnt, -1)
 		if !closed {
+			ss.Logger.Warn("unexpect closeing connection:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
 			conn.Close()
 		}
 	}()
 
-	host, ota, err := getRequest(conn, auth)
-	if err != nil {
-		log.Println("error getting request", conn.RemoteAddr(), conn.LocalAddr(), err)
-		closed = true
-		return
-	}
-	// ensure the host does not contain some illegal characters, NUL may panic on Win32
-	if strings.ContainsRune(host, 0x00) {
-		log.Println("invalid domain name.")
-		closed = true
-		return
-	}
-	debug.Println("connecting", host)
+	// request the remote
+	ss.Logger.Debug("connecting to the request host", zap.String("host", host))
 	remote, err := net.Dial("tcp", host)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
 			// EMFILE is process reaches open file limits, ENFILE is system limit
-			log.Println("dial error:", err)
+			ss.Logger.Error("dial error:", zap.Error(err))
 		} else {
-			log.Println("error connecting to:", host, err)
+			ss.Logger.Error("error connecting to host:", zap.String("host", host), zap.Error(err))
 		}
 		return
 	}
 	defer func() {
 		if !closed {
+			ss.Logger.Warn("unexpect closeing connection:", zap.Stringer("remote", remote.RemoteAddr()), zap.String("host", host))
 			remote.Close()
 		}
 	}()
-	if debug {
-		debug.Printf("piping %s<->%s ota=%v connOta=%v", conn.RemoteAddr(), host, ota, conn.IsOta())
-	}
-	if ota {
-		go ss.PipeThenCloseOta(conn, remote)
-	} else {
-		go ss.PipeThenClose(conn, remote)
-	}
-	ss.PipeThenClose(remote, conn)
+	ss.Logger.Debug("piping remote to host:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
+	remote.(*net.TCPConn).SetKeepAlive(true)
+
+	// close the server at the right time
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go ss.PipeThenClose(conn, remote, timeout, func() { wg.Done() })
+	ss.PipeThenClose(remote, conn, timeout, func() { remote.Close() })
+	wg.Wait()
+
 	closed = true
 	return
 }
 
-type PortListener struct {
-	password string
-	listener net.Listener
-}
-
-type UDPListener struct {
-	password string
-	listener *net.UDPConn
-}
-
-type PasswdManager struct {
-	sync.Mutex
-	portListener map[string]*PortListener
-	udpListener  map[string]*UDPListener
-}
-
-func (pm *PasswdManager) add(port, password string, listener net.Listener) {
-	pm.Lock()
-	pm.portListener[port] = &PortListener{password, listener}
-	pm.Unlock()
-}
-
-func (pm *PasswdManager) addUDP(port, password string, listener *net.UDPConn) {
-	pm.Lock()
-	pm.udpListener[port] = &UDPListener{password, listener}
-	pm.Unlock()
-}
-
-func (pm *PasswdManager) get(port string) (pl *PortListener, ok bool) {
-	pm.Lock()
-	pl, ok = pm.portListener[port]
-	pm.Unlock()
-	return
-}
-
-func (pm *PasswdManager) getUDP(port string) (pl *UDPListener, ok bool) {
-	pm.Lock()
-	pl, ok = pm.udpListener[port]
-	pm.Unlock()
-	return
-}
-
-func (pm *PasswdManager) del(port string) {
-	pl, ok := pm.get(port)
-	if !ok {
-		return
-	}
-	if udp {
-		upl, ok := pm.getUDP(port)
-		if !ok {
-			return
-		}
-		upl.listener.Close()
-	}
-	pl.listener.Close()
-	pm.Lock()
-	delete(pm.portListener, port)
-	if udp {
-		delete(pm.udpListener, port)
-	}
-	pm.Unlock()
-}
-
-// Update port password would first close a port and restart listening on that
-// port. A different approach would be directly change the password used by
-// that port, but that requires **sharing** password between the port listener
-// and password manager.
-func (pm *PasswdManager) updatePortPasswd(port, password string, auth bool) {
-	pl, ok := pm.get(port)
-	if !ok {
-		log.Printf("new port %s added\n", port)
-	} else {
-		if pl.password == password {
-			return
-		}
-		log.Printf("closing port %s to update password\n", port)
-		pl.listener.Close()
-	}
-	// run will add the new port listener to passwdManager.
-	// So there maybe concurrent access to passwdManager and we need lock to protect it.
-	go run(port, password, auth)
-	if udp {
-		pl, _ := pm.getUDP(port)
-		pl.listener.Close()
-		go runUDP(port, password, auth)
-	}
-}
-
-var passwdManager = PasswdManager{portListener: map[string]*PortListener{}, udpListener: map[string]*UDPListener{}}
-
-func updatePasswd() {
-	log.Println("updating password")
-	newconfig, err := ss.ParseConfig(configFile)
-	if err != nil {
-		log.Printf("error parsing config file %s to update password: %v\n", configFile, err)
-		return
-	}
-	oldconfig := config
-	config = newconfig
-
-	if err = unifyPortPassword(config); err != nil {
-		return
-	}
-	for port, passwd := range config.PortPassword {
-		passwdManager.updatePortPasswd(port, passwd, config.Auth)
-		if oldconfig.PortPassword != nil {
-			delete(oldconfig.PortPassword, port)
-		}
-	}
-	// port password still left in the old config should be closed
-	for port, _ := range oldconfig.PortPassword {
-		log.Printf("closing port %s as it's deleted\n", port)
-		passwdManager.del(port)
-	}
-	log.Println("password updated")
-}
-
 func waitSignal() {
 	var sigChan = make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGHUP)
-	for sig := range sigChan {
-		if sig == syscall.SIGHUP {
-			updatePasswd()
-		} else {
-			// is this going to happen?
-			log.Printf("caught signal %v, exit", sig)
+	signal.Notify(sigChan, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+	for {
+		s := <-sigChan
+		switch s {
+		case syscall.SIGHUP:
+			ss.Logger.Warn("receive the KILL -HUP rebooting")
+			fallthrough
+			// TODO fo the reboot
+		case syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT:
+			ss.Logger.Info("Caught signal , shuting down", zap.Stringer("signal", s))
 			os.Exit(0)
+		default:
+			ss.Logger.Error("Caught meaning lease signal", zap.Stringer("signal", s))
 		}
 	}
 }
 
-func run(port, password string, auth bool) {
-	ln, err := net.Listen("tcp", ":"+port)
-	if err != nil {
-		log.Printf("error listening port %v: %v\n", port, err)
-		os.Exit(1)
-	}
-	passwdManager.add(port, password, ln)
-	var cipher *ss.Cipher
-	log.Printf("server listening port %v ...\n", port)
+// serveTCP accept incoming request and handle
+func serveTCP(ln *ss.Listener, timeout int) {
+	defer ln.Close()
 	for {
-		conn, err := ln.Accept()
+		// accept should not be blocked, so here just return a ss warped connection
+		// getRequest should do after this
+		sconn, err := ln.Accept()
 		if err != nil {
-			// listener maybe closed to update password
-			debug.Printf("accept error: %v\n", err)
-			return
+			ss.Logger.Error("error in ss server accept connection", zap.Error(err))
+			// XXX should not exit?
+			continue
 		}
-		// Creating cipher upon first connection.
-		if cipher == nil {
-			log.Println("creating cipher for port:", port)
-			cipher, err = ss.NewCipher(config.Method, password)
-			if err != nil {
-				log.Printf("Error generating cipher for port: %s %v\n", port, err)
-				conn.Close()
+		go handleConnection(sconn, timeout)
+	}
+}
+
+// start the ss remote servers listen on given ports
+func run(conf *ss.Config) {
+	for addr, pass := range conf.PortPassword {
+		cipher, err := encrypt.NewCipher(conf.Method, pass)
+		if err != nil {
+			ss.Logger.Fatal("Failed create cipher", zap.Error(err))
+		}
+		ln, err := ss.Listen("tcp", net.JoinHostPort("", addr), cipher.Copy(), conf.Timeout)
+		if err != nil {
+			ss.Logger.Fatal("error listening port", zap.String("port", addr), zap.Error(err))
+		}
+		ss.Logger.Info("server listening port", zap.String("port", addr))
+		go serveTCP(ln, conf.Timeout)
+	}
+}
+
+func serveUDP(SecurePacketConn *ss.SecurePacketConn) {
+	defer SecurePacketConn.Close()
+	buf := make([]byte, 4096)
+	for {
+		n, src, err := SecurePacketConn.ReadFrom(buf)
+		if err != nil {
+			if err == ss.ErrPacketOtaFailed {
 				continue
 			}
+			ss.Logger.Error("[udp]read error", zap.Error(err))
+			return
 		}
-		go handleConnection(ss.NewConn(conn, cipher.Copy()), auth)
+		host, headerLen, err := ss.UDPGetRequest(buf[:n])
+		if err != nil {
+			ss.Logger.Error("[udp]faided to decode request", zap.Error(err))
+			continue
+		}
+		ss.ForwardUDPConn(SecurePacketConn, src, host, buf[:n], headerLen)
 	}
 }
 
-func runUDP(port, password string, auth bool) {
-	var cipher *ss.Cipher
-	port_i, _ := strconv.Atoi(port)
-	log.Printf("listening udp port %v\n", port)
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{
-		IP:   net.IPv6zero,
-		Port: port_i,
-	})
-	passwdManager.addUDP(port, password, conn)
-	if err != nil {
-		log.Printf("error listening udp port %v: %v\n", port, err)
-		return
-	}
-	defer conn.Close()
-	cipher, err = ss.NewCipher(config.Method, password)
-	if err != nil {
-		log.Printf("Error generating cipher for udp port: %s %v\n", port, err)
-		conn.Close()
-	}
-	SecurePacketConn := ss.NewSecurePacketConn(conn, cipher.Copy(), auth)
-	for {
-		if err := ss.ReadAndHandleUDPReq(SecurePacketConn); err != nil {
-			debug.Println(err)
+func runUDP(conf *ss.Config) {
+	addrPadd := conf.PortPassword
+	for addr, pass := range addrPadd {
+		ss.Logger.Info("listening udp", zap.String("port", addr))
+		cipher, err := encrypt.NewCipher(conf.Method, pass)
+		if err != nil {
+			ss.Logger.Error("Failed create cipher", zap.Error(err))
 		}
+		SecurePacketConn, err := ss.ListenPacket("udp", addr, cipher)
+		if err != nil {
+			ss.Logger.Error("error listening packetconn ", zap.String("addrsee", addr), zap.Error(err))
+			os.Exit(1)
+		}
+		go serveUDP(SecurePacketConn)
 	}
 }
 
-func enoughOptions(config *ss.Config) bool {
-	return config.ServerPort != 0 && config.Password != ""
-}
+func checkConfig(config *ss.Config) error {
+	// aviliable config conditions:
+	// 1\ passwd is setted or portpassworf is setted
+	// 2\ serverport & server password should be correspounding
+	if config.Password == "" && config.PortPassword == nil {
+		return errors.New("missing passwd for config")
+	}
 
-func unifyPortPassword(config *ss.Config) (err error) {
-	if len(config.PortPassword) == 0 { // this handles both nil PortPassword and empty one
-		if !enoughOptions(config) {
-			fmt.Fprintln(os.Stderr, "must specify both port and password")
-			return errors.New("not enough options")
-		}
-		port := strconv.Itoa(config.ServerPort)
-		config.PortPassword = map[string]string{port: config.Password}
-	} else {
-		if config.Password != "" || config.ServerPort != 0 {
-			fmt.Fprintln(os.Stderr, "given port_password, ignore server_port and password option")
+	if config.PortPassword == nil {
+		if config.ServerPort == "" {
+			return errors.New("missing server port for config")
 		}
 	}
-	return
-}
 
-var configFile string
-var config *ss.Config
+	if len(config.GetServerPortArray()) != len(config.GetPasswordArray()) {
+		return errors.New("server array and password array is illegal")
+	}
+
+	// check the port if has a suffix and :
+	//for addr, pass := range config.PortPassword {
+	//	if _, portStr, err := net.SplitHostPort(addr); err == nil {
+	//		if port, err := strconv.Atoi(portStr); err != nil || port == 0 || pass == "" {
+	//			return fmt.Errorf("given config is invalid: address(%s) password(%s)", addr, pass)
+	//		}
+	//	} else {
+	//		return fmt.Errorf("given config is invalid: address(%s) password(%s)", addr, pass)
+	//	}
+	//}
+	return nil
+}
 
 func main() {
-	log.SetOutput(os.Stdout)
+	var err error
+	var udp, printVer bool
+	var Timeout, core, matrixport int
+	var ServerPort, configFile, Password, Method string
 
-	var cmdConfig ss.Config
-	var printVer bool
-	var core int
+	var config *ss.Config
 
-	flag.BoolVar(&printVer, "version", false, "print version")
-	flag.StringVar(&configFile, "c", "config.json", "specify config file")
-	flag.StringVar(&cmdConfig.Password, "k", "", "password")
-	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
-	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
-	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
+	flag.BoolVar(&printVer, "v", false, "print version")
+	flag.StringVar(&configFile, "c", "", "specify config file")
+	flag.StringVar(&Password, "k", "", "password")
+	flag.StringVar(&ServerPort, "p", "", "server port")
+	flag.IntVar(&Timeout, "t", 300, "timeout in seconds")
+	flag.StringVar(&Method, "m", "aes-256-cfb", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
-	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
-	flag.BoolVar(&udp, "u", false, "UDP Relay")
+	flag.IntVar(&matrixport, "pprof", 0, "set the metrix port to Enable the pprof and matrix(TODO), keep it 0 will disable this feature")
+	flag.StringVar(&ss.Level, "l", "info", "given the logger level for ss to logout info, can be set in debug info warn error")
+	flag.BoolVar(&udp, "u", false, "enable UDP service")
 	flag.Parse()
-
+	if !flag.Parsed() {
+		flag.Usage()
+		os.Exit(0)
+	}
 	if printVer {
 		ss.PrintVersion()
 		os.Exit(0)
 	}
 
-	ss.SetDebug(debug)
+	// init the logger
+	ss.SetLogger()
+	ss.Logger.Info("Starting shadowsocks remote server")
 
-	if strings.HasSuffix(cmdConfig.Method, "-auth") {
-		cmdConfig.Method = cmdConfig.Method[:len(cmdConfig.Method)-5]
-		cmdConfig.Auth = true
+	// set the pprof
+	if matrixport > 0 {
+		go http.ListenAndServe(":"+strconv.Itoa(matrixport), nil)
 	}
 
-	var err error
-	config, err = ss.ParseConfig(configFile)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", configFile, err)
-			os.Exit(1)
-		}
-		config = &cmdConfig
-		ss.UpdateConfig(config, config)
-	} else {
-		ss.UpdateConfig(config, &cmdConfig)
+	// set the options for the config new
+	var opts []ss.ConfOption
+
+	// choose the encrypt method then check
+	if Method == "" {
+		Method = "aes-256-cfb"
+		opts = append(opts, ss.WithEncryptMethod("aes-256-cfb"))
 	}
-	if config.Method == "" {
-		config.Method = "aes-256-cfb"
-	}
-	if err = ss.CheckCipherMethod(config.Method); err != nil {
+	if err = encrypt.CheckCipherMethod(Method); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err = unifyPortPassword(config); err != nil {
-		os.Exit(1)
-	}
-	if core > 0 {
-		runtime.GOMAXPROCS(core)
-	}
-	for port, password := range config.PortPassword {
-		go run(port, password, config.Auth)
-		if udp {
-			go runUDP(port, password, config.Auth)
+	opts = append(opts, ss.WithEncryptMethod(Method))
+
+	// check the passwd if not set
+	if Password != "" {
+		opts = append(opts, ss.WithPassword(Password))
+		if ServerPort != "" {
+			opts = append(opts, ss.WithServerPort(ServerPort))
+			opts = append(opts, ss.WithPortPassword(ServerPort, Password))
 		}
 	}
 
+	config = ss.NewConfig(opts...)
+
+	// parse the config from the config file
+	if configFile != "" {
+		ss.Logger.Info("ss server loading config file", zap.String("path", configFile))
+		config, err = ss.ParseConfig(configFile)
+		if err != nil {
+			ss.Logger.Fatal("error in reading the ss config file", zap.String("path", configFile), zap.Error(err))
+		}
+	}
+	ss.Logger.Debug("show the ss config", zap.Stringer("config", config))
+
+	// check the config
+	if err = checkConfig(config); err != nil {
+		ss.Logger.Error("error in chack config", zap.Error(err))
+		os.Exit(1)
+	}
+
+	// if core is defined ,then set the max proecssor
+	if core > 0 {
+		runtime.GOMAXPROCS(core)
+	}
+
+	// start the shadowsocks server
+	go run(config)
+	if udp {
+		go runUDP(config)
+	}
+
+	// wait for the ctrl-c signal
 	waitSignal()
 }

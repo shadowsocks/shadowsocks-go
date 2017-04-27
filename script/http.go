@@ -3,12 +3,13 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Hello, shadowsocks-go!")
+	io.WriteString(w, "Hello, shadowsocks-go!")
 }
 
 func main() {

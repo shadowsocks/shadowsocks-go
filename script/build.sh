@@ -1,9 +1,22 @@
 #!/bin/bash
+sha1=$(git log --pretty=format:'%h' -n 1 2>/dev/null)
+branch=`git branch --contains | grep "* " | sed "s/\* //g"`
+version="$branch"
+if [ "$branch" == "master"  ]; then
+    tag=`git describe HEAD --tags 2>/dev/null`
+    if [ "$tag" != ""  ]; then
+        version=$tag
+    fi
+fi
 
 cd "$( dirname "${BASH_SOURCE[0]}" )/.."
 
 version=`grep 'const version = ' ./shadowsocks/util.go | sed -e 's/.*= //' | sed -e 's/"//g'`
+version=shadowsocksgo-$version-$sha1
+
 echo "creating shadowsocks binary version $version"
+
+trap exit ERR SIGINT
 
 ROOT=`pwd`
 bindir=$ROOT/bin
@@ -30,9 +43,8 @@ build() {
         mv $prog.exe $ROOT/script/
         pushd $ROOT/script/
         cp $ROOT/config.json sample-config.json
-        cp $ROOT/sample-config/client-multi-server.json multi-server.json
-        zip $name.zip $prog.exe shadowsocks.exe sample-config.json multi-server.json
-        rm -f $prog.exe sample-config.json multi-server.json
+        zip $name.zip $prog.exe shadowsocks.exe sample-config.json
+        rm -f $prog.exe sample-config.json
         mv $name.zip $bindir
         popd
     else

@@ -1,0 +1,9 @@
+{
+    "server_port":"16886",
+    "password":"foo",
+    "method":"aes-256-cfb",
+    "timeout":0,
+    "port_password":{
+        "16886":"foo"
+    }
+}
