@@ -360,7 +360,7 @@ func main() {
 	flag.IntVar(&Timeout, "t", 300, "timeout in seconds")
 	flag.StringVar(&Method, "m", "aes-256-cfb", "encryption method, default: aes-256-cfb. end with -auth mean enable OTA")
 	flag.StringVar(&ss.Level, "l", "info", "given the logger level for ss to logout info, can be set in debug info warn error panic")
-	flag.BoolVar(&UDP, "udp", false, "use the udp to serve")
+	flag.BoolVar(&UDP, "u", false, "use the udp to serve")
 
 	// show the help info when parse flags failed
 	flag.Parse()
