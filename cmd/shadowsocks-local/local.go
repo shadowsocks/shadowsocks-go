@@ -57,11 +57,23 @@ const (
 	lenDmBase = 3 + 1 + 1 + 2           // 3 + 1addrType + 1addrLen + 2port, plus addrLen
 )
 
+type natTableInfo struct {
+	ClientBindPort int
+	ServerBindPort int
+	ServerPacketln net.PacketConn
+	SSPacketln     *ss.SecurePacketConn
+}
+
+// NatTable keept the connection both client and server side, for route
+type natTable map[string]*natTableInfo
+
 var (
 	// HandShakeTimeout give out the socks5 handshake time out
 	HandShakeTimeout = 15
-	// ErrNilCipher give out the illegal cipher
+	// ErrNilCipher illegal cipher
 	ErrNilCipher = errors.New("error nil cipher")
+	// NatInfo used to locate the natTable from server port
+	NatInfo map[int]natTable = make(map[int]natTable)
 )
 
 // handle the accepted connection ad socks5
@@ -403,10 +415,6 @@ func handleConnection(server string, conn net.Conn, timeout int) {
 
 // handle the local socks5 connection and request remote server
 func handleUDPConnection(server string, conn net.Conn, timeout int) {
-	// handshake
-	// get req
-	// for loop read and forward (go)
-	// make up NAT
 	ss.Logger.Debug("handle socks5 connect", zap.Stringer("source", conn.LocalAddr()), zap.Stringer("remote", conn.RemoteAddr()))
 	var err error
 	var closed bool
@@ -451,7 +459,7 @@ func handleUDPConnection(server string, conn net.Conn, timeout int) {
 		n, raddr, err := serverListener.ReadFrom(cliReq)
 		if err != nil {
 			ss.Logger.Error("[UDP] error in read packet from client UDP", zap.Error(err))
-			continue
+			return
 		}
 		cliReq = cliReq[:n]
 		getAddr, err := net.ResolveUDPAddr("udp", raddr.String())
@@ -466,14 +474,28 @@ func handleUDPConnection(server string, conn net.Conn, timeout int) {
 		}
 
 		// here we get the request need to encrypte and forward to ss remote
-		//var rawData []byte = cliReq[idType:]
+		// write them into the Nat table
+		var reqAddrLen int
+		switch cliReq[idType] & 0xFF {
+		case typeIPv4:
+			reqAddrLen = lenIPv4
+		case typeIPv6:
+			reqAddrLen = lenIPv6
+		case typeDm:
+			reqAddrLen = lenDmBase + int(cliReq[idType+1])
+		}
+		var rawData []byte = cliReq[idType:reqAddrLen]
+		if _, ok := NatInfo[serverPort]; !ok {
+			NatInfo[serverPort] = make(natTable)
+		}
+		NatInfo[serverPort][string(rawData)] = &natTableInfo{clientPort, serverPort, serverListener, ssPacketConn}
 
 		// write to the ss-remote, this data will be encrypted with the choosen server
 		_, err = ssPacketConn.WriteTo(cliReq[idType:], serverUDPaddr)
 		if err != nil {
 			ss.Logger.Error("[UDP]write to server error", zap.Stringer("ss-local", ssPacketConn.LocalAddr()),
 				zap.String("server", server), zap.Error(err))
-			return
+			continue
 		}
 	}
 
