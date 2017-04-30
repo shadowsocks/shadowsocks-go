@@ -1,11 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"flag"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/signal"
@@ -34,19 +34,23 @@ var (
 )
 
 const (
+	UDPMaxSize = 65507 // max udp packet size
+
 	idVer     = 0 // socks version index
 	idNmethod = 1
 	idCmd     = 1
+	idFrag    = 3 // UDP client request for FRAG
 	idType    = 3 // address type index
 	idIP0     = 4 // ip addres start index
 	idDmLen   = 4 // domain address length index
 	idDm0     = 5 // domain address start index
 
-	socksVer5       = 0x05 // socks5 version
-	socksCmdConnect = 0x01 // socks5 connect command
-	typeIPv4        = 0x01 // type is ipv4 address
-	typeDm          = 0x03 // type is domain address
-	typeIPv6        = 0x04 // type is ipv6 address
+	socksVer5             = 0x05 // socks5 version
+	socksCmdConnect       = 0x01 // socks5 connection command connect
+	socksCmdUDPAssocation = 0x03 // socks5 connection command UDP association
+	typeIPv4              = 0x01 // type is ipv4 address
+	typeDm                = 0x03 // type is domain address
+	typeIPv6              = 0x04 // type is ipv6 address
 
 	lenIPv4   = 3 + 1 + net.IPv4len + 2 // 3(ver+cmd+rsv) + 1addrType + ipv4 + 2port
 	lenIPv6   = 3 + 1 + net.IPv6len + 2 // 3(ver+cmd+rsv) + 1addrType + ipv6 + 2port
@@ -61,6 +65,8 @@ var (
 )
 
 // handle the accepted connection ad socks5
+// NOTICE the ss-local wont require any authentication and return 0x05 0x00 to client
+// intend for no auth required
 func handShake(conn net.Conn) (err error) {
 	var n int
 	// version identification and method selection message in theory can have
@@ -87,7 +93,7 @@ func handShake(conn net.Conn) (err error) {
 	//nmethods: The NMETHODS field contains the number of method identifier
 	// octets that appear in the METHODS field.
 	nmethod := int(buf[idNmethod])
-	msgLen := nmethod + 2
+	msgLen := nmethod + 2 // ver + nmethod = 2
 	if n == msgLen {
 		// handshake done, normal case
 		// do nothing
@@ -121,17 +127,17 @@ func getRequest(conn net.Conn) (rawaddr []byte, err error) {
 		return
 	}
 	// check version and cmd
-	if buf[idVer] != socksVer5 {
+	if buf[idVer]&0xff != socksVer5 {
 		err = ErrVer
 		return
 	}
-	if buf[idCmd] != socksCmdConnect {
+	if buf[idCmd]&0xff != socksCmdConnect {
 		err = ErrCmd
 		return
 	}
 
 	reqLen := -1
-	switch buf[idType] {
+	switch buf[idType] & 0xff {
 	case typeIPv4:
 		reqLen = lenIPv4
 	case typeIPv6:
@@ -172,6 +178,94 @@ func getRequest(conn net.Conn) (rawaddr []byte, err error) {
 
 	ss.Logger.Debug("get request addr", zap.String("host", host))
 	return
+}
+
+// UDP request will associate the address pair for socks5 client & server communication
+// this implementation will not support the UDP fregements
+func udpAssociate(conn net.Conn) (int, int, net.PacketConn, error) {
+	// return (clientbindport, serverbindport, serverlisten, error)
+
+	// refer to getRequest in server.go for why set buffer size to 263
+	buf := make([]byte, 263)
+	var n int
+	var err error
+
+	// first of all we read the socks5 request
+	// read till we get possible domain length
+	if n, err = io.ReadAtLeast(conn, buf, lenIPv4); err != nil {
+		return -1, -1, nil, err
+	}
+	// check version and cmd
+	if buf[idVer]&0xff != socksVer5 {
+		err = ErrVer
+		ss.Logger.Error("[UDP] error in udp association socks version", zap.Error(err))
+		return -1, -1, nil, err
+	}
+	if buf[idCmd]&0xff != socksCmdUDPAssocation {
+		err = ErrCmd
+		ss.Logger.Error("[UDP] error in udp association association skiped", zap.Error(err))
+		return -1, -1, nil, err
+	}
+
+	// UDP assocation only allow the ip type bind for the socks server
+	// TODO should combine the both udp and tcp handshake together
+	if buf[idType]&0xff != typeIPv4 {
+		err = ErrAddrType
+		ss.Logger.Error("[UDP] error in udp association address not supported",
+			zap.Int16("ATYPE", int16(buf[idType])), zap.Error(err))
+		return -1, -1, nil, err
+	}
+
+	if n == lenIPv4 {
+		// common case cause we have read all the info (host + port), do nothing
+	} else if n < lenIPv4 { // rare case
+		ss.Logger.Warn("error in read the request arddr, less than expect")
+		if _, err = io.ReadFull(conn, buf[n:lenIPv4]); err != nil {
+			return -1, -1, nil, err
+		}
+	} else {
+		err = ErrReqExtraData
+		ss.Logger.Error("[UDP] error in udp association read field", zap.Error(err))
+		return -1, -1, nil, err
+	}
+
+	// now get the ip and port from the request which indecate the port that socks5
+	// client will use to contect with socks5 server
+	var clietnBindPort int16
+	rawClientBindPort := bytes.NewBuffer(buf[lenIPv4-2 : lenIPv4])
+	err = binary.Read(rawClientBindPort, binary.BigEndian, &clietnBindPort)
+	if err != nil {
+		ss.Logger.Error("[UDP] error in read client bind port", zap.Error(err))
+		return -1, -1, nil, err
+	}
+
+	// now we'd generate a server bind address used only communication with
+	// client bind address and replay to the client
+	serverBindListen, err := net.ListenPacket("udp", "")
+	if err != nil {
+		// optional reply
+		// 05 01 00 ... for generate ip field
+		ss.Logger.Error("[UDP] error in start listen udp for client udp association", zap.Error(err))
+		return -1, -1, nil, err
+	}
+
+	serverBindAddr, err := net.ResolveUDPAddr("udp", serverBindListen.LocalAddr().String())
+	replay := []byte{0x05, 0x00, 0x00, 0x01} // header of server relpy association
+	rawServerBindAddr := bytes.NewBuffer([]byte{0x0, 0x0, 0x0, 0x0})
+	if err = binary.Write(rawServerBindAddr, binary.BigEndian, int16(serverBindAddr.Port)); err != nil {
+		ss.Logger.Error("[UDP] error in combine address to reply", zap.Error(err))
+		return -1, -1, nil, err
+	}
+	replay = append(replay, rawServerBindAddr.Bytes()[:6]...)
+	if _, err = conn.Write(replay); err != nil {
+		ss.Logger.Error("[UDP] error in reply for client association", zap.Error(err))
+		return -1, -1, nil, err
+	}
+
+	// keep the tcp connection alive until the socks5 should be closed
+	conn.(*net.TCPConn).SetKeepAlive(true)
+
+	return int(clietnBindPort), serverBindAddr.Port, serverBindListen, nil
 }
 
 type ServerCipher struct {
@@ -223,13 +317,6 @@ func connectToServerUDP(ciph *encrypt.Cipher, timeout int) (*ss.SecurePacketConn
 		return nil, ErrNilCipher
 	}
 
-	//raddr, err := net.ResolveUDPAddr("udp", addr)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//nc, err := net.DialUDP("udp", nil, raddr)
-	//sconn := ss.NewSecurePacketConn(nc, ciph.Copy(), timeout)
-
 	sconn, err := ss.ListenPacket("udp", "", ciph.Copy(), timeout)
 	if err != nil {
 		return nil, err
@@ -252,6 +339,7 @@ func handleConnection(server string, conn net.Conn, timeout int) {
 	// Hand shake happened when accept the socks5 negotiation request
 	// ss local will accept the negotiation or ask client to reset the connection when unexpect error occours
 	if err = handShake(conn); err != nil {
+		// error occoured and close the connection immediately
 		ss.Logger.Error("error in socks5 handShake", zap.Stringer("socks5client", conn.LocalAddr()), zap.Error(err))
 		return
 	}
@@ -315,6 +403,10 @@ func handleConnection(server string, conn net.Conn, timeout int) {
 
 // handle the local socks5 connection and request remote server
 func handleUDPConnection(server string, conn net.Conn, timeout int) {
+	// handshake
+	// get req
+	// for loop read and forward (go)
+	// make up NAT
 	ss.Logger.Debug("handle socks5 connect", zap.Stringer("source", conn.LocalAddr()), zap.Stringer("remote", conn.RemoteAddr()))
 	var err error
 	var closed bool
@@ -323,6 +415,13 @@ func handleUDPConnection(server string, conn net.Conn, timeout int) {
 			conn.Close()
 		}
 	}()
+
+	// resolve udp address
+	serverUDPaddr, err := net.ResolveUDPAddr("udp", server)
+	if err != nil {
+		ss.Logger.Error("[UDP] error in resolve server address into udp", zap.Error(err))
+		return
+	}
 
 	// Hand shake happened when accept the socks5 negotiation request
 	// ss local will accept the negotiation or ask client to reset the connection when unexpect error occours
@@ -333,102 +432,53 @@ func handleUDPConnection(server string, conn net.Conn, timeout int) {
 
 	// After handshake ss will read the requset fron client to establish the proxy connection
 	// target is the socks5 request addr+port
-	target, err := getRequest(conn)
+	clientPort, serverPort, serverListener, err := udpAssociate(conn)
 	if err != nil {
 		ss.Logger.Error("error in getting socks5 request", zap.Error(err))
 		return
 	}
+	ss.Logger.Debug("[UDP] after udp associate", zap.Int("cliBindPort", clientPort), zap.Int("servBindPort", serverPort))
 
-	// Sending connection established message immediately to client.
-	// This cost some round trip time for creating socks connection with the client.
-	// But if connection failed, the client will get connection reset error.
-	//
-	// Notice that the server response bind addr & port could be ignore by the socks5 client
-	// 0x00 0x00 0x00 0x00 0x10 0x10 is meaning less for bind addr block.
-	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x10, 0x10})
-	if err != nil {
-		ss.Logger.Error("send connection confirmation", zap.Error(err))
-		return
-	}
+	// gen ss packet connection via server listener
+	ssPacketConn := ss.NewSecurePacketConn(serverListener, ciphers[server].Copy(), timeout)
 
-	// after socks5 hand shake, we'd get a ss server connection
-	// cipher should be copied pass
-
-	// use the UDP forward to handle this-
-	if true {
-		serveraddr, err := net.ResolveUDPAddr("udp", server)
+	cliReq := make([]byte, UDPMaxSize)
+	for {
+		// TODO FIXME need to determine when close the TCP connection
+		// server read the first packet from associated address, get the client destination address
+		// ss-local will not support the fragments about udp, we will forward and log a WARNING
+		// if the FRAG is not 0
+		n, raddr, err := serverListener.ReadFrom(cliReq)
 		if err != nil {
-			return
-		}
-
-		ssconn, err := connectToServerUDP(ciphers[server], timeout)
-		if err != nil {
-			ss.Logger.Error("erro in connect to ss server", zap.String("server", server), zap.Error(err))
-			return
-		}
-		defer ssconn.Close()
-
-		// add the pool here
-		// read all the request from the incomming connection
-		bufin, err := ioutil.ReadAll(conn)
-		if err != nil {
-			return
-		}
-
-		n, err := ssconn.WriteTo(append(target, bufin...), serveraddr)
-		if err != nil {
-			ss.Logger.Error("[udp]write to server error", zap.Error(err))
-			return
-		}
-
-		bufout := make([]byte, 4096)
-		for {
-			n, src, err := ssconn.ReadFrom(bufout)
-		}
-		go func() {
-
-		}()
-
-		dstHost, headerLen, err := ss.UDPGetRequest(buf[:n])
-		if err != nil {
-			ss.Logger.Error("[udp]faided to decode request", zap.Error(err))
+			ss.Logger.Error("[UDP] error in read packet from client UDP", zap.Error(err))
 			continue
 		}
-		ss.ForwardUDPConn(SecurePacketConn, srcAddr, dstHost, buf[:n], headerLen)
-		//////////
-	}
-
-	ssconn, err := connectToServer(server, ciphers[server], timeout)
-	if err != nil {
-		ss.Logger.Error("erro in connect to ss server", zap.String("server", server), zap.Error(err))
-		return
-	}
-	defer func() {
-		if !closed {
-			ssconn.Close()
+		cliReq = cliReq[:n]
+		getAddr, err := net.ResolveUDPAddr("udp", raddr.String())
+		if getAddr.Port != clientPort {
+			ss.Logger.Warn("[UDP] read a illegal source packet, droped")
+			continue
 		}
-	}()
 
-	if _, err := ssconn.Write(rawaddr); err != nil {
-		ss.Logger.Error("request ss remote failed", zap.Stringer("serverlocal", ssconn.LocalAddr()),
-			zap.Stringer("serverremote", ssconn.RemoteAddr()), zap.ByteString("rawaddr", rawaddr))
-		return
+		// if frag != 0 should get a warning
+		if cliReq[idFrag]&0xff != 0x00 {
+			ss.Logger.Warn("[UDP] warrning get the fragnent packet")
+		}
+
+		// here we get the request need to encrypte and forward to ss remote
+		//var rawData []byte = cliReq[idType:]
+
+		// write to the ss-remote, this data will be encrypted with the choosen server
+		_, err = ssPacketConn.WriteTo(cliReq[idType:], serverUDPaddr)
+		if err != nil {
+			ss.Logger.Error("[UDP]write to server error", zap.Stringer("ss-local", ssPacketConn.LocalAddr()),
+				zap.String("server", server), zap.Error(err))
+			return
+		}
 	}
-
-	// ask the request with payload
-	// then read the connection and write back
-	// close the server at the right time
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go ss.PipeThenClose(conn, ssconn, timeout, func() {
-		wg.Done()
-		conn.Close()
-	})
-	ss.PipeThenClose(ssconn, conn, timeout, func() { ssconn.Close() })
-	wg.Wait()
 
 	closed = true
-	ss.Logger.Debug("closed server connection", zap.Stringer("serverlocal", ssconn.LocalAddr()), zap.Stringer("serverremote", ssconn.RemoteAddr()))
+	ss.Logger.Debug("closed server connection", zap.Stringer("ss-local", ssPacketConn.LocalAddr()), zap.String("server", server))
 	return
 }
 
@@ -466,15 +516,20 @@ func run(config *ss.Config, enableUDP bool) {
 		conn, err := ln.Accept()
 		if err != nil {
 			ss.Logger.Error("error in local server accept socks5", zap.Error(err))
+		}
+		if enableUDP {
+			go handleUDPConnection(server, conn, config.Timeout)
 		} else {
-			go handleConnection(server, conn, config.Timeout, enableUDP)
+			go handleConnection(server, conn, config.Timeout)
 		}
 	}
 }
 
+var LocalAddr string
+
 // main locical about the local server
 func main() {
-	var configFile, ServerAddr, LocalAddr, Password, Method string
+	var configFile, ServerAddr, Password, Method string
 	var ServerPort, Timeout, LocalPort int
 	var printVer, UDP bool
 	var config *ss.Config

@@ -131,7 +131,7 @@ func ForwardUDPConn(income net.PacketConn, incomeaddr net.Addr, host string, pay
 	}
 	dIP, err := net.ResolveIPAddr("ip", hostname)
 	if err != nil {
-		return fmt.Errorf("[udp]Failed to solve domain name(%s): %v", hostname, err)
+		return fmt.Errorf("[UDP]Failed to solve domain name(%s): %v", hostname, err)
 	}
 	dstIP := dIP.IP
 	dstPort, _ := strconv.Atoi(portStr)
@@ -158,7 +158,7 @@ func ForwardUDPConn(income net.PacketConn, incomeaddr net.Addr, host string, pay
 		}
 		remote = c
 		natlist.Put(incomeaddr.String(), remote)
-		Logger.Info("[udp] new client", zap.Stringer("source", incomeaddr), zap.Stringer("dest", dst),
+		Logger.Info("[UDP] new client", zap.Stringer("source", incomeaddr), zap.Stringer("dest", dst),
 			zap.Stringer("via", remote.LocalAddr()))
 		go func() {
 			UDPReceiveThenClose(income, incomeaddr, remote)
@@ -168,7 +168,7 @@ func ForwardUDPConn(income net.PacketConn, incomeaddr net.Addr, host string, pay
 			}()
 		}()
 	} else {
-		Logger.Info("[udp] using cached client", zap.Stringer("source", incomeaddr), zap.Stringer("dest", dst),
+		Logger.Info("[UDP] using cached client", zap.Stringer("source", incomeaddr), zap.Stringer("dest", dst),
 			zap.Stringer("via", remote.LocalAddr()))
 	}
 
@@ -177,9 +177,9 @@ func ForwardUDPConn(income net.PacketConn, incomeaddr net.Addr, host string, pay
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
 			// EMFILE is process reaches open file limits, ENFILE is system limit
-			Logger.Error("[udp]write error: too many open fd in system", zap.Error(err))
+			Logger.Error("[UDP]write error: too many open fd in system", zap.Error(err))
 		} else {
-			Logger.Error("[udp]error connecting to:", zap.Stringer("dest", dst), zap.Error(err))
+			Logger.Error("[UDP]error connecting to:", zap.Stringer("dest", dst), zap.Error(err))
 		}
 		if conn := natlist.Delete(incomeaddr.String()); conn != nil {
 			conn.Close()
@@ -196,7 +196,7 @@ func UDPGetRequest(buf []byte) (host string, headerLen int, err error) {
 	case typeIPv4:
 		headerLen = headerLenIPv4
 		if len(buf) < headerLen {
-			Logger.Error("[udp]invalid received message.")
+			Logger.Error("[UDP]invalid received message.")
 		}
 		host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
 		port := binary.BigEndian.Uint16(buf[headerLenIPv4-2 : headerLenIPv4])
@@ -204,7 +204,7 @@ func UDPGetRequest(buf []byte) (host string, headerLen int, err error) {
 	case typeIPv6:
 		headerLen = headerLenIPv6
 		if len(buf) < headerLen {
-			Logger.Error("[udp]invalid received message.")
+			Logger.Error("[UDP]invalid received message.")
 		}
 		host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
 		port := binary.BigEndian.Uint16(buf[headerLenIPv4-2 : headerLenIPv4])
@@ -212,7 +212,7 @@ func UDPGetRequest(buf []byte) (host string, headerLen int, err error) {
 	case typeDm:
 		headerLen = int(buf[idDmLen]) + headerLenDmBase
 		if len(buf) < headerLen {
-			Logger.Error("[udp]invalid received message.")
+			Logger.Error("[UDP]invalid received message.")
 		}
 		host = string(buf[idDm0 : idDm0+int(buf[idDmLen])])
 		// avoid panic: syscall: string with NUL passed to StringToUTF16 on windows.
@@ -223,7 +223,7 @@ func UDPGetRequest(buf []byte) (host string, headerLen int, err error) {
 		port := binary.BigEndian.Uint16(buf[headerLenIPv4-2 : headerLenIPv4])
 		host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 	default:
-		Logger.Error("[udp]addrType not supported", zap.String("address type", fmt.Sprint(addrType)))
+		Logger.Error("[UDP]addrType not supported", zap.String("address type", fmt.Sprint(addrType)))
 		return
 	}
 	return
