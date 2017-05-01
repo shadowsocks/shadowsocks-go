@@ -10,6 +10,12 @@ The protocol is compatible with the origin shadowsocks (if both have been upgrad
 
 **Please develop on the latest develop branch if you want to send pull request.**
 
+# What's new
+* Reconstruct this project, finish the job in ss-local and ss-remote
+* Bug fix and stability improvement
+* Redesign the interface for easy extension
+* Add more features for easy monitor of shadowsocks
+
 # Install
 
 Download precompiled binarys from the [release page](https://github.com/shadowsocks/shadowsocks-go/releases). (All compiled with cgo disabled, except the mac version.)
@@ -36,7 +42,7 @@ server          your server ip or hostname
 server_port     server port
 local_port      local socks5 proxy port
 method          encryption method, null by default (table), the following methods are supported:
-                    aes-128-cfb, aes-192-cfb, aes-256-cfb, bf-cfb, cast5-cfb, des-cfb, rc4-md5, chacha20, salsa20, rc4, table
+aes-128-cfb, aes-192-cfb, aes-256-cfb, bf-cfb, cast5-cfb, des-cfb, rc4-md5, chacha20, salsa20, rc4, table
 password        a password used to encrypt transfer
 timeout         server option, in seconds
 ```
@@ -74,11 +80,11 @@ Command line options can override settings from configuration files. Use `-h` op
 
 ```
 shadowsocks-local -s server_address -p server_port -k password
-    -m aes-128-cfb -c config.json
-    -b local_address -l local_port
+-m aes-128-cfb -c config.json
+-b local_address -l local_port
 shadowsocks-server -p server_port -k password
-    -m aes-128-cfb -c config.json
-    -t timeout
+-m aes-128-cfb -c config.json
+-t timeout
 ```
 
 Use `-d` option to enable debug message.
@@ -106,6 +112,11 @@ Here's a sample configuration [`server-multi-port.json`](https://github.com/shad
 ### Update port password for a running server
 
 Edit the config file used to start the server, then send `SIGHUP` to the server process.
+
+# WIP
+* Make up the Encrypt packet with a better interface for easy extension
+* Fix up the UDP module for ss (testing in local)
+* Add the AEAD (testing in local)
 
 # Note to OpenVZ users
 
