@@ -23,6 +23,21 @@ const logCntDelta int32 = 100
 var connCnt int32
 var nextLogConnCnt = logCntDelta
 
+type serverNATInfo struct {
+	incomingPort   int
+	outgoingPort   int
+	destAddr       string
+	serverPacketln net.PacketConn
+	Reader         chan []byte
+}
+type serverNATTable map[string]*serverNATInfo
+
+type serverIncomingInfo struct {
+	port    int
+	payload []byte
+}
+type serverIncomingChannelTable map[int]*serverIncomingInfo
+
 // handleConnection forward the request to the destination
 func handleConnection(conn *ss.SecureConn, timeout int) {
 	// first do the decode for ss protocol
