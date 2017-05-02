@@ -592,6 +592,36 @@ func run(config *ss.Config) {
 		}
 	}
 
+	// listen the socks5 on this
+	if enableUDP {
+		go func() {
+			laddr := net.JoinHostPort(config.Local, strconv.Itoa(config.LocalPort))
+			pln, err := net.ListenPacket("udp", laddr)
+			if err != nil {
+				ss.Logger.Fatal("error in shadwsocks local server listen udp", zap.Error(err))
+			}
+			ss.Logger.Info("starting local socks5 server udp", zap.String("listenAddr", laddr))
+
+			// main loop for socks5 accept incoming request
+			for {
+				server := servers[0]
+				conn, err := ln.Accept()
+				if err != nil {
+					ss.Logger.Error("error in local server accept socks5", zap.Error(err))
+				} else {
+					go handleUDPConnection(server, conn, config.Timeout)
+				}
+			}
+		}()
+	}
+
+	laddr := net.JoinHostPort(config.Local, strconv.Itoa(config.LocalPort))
+	ln, err := net.Listen("tcp", laddr)
+	if err != nil {
+		ss.Logger.Fatal("error in shadwsocks local server listen", zap.Error(err))
+	}
+	ss.Logger.Info("starting local socks5 server", zap.String("listenAddr", laddr))
+
 	// main loop for socks5 accept incoming request
 	var server string
 	for {

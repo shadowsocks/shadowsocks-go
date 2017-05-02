@@ -190,16 +190,6 @@ func newStream(block cipher.Block, key, iv []byte, doe DecOrEnc) (cipher.Stream,
 	return cipher.NewCFBDecrypter(block, iv), nil
 }
 
-// WIP
-func newAEADStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
-	//hkdf.New()
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	return newStream(block, key, iv, doe)
-}
-
 func newAESCFBStream(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
