@@ -12,11 +12,11 @@ import (
 type SecureConn struct {
 	net.Conn
 	*encrypt.Cipher
-	readBuf      []byte
-	writeBuf     []byte
-	chunkID      uint32
-	isServerSide bool
-	timeout      int
+	readBuf  []byte
+	writeBuf []byte
+	chunkID  uint32
+	//isServerSide bool
+	timeout int
 }
 
 // NewSecureConn creates a SecureConn

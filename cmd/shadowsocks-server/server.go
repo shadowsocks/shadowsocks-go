@@ -18,25 +18,14 @@ import (
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
-const logCntDelta int32 = 100
+const (
+	logCntDelta int32 = 100
+)
 
-var connCnt int32
-var nextLogConnCnt = logCntDelta
-
-type serverNATInfo struct {
-	incomingPort   int
-	outgoingPort   int
-	destAddr       string
-	serverPacketln net.PacketConn
-	Reader         chan []byte
-}
-type serverNATTable map[string]*serverNATInfo
-
-type serverIncomingInfo struct {
-	port    int
-	payload []byte
-}
-type serverIncomingChannelTable map[int]*serverIncomingInfo
+var (
+	connCnt        int32
+	nextLogConnCnt = logCntDelta
+)
 
 // handleConnection forward the request to the destination
 func handleConnection(conn *ss.SecureConn, timeout int) {
@@ -50,9 +39,6 @@ func handleConnection(conn *ss.SecureConn, timeout int) {
 
 	atomic.AddInt32(&connCnt, 1)
 	if atomic.LoadInt32(&connCnt)-nextLogConnCnt >= 0 {
-		// XXX There's no xadd in the atomic package, so it's difficult to log
-		// the message only once with low cost. Also note nextLogConnCnt maybe
-		// added twice for current peak connection number level.
 		ss.Logger.Warn("Number of client connections reaches", zap.Int32("count", nextLogConnCnt))
 		nextLogConnCnt += logCntDelta
 	}
@@ -100,6 +86,44 @@ func handleConnection(conn *ss.SecureConn, timeout int) {
 	closed = true
 	return
 }
+
+// handleUDPConnection forward the request to the destination
+// XXX  abandoned
+//func handleUDPConnection(conn *ss.SecurePacketConn, timeout int) {
+//	// first do the decode for ss protocol
+//	buf := make([]byte, ss.UDPMaxSize)
+//	n, raddr, err := conn.ReadFrom(buf)
+//	if err != nil {
+//		ss.Logger.Error("[UDP] error in get udp incomming packet", zap.Error(err))
+//		return
+//	}
+//	buf = buf[:n]
+//
+//	dst, length, err := ss.GetUDPRequest(buf)
+//	if err != nil {
+//		ss.Logger.Error("[UDP] ss server get request failed", zap.Stringer("src", raddr), zap.Error(err))
+//		return
+//	}
+//	ss.Logger.Info("[UDP] ss server accept the ss request", zap.Stringer("src", raddr), zap.String("dst", dst))
+//
+//	// request the remote
+//	ss.Logger.Debug("connecting to the request host", zap.String("host", dst))
+//	if true {
+//		// get from the NAT table
+//	} else {
+//		outPacketln, err := net.ListenPacket("udp", "")
+//		if err != nil {
+//			ss.Logger.Error("[UDP] error in makeup outgoing packet listen", zap.Error(err))
+//			return
+//		}
+//	}
+//
+//	// put into the NAT table
+//	// setup the goroutine to serve the incoming packet
+//
+//	ss.Logger.Debug("piping remote to host:", zap.Stringer("remote", raddr), zap.String("host", dst))
+//	return
+//}
 
 func waitSignal() {
 	var sigChan = make(chan os.Signal, 1)
@@ -152,25 +176,23 @@ func run(conf *ss.Config) {
 	}
 }
 
+// serveUDP read from the udp listen and forward the request
+// only do the forward here, the backward doing in another sequence
 func serveUDP(servein *ss.SecurePacketConn) {
 	defer servein.Close()
-	buf := make([]byte, 4096)
+	buf := make([]byte, ss.UDPMaxSize)
 	for {
 		n, srcAddr, err := servein.ReadFrom(buf)
 		if err != nil {
-			ss.Logger.Error("[udp]read error", zap.Error(err))
-			return
-		}
-		// ss protocol
-		dstHost, headerLen, err := ss.UDPGetRequest(buf[:n])
-		if err != nil {
-			ss.Logger.Error("[udp]faided to decode request", zap.Error(err))
+			ss.Logger.Error("[udp]read from server packet listen error", zap.Error(err))
+			// TODO should this be continue?
 			continue
 		}
-		ss.ForwardUDPConn(servein, srcAddr, dstHost, buf[:n], headerLen)
+		go ss.ForwardUDPConn(servein, srcAddr, buf[:n])
 	}
 }
 
+// strat a server for each port & password
 func runUDP(conf *ss.Config) {
 	addrPadd := conf.PortPassword
 	for addr, pass := range addrPadd {

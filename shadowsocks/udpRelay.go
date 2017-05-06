@@ -2,7 +2,7 @@ package shadowsocks
 
 import (
 	"encoding/binary"
-	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -13,53 +13,59 @@ import (
 	"go.uber.org/zap"
 )
 
-var (
-	reqList            = newReqList()
-	natlist            = NewNatTable()
-	udpTimeout         = 30 * time.Second
-	reqListRefreshTime = 5 * time.Minute
+const (
+	UDPMaxSize = 65507 // max udp packet size1
 )
 
-// NatTable is intended to help handling UDP
+var (
+	reqList            = newReqList()
+	natTable           = NewNatTable()
+	udpTimeout         = 30 * time.Second
+	reqListRefreshTime = 5 * time.Minute
+	//udpBufferPool = NewLeakyBuf(1024, UDPMaxSize)
+)
+
+// BackwardInfo is defined for the backword packet to the src address
+type BackwardInfo struct {
+	srcAddr net.Addr
+	payload []byte
+}
+
+// NatTable used to map the incomming packet to the outgoing packet listener
 type NatTable struct {
-	sync.Mutex
-	conns map[string]net.PacketConn
+	sync.RWMutex
+	nat map[string]net.PacketConn
 }
 
 // NewNatTable returns an empty NatTable
 func NewNatTable() *NatTable {
-	return &NatTable{conns: map[string]net.PacketConn{}}
+	return &NatTable{nat: make(map[string]net.PacketConn, 256)}
+}
+
+func (table *NatTable) Get(src net.Addr) (net.PacketConn, bool) {
+	table.RLock()
+	defer table.RUnlock()
+	packetListen, ok := table.nat[src.String()]
+	return packetListen, ok
+}
+
+func (table *NatTable) Put(src net.Addr, packetln net.PacketConn) {
+	table.Lock()
+	defer table.Unlock()
+	natTable.nat[src.String()] = packetln
 }
 
 // Delete deletes an item from the table
-func (table *NatTable) Delete(index string) net.PacketConn {
+func (table *NatTable) Delete(src string) {
 	table.Lock()
 	defer table.Unlock()
-	c, ok := table.conns[index]
-	if ok {
-		delete(table.conns, index)
-		return c
+	if _, ok := table.nat[src]; ok {
+		delete(table.nat, src)
 	}
-	return nil
-}
-
-// Get returns an item from the table
-func (table *NatTable) Get(index string) (c net.PacketConn, ok bool) {
-	table.Lock()
-	defer table.Unlock()
-	c, ok = table.conns[index]
-	return
-}
-
-// Put puts an item into the table
-func (table *NatTable) Put(index string, c net.PacketConn) {
-	table.Lock()
-	defer table.Unlock()
-	table.conns[index] = c
 }
 
 type requestHeaderList struct {
-	sync.Mutex
+	sync.RWMutex
 	List map[string]([]byte)
 }
 
@@ -123,80 +129,95 @@ func parseHeaderFromAddr(addr net.Addr) []byte {
 
 // ForwardUDPConn forwards the payload (should with header) to the dst with UDP.
 // meanwhile, the request header is cached and the connection is alse cached for futher use.
-func ForwardUDPConn(income net.PacketConn, incomeaddr net.Addr, host string, payload []byte, headerLen int) error {
-	// resolve the host into dst ip
-	hostname, portStr, err := net.SplitHostPort(host)
+func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) error {
+	// unpacket the incomming request and get the dest host and payload
+	dstHost, headerLen, err := UDPGetRequest(payload)
 	if err != nil {
+		Logger.Error("[UDP] faided to get request", zap.Error(err))
+	}
+	dstAddr, err := net.ResolveUDPAddr("udp", dstHost)
+	if err != nil {
+		Logger.Error("[UDP] error in resolve dest addr", zap.Error(err))
 		return err
-	}
-	dIP, err := net.ResolveIPAddr("ip", hostname)
-	if err != nil {
-		return fmt.Errorf("[UDP]Failed to solve domain name(%s): %v", hostname, err)
-	}
-	dstIP := dIP.IP
-	dstPort, _ := strconv.Atoi(portStr)
-	dst := &net.UDPAddr{
-		IP:   dstIP,
-		Port: dstPort,
 	}
 
 	// check if the destination address request header has been cached
-	// TODO
-	//if _, ok := reqList.Get(dst.String()); !ok {
+	// cache the request header for the incomming packet connecion which will be prepend to the backward payload
+	// TODO here used to have a timer to remove the cache when timeout, should this request header be equal?
+	//if _, ok := reqList.Get(dstHost); !ok {
 	//	req := make([]byte, headerLen)
 	//	copy(req, payload)
-	//	reqList.Put(dst.String(), req)
+	//	reqList.Put(dstHost, req)
 	//}
+	reqHeader := make([]byte, headerLen)
+	copy(reqHeader, payload)
 
-	// natlist is to reserve the net connection to source if connected
-	// to avoid connect to source each packate
-	remote, exist := natlist.Get(incomeaddr.String())
-	if !exist {
-		c, err := net.ListenPacket("udp", "")
+	// put src into the NAT forward table
+	forwardPacketln, ok := natTable.Get(src)
+	if !ok {
+		// initialize the packet listener into the nat table
+		packetln, err := net.ListenPacket("udp", "")
 		if err != nil {
+			Logger.Error("[UDP] error in listen outgoing packet listener", zap.Error(err))
 			return err
 		}
-		remote = c
-		natlist.Put(incomeaddr.String(), remote)
-		Logger.Info("[UDP] new client", zap.Stringer("source", incomeaddr), zap.Stringer("dest", dst),
-			zap.Stringer("via", remote.LocalAddr()))
-		go func() {
-			UDPReceiveThenClose(income, incomeaddr, remote)
-			defer func() {
-				remote.Close()
-				natlist.Delete(incomeaddr.String())
+
+		natTable.Lock()
+		if packetListen, ok := natTable.nat[src.String()]; ok {
+			// other goroutine has creat the packet connection
+			forwardPacketln = packetListen
+		} else {
+			natTable.nat[src.String()] = packetln
+			natTable.Unlock()
+
+			// Set up the backward worker gorotine for this packetln
+			// this is the key logical for backward UDP request to ss-local
+			go func() {
+				defer natTable.Delete(src.String())
+				buf := make([]byte, UDPMaxSize)
+				//buf := udpBufferPool.Get()
+				//defer udpBufferPool.Put(buf)
+				for {
+					n, raddr, err := packetln.ReadFrom(buf)
+					if err != nil && err != io.EOF {
+						Logger.Error("[UDP] error in udp backward read", zap.Stringer("remote_addr", raddr),
+							zap.Stringer("dest_addr", src), zap.Error(err))
+						return
+					}
+					serverIn.WriteTo(append(reqHeader, buf[:n]...), src)
+				}
 			}()
-		}()
-	} else {
-		Logger.Info("[UDP] using cached client", zap.Stringer("source", incomeaddr), zap.Stringer("dest", dst),
-			zap.Stringer("via", remote.LocalAddr()))
+		}
 	}
 
-	_, err = remote.WriteTo(payload[headerLen:], dst)
+	_, err = forwardPacketln.WriteTo(payload[headerLen:], dstAddr)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
 			// EMFILE is process reaches open file limits, ENFILE is system limit
 			Logger.Error("[UDP]write error: too many open fd in system", zap.Error(err))
 		} else {
-			Logger.Error("[UDP]error connecting to:", zap.Stringer("dest", dst), zap.Error(err))
+			Logger.Error("[UDP] error in forward to the dest address", zap.Stringer("dst", dstAddr), zap.Error(err))
 		}
-		if conn := natlist.Delete(incomeaddr.String()); conn != nil {
-			conn.Close()
-		}
+		natTable.Delete(src.String())
+		return err
 	}
+	Logger.Info("[UDP] Forward UDP connecion", zap.Stringer("source", src), zap.Stringer("dest", dstAddr),
+		zap.Stringer("via", forwardPacketln.LocalAddr()))
+
 	return nil
 }
 
-// UDPGetRequest deocde the request header from buffer
+// UDPGetRequest parse the request header from buffer
 // the Header is the SS address header
+// TODO need a unit test
 func UDPGetRequest(buf []byte) (host string, headerLen int, err error) {
 	addrType := buf[idType]
 	switch addrType & AddrMask {
 	case typeIPv4:
 		headerLen = headerLenIPv4
 		if len(buf) < headerLen {
-			Logger.Error("[UDP]invalid received message.")
+			return "", -1, ErrInvalidPacket
 		}
 		host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
 		port := binary.BigEndian.Uint16(buf[headerLenIPv4-2 : headerLenIPv4])
@@ -204,7 +225,7 @@ func UDPGetRequest(buf []byte) (host string, headerLen int, err error) {
 	case typeIPv6:
 		headerLen = headerLenIPv6
 		if len(buf) < headerLen {
-			Logger.Error("[UDP]invalid received message.")
+			return "", -1, ErrInvalidPacket
 		}
 		host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
 		port := binary.BigEndian.Uint16(buf[headerLenIPv4-2 : headerLenIPv4])
@@ -212,19 +233,27 @@ func UDPGetRequest(buf []byte) (host string, headerLen int, err error) {
 	case typeDm:
 		headerLen = int(buf[idDmLen]) + headerLenDmBase
 		if len(buf) < headerLen {
-			Logger.Error("[UDP]invalid received message.")
+			return "", -1, ErrInvalidPacket
 		}
 		host = string(buf[idDm0 : idDm0+int(buf[idDmLen])])
 		// avoid panic: syscall: string with NUL passed to StringToUTF16 on windows.
 		if strings.ContainsRune(host, 0x00) {
-			err = errInvalidHostname
-			return
+			return "", -1, ErrInvalidHostname
 		}
+
+		// look up host for request
+		ip, err := net.ResolveIPAddr("ip", host)
+		if err != nil {
+			return "", -1, err
+		}
+		host = ip.String()
+
+		// FIXME return the first record of domain could cause error?
 		port := binary.BigEndian.Uint16(buf[headerLenIPv4-2 : headerLenIPv4])
 		host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 	default:
-		Logger.Error("[UDP]addrType not supported", zap.String("address type", fmt.Sprint(addrType)))
-		return
+		return "", -1, ErrInvalidPacket
 	}
-	return
+
+	return host, headerLen, nil
 }

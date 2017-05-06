@@ -57,6 +57,7 @@ const (
 	lenDmBase = 3 + 1 + 1 + 2           // 3 + 1addrType + 1addrLen + 2port, plus addrLen
 )
 
+// natinfo keep the udp nat info for each socks5 association pair
 type natTableInfo struct {
 	ClientBindPort int
 	ServerBindPort int
@@ -445,10 +446,45 @@ func handleUDPConnection(server string, conn net.Conn, timeout int) {
 		ss.Logger.Error("error in getting socks5 request", zap.Error(err))
 		return
 	}
+	// TODO FIXME
+	clientAddr, err := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(clientPort))
+	if err != nil {
+		ss.Logger.Error("[UDP]error in resulove client bind address")
+		return
+	}
 	ss.Logger.Debug("[UDP] after udp associate", zap.Int("cliBindPort", clientPort), zap.Int("servBindPort", serverPort))
 
 	// gen ss packet connection via server listener
 	ssPacketConn := ss.NewSecurePacketConn(serverListener, ciphers[server].Copy(), timeout)
+
+	// FIXME need to close this goroutine
+	go func() {
+		readBuf := make([]byte, UDPMaxSize)
+		for {
+			// read from the ss packet connection and decrypted
+			n, _, err := ssPacketConn.ReadFrom(readBuf)
+			if err != nil {
+				continue
+				// return??
+			}
+
+			// resolve the request header, trim it and backward
+			_, length, err := ss.GetUDPRequest(readBuf)
+			if err != nil {
+				//handle error
+			}
+
+			// backward the payload(without address header) to the client bind udp client
+			_, err = serverListener.WriteTo(readBuf[length:n], clientAddr)
+			if err != nil {
+				return
+			}
+		}
+
+		// TODO correct here?
+		defer serverListener.Close()
+		defer ssPacketConn.Close()
+	}()
 
 	cliReq := make([]byte, UDPMaxSize)
 	for {
@@ -476,7 +512,7 @@ func handleUDPConnection(server string, conn net.Conn, timeout int) {
 		// here we get the request need to encrypte and forward to ss remote
 		// write them into the Nat table
 		var reqAddrLen int
-		switch cliReq[idType] & 0xFF {
+		switch cliReq[idType] & 0xff {
 		case typeIPv4:
 			reqAddrLen = lenIPv4
 		case typeIPv6:
@@ -539,6 +575,7 @@ func run(config *ss.Config, enableUDP bool) {
 		if err != nil {
 			ss.Logger.Error("error in local server accept socks5", zap.Error(err))
 		}
+		// XXX TODO FIXME unique the udp & TCP socks session
 		if enableUDP {
 			go handleUDPConnection(server, conn, config.Timeout)
 		} else {
