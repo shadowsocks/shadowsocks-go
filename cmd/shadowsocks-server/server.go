@@ -250,14 +250,14 @@ func main() {
 	var config *ss.Config
 
 	flag.BoolVar(&printVer, "v", false, "print version")
-	flag.StringVar(&configFile, "c", "", "specify config file")
-	flag.StringVar(&Password, "k", "", "password")
-	flag.StringVar(&ServerPort, "p", "", "server port")
-	flag.IntVar(&Timeout, "t", 300, "timeout in seconds")
-	flag.StringVar(&Method, "m", "aes-256-cfb", "encryption method, default: aes-256-cfb")
+	flag.StringVar(&configFile, "config", "", "specify config file")
+	flag.StringVar(&Password, "passwd", "", "password")
+	flag.StringVar(&ServerPort, "port", "", "server port")
+	flag.IntVar(&Timeout, "timeout", 300, "timeout in seconds")
+	flag.StringVar(&Method, "method", "aes-256-cfb", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
-	flag.StringVar(&ss.Level, "l", "info", "given the logger level for ss to logout info, can be set in debug info warn error")
-	flag.BoolVar(&udp, "u", false, "enable UDP service")
+	flag.StringVar(&ss.Level, "level", "info", "given the logger level for ss to logout info, can be set in debug info warn error")
+	flag.BoolVar(&udp, "disable_udp", true, "diasbale UDP service, enable bydefault")
 	flag.Parse()
 	if !flag.Parsed() {
 		flag.Usage()
@@ -320,7 +320,7 @@ func main() {
 
 	// start the shadowsocks server
 	go run(config)
-	if udp {
+	if !udp { //enable udp if diable_udp not set
 		go runUDP(config)
 	}
 

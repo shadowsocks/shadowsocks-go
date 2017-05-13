@@ -49,7 +49,7 @@ test_get() {
     html=`echo $cont | grep -E -o -i "$target"`
     if [[ -z $ok || -z $html ]] ; then
         echo "=============================="
-        echo "FAILED!!! GET $url FAILED"
+        echo "-!- FAILED GET $url FAILED"
         echo "$ok"
         echo "$html"
         echo $cont
@@ -67,11 +67,11 @@ test_shadowsocks() {
     url=$1
     method=$2
 
-    $SERVER -k foo -p $SERVER_PORT -m "$method" -l fatal &
+    $SERVER -passwd foo -port $SERVER_PORT -method "$method" -level error &
     server_pid=$!
     wait_server $SERVER_PORT
 
-    $LOCAL -k foo -saddr 127.0.0.1 -sport $SERVER_PORT -port $LOCAL_PORT -m "$method" -l fatal &
+    $LOCAL -passwd foo -saddr 127.0.0.1 -sport $SERVER_PORT -port $LOCAL_PORT -method "$method" -level error &
     local_pid=$!
     wait_server $LOCAL_PORT
 
@@ -84,7 +84,7 @@ test_shadowsocks() {
         fi
     done
     echo
-    echo "PASSED! check GET $url $method passed!"
+    echo "-*- PASSED! check GET $url via $method passed!"
     echo
     kill -SIGTERM $server_pid
     kill -SIGTERM $local_pid
