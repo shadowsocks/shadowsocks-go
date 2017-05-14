@@ -22,7 +22,7 @@ var (
 	natTable           = NewNatTable()
 	udpTimeout         = 30 * time.Second
 	reqListRefreshTime = 5 * time.Minute
-	//udpBufferPool = NewLeakyBuf(1024, UDPMaxSize)
+	UDPBufferPool      = NewLeakyBuf(1024, UDPMaxSize)
 )
 
 // BackwardInfo is defined for the backword packet to the src address
@@ -59,7 +59,8 @@ func (table *NatTable) Put(src net.Addr, packetln net.PacketConn) {
 func (table *NatTable) Delete(src string) {
 	table.Lock()
 	defer table.Unlock()
-	if _, ok := table.nat[src]; ok {
+	if ln, ok := table.nat[src]; ok {
+		ln.Close()
 		delete(table.nat, src)
 	}
 }
@@ -133,7 +134,7 @@ func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) er
 	// unpacket the incomming request and get the dest host and payload
 	dstHost, headerLen, err := UDPGetRequest(payload)
 	if err != nil {
-		Logger.Error("[UDP] faided to get request", zap.Error(err))
+		Logger.Error("[UDP] failed to get request", zap.Error(err))
 	}
 	dstAddr, err := net.ResolveUDPAddr("udp", dstHost)
 	if err != nil {
@@ -143,14 +144,15 @@ func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) er
 
 	// check if the destination address request header has been cached
 	// cache the request header for the incomming packet connecion which will be prepend to the backward payload
+	reqHeader := make([]byte, headerLen)
+	copy(reqHeader, payload)
+
 	// TODO here used to have a timer to remove the cache when timeout, should this request header be equal?
 	//if _, ok := reqList.Get(dstHost); !ok {
 	//	req := make([]byte, headerLen)
 	//	copy(req, payload)
 	//	reqList.Put(dstHost, req)
 	//}
-	reqHeader := make([]byte, headerLen)
-	copy(reqHeader, payload)
 
 	// put src into the NAT forward table
 	forwardPacketln, ok := natTable.Get(src)
@@ -174,9 +176,11 @@ func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) er
 			// this is the key logical for backward UDP request to ss-local
 			go func() {
 				defer natTable.Delete(src.String())
-				buf := make([]byte, UDPMaxSize)
-				//buf := udpBufferPool.Get()
-				//defer udpBufferPool.Put(buf)
+
+				buf := UDPBufferPool.Get()
+				defer UDPBufferPool.Put(buf)
+
+				//buf := make([]byte, UDPMaxSize)
 				for {
 					n, raddr, err := packetln.ReadFrom(buf)
 					if err != nil && err != io.EOF {
@@ -195,14 +199,14 @@ func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) er
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
 			// EMFILE is process reaches open file limits, ENFILE is system limit
-			Logger.Error("[UDP]write error: too many open fd in system", zap.Error(err))
+			Logger.Error("[UDP] write error: too many open fd in system", zap.Stringer("dst", dstAddr), zap.Error(err))
 		} else {
 			Logger.Error("[UDP] error in forward to the dest address", zap.Stringer("dst", dstAddr), zap.Error(err))
 		}
 		natTable.Delete(src.String())
 		return err
 	}
-	Logger.Info("[UDP] Forward UDP connecion", zap.Stringer("source", src), zap.Stringer("dest", dstAddr),
+	Logger.Info("[UDP] forward UDP connecion", zap.Stringer("source", src), zap.Stringer("dest", dstAddr),
 		zap.Stringer("via", forwardPacketln.LocalAddr()))
 
 	return nil

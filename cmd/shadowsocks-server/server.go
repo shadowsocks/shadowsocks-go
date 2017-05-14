@@ -87,44 +87,6 @@ func handleConnection(conn *ss.SecureConn, timeout int) {
 	return
 }
 
-// handleUDPConnection forward the request to the destination
-// XXX  abandoned
-//func handleUDPConnection(conn *ss.SecurePacketConn, timeout int) {
-//	// first do the decode for ss protocol
-//	buf := make([]byte, ss.UDPMaxSize)
-//	n, raddr, err := conn.ReadFrom(buf)
-//	if err != nil {
-//		ss.Logger.Error("[UDP] error in get udp incomming packet", zap.Error(err))
-//		return
-//	}
-//	buf = buf[:n]
-//
-//	dst, length, err := ss.GetUDPRequest(buf)
-//	if err != nil {
-//		ss.Logger.Error("[UDP] ss server get request failed", zap.Stringer("src", raddr), zap.Error(err))
-//		return
-//	}
-//	ss.Logger.Info("[UDP] ss server accept the ss request", zap.Stringer("src", raddr), zap.String("dst", dst))
-//
-//	// request the remote
-//	ss.Logger.Debug("connecting to the request host", zap.String("host", dst))
-//	if true {
-//		// get from the NAT table
-//	} else {
-//		outPacketln, err := net.ListenPacket("udp", "")
-//		if err != nil {
-//			ss.Logger.Error("[UDP] error in makeup outgoing packet listen", zap.Error(err))
-//			return
-//		}
-//	}
-//
-//	// put into the NAT table
-//	// setup the goroutine to serve the incoming packet
-//
-//	ss.Logger.Debug("piping remote to host:", zap.Stringer("remote", raddr), zap.String("host", dst))
-//	return
-//}
-
 func waitSignal() {
 	var sigChan = make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
@@ -180,8 +142,10 @@ func run(conf *ss.Config) {
 // only do the forward here, the backward doing in another sequence
 func serveUDP(servein *ss.SecurePacketConn) {
 	defer servein.Close()
-	buf := make([]byte, ss.UDPMaxSize)
+	// TODO need a pool
 	for {
+		//buf := ss.UDPBufferPool.Get()
+		buf := make([]byte, 4096)
 		n, srcAddr, err := servein.ReadFrom(buf)
 		if err != nil {
 			ss.Logger.Error("[udp]read from server packet listen error", zap.Error(err))
@@ -196,14 +160,14 @@ func serveUDP(servein *ss.SecurePacketConn) {
 func runUDP(conf *ss.Config) {
 	addrPadd := conf.PortPassword
 	for addr, pass := range addrPadd {
-		ss.Logger.Info("listening udp", zap.String("port", addr))
+		ss.Logger.Info("[UDP] listening udp", zap.String("port", addr))
 		cipher, err := encrypt.NewCipher(conf.Method, pass)
 		if err != nil {
-			ss.Logger.Error("Failed create cipher", zap.Error(err))
+			ss.Logger.Error("[UDP] failed create cipher", zap.Error(err))
 		}
 		SecurePacketConn, err := ss.ListenPacket("udp", addr, cipher, conf.Timeout)
 		if err != nil {
-			ss.Logger.Error("error listening packetconn ", zap.String("addrsee", addr), zap.Error(err))
+			ss.Logger.Error("[UDP] error listening packetconn ", zap.String("addrsee", addr), zap.Error(err))
 			os.Exit(1)
 		}
 		go serveUDP(SecurePacketConn)
