@@ -367,7 +367,7 @@ func main() {
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
-	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
+	flag.StringVar(&cmdConfig.Method, "m", "aes-256-cfb", "encryption method, default: aes-256-cfb")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 	flag.BoolVar(&cmdConfig.Auth, "A", false, "one time auth")
 
