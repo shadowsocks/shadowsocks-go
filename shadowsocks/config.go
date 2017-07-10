@@ -16,8 +16,8 @@ import (
 // Server and ServerPort and Password shoud be care when is used in ss local server module
 // NOTICE if the config file option is setted, the config option will be disabled automaticly
 type Config struct {
-	Server     string `json:"server_addr"` // shadowsocks remote Server address, for multi server split them with comma
-	ServerPort string `json:"server_port"` // shadowsocks remote Server port, split with comma when multi user is enabled
+	Server     string `json:"server_addr"` // shadowsocks remote Server address
+	ServerPort string `json:"server_port"` // shadowsocks remote Server port
 	Local      string `json:"local_addr"`  // shadowsocks local socks5 Server address
 	LocalPort  int    `json:"local_port"`  // shadowsocks local socks5 Server port
 	Password   string `json:"password"`    // shadowsocks remote server password, for multi server password should plase in order and split eith comma
@@ -111,7 +111,6 @@ func (c *Config) GetServerPortArray() []string {
 	}
 	return strings.Split(c.ServerPort, ",")
 }
-
 func (c *Config) GetPasswordArray() []string {
 	if c.Password == "" {
 		return nil
@@ -143,35 +142,15 @@ func ParseConfig(path string) (conf *Config, err error) {
 
 // ProcessConfig fill in the map after the config is unmarshaled
 func ProcessConfig(c *Config) {
-	servers := c.GetServerArray()
-	serverports := c.GetServerPortArray()
-	passwds := c.GetPasswordArray()
+	c.PortPassword = make(map[string]string)
+	c.ServerPassword = make(map[string]string)
 
-	if c.ServerPassword != nil {
-		return
-	}
-	// check and set for the ss local config
-	if len(servers) > 0 && len(serverports) > 0 && len(passwds) > 0 {
-		if len(servers) != len(serverports) || len(servers) != len(passwds) {
-			Logger.Fatal("error in proces the config file, Invalid config")
-		}
-		for i := 0; i < len(servers); i++ {
-			addr := serverports[i] + ":" + serverports[i]
-			c.ServerPassword[addr] = passwds[i]
-		}
+	sport := c.ServerPort
+	if !strings.Contains(c.ServerPort, ":") {
+		sport = ":" + c.ServerPort
 	}
 
-	if c.PortPassword != nil {
-		return
-	}
-	// check and set for the ss remote server config
-	if len(serverports) > 0 && len(passwds) > 0 {
-		if len(servers) != len(passwds) {
-			Logger.Fatal("error in proces the config file, Invalid config")
-		}
-		for i, port := range serverports {
-			addr := ":" + port
-			c.PortPassword[addr] = passwds[i]
-		}
-	}
+	addr := c.Server + c.ServerPort
+	c.ServerPassword[addr] = c.Password
+	c.PortPassword[sport] = c.Password
 }

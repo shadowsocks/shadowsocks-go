@@ -1,6 +1,7 @@
 package shadowsocks
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"syscall"
@@ -9,23 +10,83 @@ import (
 	"go.uber.org/zap"
 )
 
+// NetConnection inmlements the net.Conn & net.TcpConn with Shutdown liked function
+type NetConnection interface {
+	net.Conn
+	CloseWrite() error
+	CloseRead() error
+}
+
 // PipeThenClose copies data from src to dst, close dst when done.
-func PipeThenClose(src, dst net.Conn, timeout int, done func()) {
+func PipeThenClose(src, dst NetConnection, timeout int, done func()) {
 	defer done()
-	buf := leakyBuf.Get()
-	defer leakyBuf.Put(buf)
 	if timeout > 0 {
-		src.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
-		dst.SetWriteDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+		src.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+		dst.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
 	}
 
-	n, err := io.Copy(dst, src)
-	if err != nil {
-		Logger.Error("error in copy from src to dest", zap.Int64("n", n), zap.Stringer("src", src.LocalAddr()), zap.Stringer("dst", dst.RemoteAddr()), zap.Error(err))
-		return
-	} else {
-		Logger.Debug("copy n from src to dest", zap.Int64("n", n), zap.Stringer("src", src.LocalAddr()), zap.Stringer("dst", dst.RemoteAddr()))
+	buf := leakyBuf.Get()
+	defer leakyBuf.Put(buf)
+	connInfo := fmt.Sprintf("src conn: %v <---> %v, dst conn: %v <---> %v",
+		src.LocalAddr().String(), src.RemoteAddr().String(), dst.LocalAddr().String(), dst.RemoteAddr().String())
+
+	for {
+		n, err := src.Read(buf)
+		if n > 0 {
+			nn, err := dst.Write(buf[0:n])
+			if nn < n {
+				Logger.Error("error in write dst, nn < n", zap.String("conn info", connInfo), zap.Error(err))
+			}
+			if err != nil {
+				Logger.Error("error in pipe then close, dst write, closing dst write", zap.String("conn info", connInfo), zap.Error(err))
+				if err = dst.CloseWrite(); err != nil {
+					Logger.Error("error in close dst write", zap.String("conn info", connInfo), zap.Error(err))
+				}
+			}
+		}
+
+		if err != nil {
+			// IOTimeout is a common error while using the http-socks5 proxy
+			src.CloseRead()
+			dst.CloseWrite()
+			if err == io.EOF {
+				Logger.Info("src connection was closed, shutdown", zap.String("conn info", connInfo), zap.Error(err))
+			} else {
+				// tell another goroutine to write all and then close, no more data will send
+				Logger.Error("error in copy from src to dest", zap.String("conn info", connInfo), zap.Error(err))
+			}
+			break
+		}
+		Logger.Debug("write n from src to dest", zap.Int("n", n), zap.String("conn info", connInfo))
 	}
+
+	// Abandoned code: cause can not distinguish the error occoured on src or dst connection
+	//for {
+	//	n, err := io.Copy(dst, src)
+	//	if err != nil {
+	//		if err == io.EOF {
+	//			Logger.Info("src connection was closed, shutdown", zap.String("src", fmt.Sprintf("%v <---> %v", src.LocalAddr().String(), src.RemoteAddr().String())),
+	//				zap.String("dst", fmt.Sprintf("%v <---> %v", dst.LocalAddr().String(), dst.RemoteAddr().String())), zap.Error(err))
+	//		} else {
+	//			Logger.Error("error in copy from src to dest", zap.String("src", fmt.Sprintf("%v <---> %v", src.LocalAddr().String(), src.RemoteAddr().String())),
+	//				zap.String("dst", fmt.Sprintf("%v <---> %v", dst.LocalAddr().String(), dst.RemoteAddr().String())), zap.Error(err))
+	//		}
+	//		//err = src.CloseRead()
+	//		//if err != nil {
+	//		//	Logger.Error("error in close the read for src connection", zap.String("src", fmt.Sprintf("%v <---> %v", src.LocalAddr().String(),
+	//		//		src.RemoteAddr().String())), zap.String("dst", fmt.Sprintf("%v <---> %v", dst.LocalAddr().String(), dst.RemoteAddr().String())), zap.Error(err))
+	//		//}
+	//		//err = dst.CloseWrite()
+	//		//if err != nil {
+	//		//	Logger.Error("error in close the read for src connection", zap.String("src", fmt.Sprintf("%v <---> %v", src.LocalAddr().String(),
+	//		//		src.RemoteAddr().String())), zap.String("dst", fmt.Sprintf("%v <---> %v", dst.LocalAddr().String(), dst.RemoteAddr().String())), zap.Error(err))
+	//		//}
+	//		return
+	//	} else {
+	//		Logger.Debug("copy n from src to dest", zap.Int64("n", n), zap.String("src", fmt.Sprintf("%v <---> %v", src.LocalAddr().String(), src.RemoteAddr().String())),
+	//			zap.String("dst", fmt.Sprintf("%v <---> %v", dst.LocalAddr().String(), dst.RemoteAddr().String())))
+	//	}
+	//}
 }
 
 func PipeUDPThenClose(src net.Conn, dst net.PacketConn, dstaddr string, timeout int) {
@@ -43,6 +104,7 @@ func PipeUDPThenClose(src net.Conn, dst net.PacketConn, dstaddr string, timeout 
 		if n > 0 {
 			nn, err := dst.WriteTo(buf[:n], raddr)
 			if nn < n || err != nil {
+				Logger.Error("[E] error write to the packet connection", zap.Stringer("local", dst.LocalAddr()), zap.Stringer("dst", raddr))
 			}
 		}
 
@@ -50,6 +112,7 @@ func PipeUDPThenClose(src net.Conn, dst net.PacketConn, dstaddr string, timeout 
 			if err == io.EOF {
 				return
 			}
+			Logger.Error("[E] error write to the packet connection", zap.Stringer("local", dst.LocalAddr()), zap.Stringer("dst", raddr))
 			return
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -32,6 +33,7 @@ var (
 	ErrInvalidArguments  = errors.New("arguments illega")
 	ErrInvalidPassword   = errors.New("password illegal")
 	ErrReadUnexpectEOF   = errors.New("unexpect EOF occoured")
+	ErrConvertTCPConn    = errors.New("error in convert into tcp connection")
 )
 
 const (
@@ -179,7 +181,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, err error) {
 	case typeIPv6:
 		reqLen = lenIPv6
 	case typeDm:
-		reqLen = int(buf[idDmLen-2]) + lenDmBase
+		reqLen = int(buf[idDmLen]) + lenDmBase
 	default:
 		err = ErrAddrType
 		return
@@ -350,7 +352,13 @@ func connectToServer(addr string, ciph *encrypt.Cipher, timeout int) (*ss.Secure
 	if err != nil {
 		return nil, err
 	}
-	conn := ss.NewSecureConn(nc, ciph.Copy(), timeout)
+
+	tcpConn, ok := nc.(*net.TCPConn)
+	if !ok {
+		return nil, ErrConvertTCPConn
+	}
+
+	conn := ss.NewSecureConn(tcpConn, ciph.Copy(), timeout)
 	ss.Logger.Debug("ss local connecting to server with TCP", zap.String("server", addr), zap.Int("timeout", timeout))
 	return conn, nil
 }
@@ -373,12 +381,6 @@ func connectToServerUDP(ciph *encrypt.Cipher, timeout int) (*ss.SecurePacketConn
 func handleConnection(server string, conn net.Conn, timeout int) {
 	ss.Logger.Debug("handle socks5 connect", zap.Stringer("source", conn.LocalAddr()), zap.Stringer("remote", conn.RemoteAddr()))
 	var err error
-	var closed bool
-	defer func() {
-		if !closed {
-			conn.Close()
-		}
-	}()
 
 	// After handshake ss will read the requset fron client to establish the proxy connection
 	// target is the socks5 request addr+port
@@ -408,11 +410,6 @@ func handleConnection(server string, conn net.Conn, timeout int) {
 		ss.Logger.Error("erro in connect to ss server", zap.String("server", server), zap.Error(err))
 		return
 	}
-	defer func() {
-		if !closed {
-			ssconn.Close()
-		}
-	}()
 
 	if _, err := ssconn.Write(target); err != nil {
 		ss.Logger.Error("request ss remote failed", zap.Stringer("serverlocal", ssconn.LocalAddr()),
@@ -423,21 +420,33 @@ func handleConnection(server string, conn net.Conn, timeout int) {
 	// do the pipe between clicnet & server
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	go ss.PipeThenClose(conn, ssconn, timeout, func() {
+
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		ss.Logger.Error("error in pipthen close", zap.Error(ErrConvertTCPConn))
+	}
+
+	go ss.PipeThenClose(tcpConn, ssconn, timeout, func() {
 		wg.Done()
-		conn.Close()
 	})
-	ss.PipeThenClose(ssconn, conn, timeout, func() { ssconn.Close() })
+	ss.PipeThenClose(ssconn, tcpConn, timeout, func() {
+	})
 	wg.Wait()
 
-	closed = true
-	ss.Logger.Debug("closed server connection", zap.Stringer("serverlocal", ssconn.LocalAddr()), zap.Stringer("serverremote", ssconn.RemoteAddr()))
+	ssconn.Close()
+	conn.Close()
+
+	//defer conn.Close()
+	//defer ssconn.Close()
+
+	ss.Logger.Debug("closed server connection", zap.String("conn info", fmt.Sprintf("incoming conn: %v <---> %v\t\t outting conn: %v <---> %v", conn.LocalAddr().String(), conn.RemoteAddr().String(), ssconn.LocalAddr().String(), ssconn.RemoteAddr().String())))
 	return
 }
 
 // handle the local socks5 connection and request remote server
 func handleUDPConnection(server string, conn net.Conn, timeout int) {
-	ss.Logger.Debug("handle socks5 connect", zap.Stringer("source", conn.LocalAddr()), zap.Stringer("remote", conn.RemoteAddr()))
+	ss.Logger.Debug("handle socks5 connect", zap.Stringer("source", conn.LocalAddr()),
+		zap.Stringer("remote", conn.RemoteAddr()))
 	var err error
 	var closed bool
 	defer func() {
@@ -569,6 +578,7 @@ func run(config *ss.Config) {
 	if err != nil {
 		ss.Logger.Fatal("error in shadwsocks local server prepaer the cipher", zap.Error(err))
 	}
+
 	ciphers = cps
 
 	servers := config.GetServerArray()

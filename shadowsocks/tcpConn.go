@@ -1,6 +1,7 @@
 package shadowsocks
 
 import (
+	"errors"
 	"net"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 // SecureConn is a secured connection with shadowsocks protocol
 // also implements net.Conn interface
 type SecureConn struct {
-	net.Conn
+	*net.TCPConn
 	*encrypt.Cipher
 	readBuf  []byte
 	writeBuf []byte
@@ -20,19 +21,31 @@ type SecureConn struct {
 }
 
 // NewSecureConn creates a SecureConn
-func NewSecureConn(c net.Conn, cipher *encrypt.Cipher, timeout int) *SecureConn {
+func NewSecureConn(c *net.TCPConn, cipher *encrypt.Cipher, timeout int) *SecureConn {
 	return &SecureConn{
-		Conn:     c,
+		TCPConn:  c,
 		Cipher:   cipher,
 		writeBuf: leakyBuf.Get(),
 		timeout:  timeout,
 	}
 }
 
+// CloseRead closes the connection.
+func (c *SecureConn) CloseRead() error {
+	leakyBuf.Put(c.writeBuf)
+	return c.TCPConn.CloseRead()
+}
+
+// CloseWrite closes the connection.
+func (c *SecureConn) CloseWrite() error {
+	leakyBuf.Put(c.writeBuf)
+	return c.TCPConn.CloseWrite()
+}
+
 // Close closes the connection.
 func (c *SecureConn) Close() error {
 	leakyBuf.Put(c.writeBuf)
-	return c.Conn.Close()
+	return c.TCPConn.Close()
 }
 
 func (c *SecureConn) getAndIncrChunkID() (chunkID uint32) {
@@ -44,12 +57,12 @@ func (c *SecureConn) getAndIncrChunkID() (chunkID uint32) {
 // Read the data from ss connection, then decrypted
 func (c *SecureConn) Read(b []byte) (n int, err error) {
 	if c.timeout > 0 {
-		c.Conn.SetReadDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
+		c.TCPConn.SetReadDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
 	}
 
 	if c.DecInited() {
 		iv := make([]byte, c.GetIVLen())
-		if _, err = c.Conn.Read(iv); err != nil {
+		if _, err = c.TCPConn.Read(iv); err != nil {
 			return
 		}
 		if err = c.InitDecrypt(iv); err != nil {
@@ -60,7 +73,7 @@ func (c *SecureConn) Read(b []byte) (n int, err error) {
 		}
 	}
 
-	n, err = c.Conn.Read(b)
+	n, err = c.TCPConn.Read(b)
 	if n > 0 {
 		// decrypt the data with given cipher
 		c.Decrypt(b[:n], b[:n])
@@ -96,9 +109,9 @@ func (c *SecureConn) Write(b []byte) (n int, err error) {
 
 	c.Encrypt(cipherData[len(iv):], b)
 	if c.timeout > 0 {
-		c.Conn.SetWriteDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
+		c.TCPConn.SetWriteDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
 	}
-	n, err = c.Conn.Write(cipherData[:dataSize])
+	n, err = c.TCPConn.Write(cipherData[:dataSize])
 	// dec the iv lenth
 	n -= len(iv)
 	return
@@ -121,12 +134,16 @@ func (ln *Listener) Accept() (sconn *SecureConn, err error) {
 	}
 
 	// set the tcp keep alive option
-	conn.(*net.TCPConn).SetKeepAlive(true)
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return nil, errors.New("error in convert into tcp connection")
+	}
+	tcpConn.SetKeepAlive(true)
 	if ln.timeout > 0 {
 		conn.SetReadDeadline(time.Now().Add(time.Duration(ln.timeout)))
 		conn.SetWriteDeadline(time.Now().Add(time.Duration(ln.timeout)))
 	}
-	ss := NewSecureConn(conn, ln.cipher.Copy(), ln.timeout)
+	ss := NewSecureConn(tcpConn, ln.cipher.Copy(), ln.timeout)
 
 	return ss, nil
 }

@@ -143,15 +143,19 @@ func run(conf *ss.Config) {
 func serveUDP(servein *ss.SecurePacketConn) {
 	defer servein.Close()
 	// TODO need a pool
+	buf := make([]byte, 4096)
 	for {
 		//buf := ss.UDPBufferPool.Get()
-		buf := make([]byte, 4096)
 		n, srcAddr, err := servein.ReadFrom(buf)
 		if err != nil {
 			ss.Logger.Error("[udp]read from server packet listen error", zap.Error(err))
 			// TODO should this be continue?
+			// warning may better
 			continue
 		}
+		// TODO handle the connection : when to close the conn
+		// for loop is right?
+
 		go ss.ForwardUDPConn(servein, srcAddr, buf[:n])
 	}
 }
@@ -164,10 +168,11 @@ func runUDP(conf *ss.Config) {
 		cipher, err := encrypt.NewCipher(conf.Method, pass)
 		if err != nil {
 			ss.Logger.Error("[UDP] failed create cipher", zap.Error(err))
+			os.Exit(1)
 		}
 		SecurePacketConn, err := ss.ListenPacket("udp", addr, cipher, conf.Timeout)
 		if err != nil {
-			ss.Logger.Error("[UDP] error listening packetconn ", zap.String("addrsee", addr), zap.Error(err))
+			ss.Logger.Error("[UDP] error listening packetconn ", zap.String("address", addr), zap.Error(err))
 			os.Exit(1)
 		}
 		go serveUDP(SecurePacketConn)

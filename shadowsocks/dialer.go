@@ -1,6 +1,7 @@
 package shadowsocks
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -68,7 +69,12 @@ func (d *Dialer) DialWithRawAddr(rawaddr []byte) (conn net.Conn, err error) {
 	if err != nil {
 		return
 	}
-	c := NewSecureConn(conn, d.cipher.Copy(), d.timeout)
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return nil, errors.New("error in convert into tcp connection")
+	}
+
+	c := NewSecureConn(tcpConn, d.cipher.Copy(), d.timeout)
 	if _, err = c.Write(rawaddr); err != nil {
 		c.Close()
 		return nil, err
