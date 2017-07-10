@@ -325,14 +325,25 @@ func run(config *ss.Config, enableUDP bool) {
 		servers[i] = net.JoinHostPort(servers[i], ports[i])
 	}
 
-	// TODO we need a strategy auto ping each server
-	// and sort to choose the best server in use
-	// this should be done in background every hours
-	// go detectServer()
+	// multi server mode
+	// FIXME need to be tested
+	var get_server func() string = config.GetServer
+	switch config.MultiServerMode {
+	case "fastest":
+		go func() {
+			for {
+				config.Detect()
+				time.Sleep(time.Hour * 1)
+			}
+		}()
+	case "round-over":
+		get_server = config.GetServerRoundOver
+	}
+	var server string
 
 	// main loop for socks5 accept incoming request
 	for {
-		server := servers[0]
+		server = get_server()
 		conn, err := ln.Accept()
 		if err != nil {
 			ss.Logger.Error("error in local server accept socks5", zap.Error(err))
@@ -344,7 +355,7 @@ func run(config *ss.Config, enableUDP bool) {
 
 // main locical about the local server
 func main() {
-	var configFile, ServerAddr, LocalAddr, Password, Method string
+	var configFile, ServerAddr, LocalAddr, Password, Method, MultiServerMode string
 	var ServerPort, Timeout, LocalPort int
 	var printVer, UDP bool
 	var config *ss.Config
@@ -361,6 +372,7 @@ func main() {
 	flag.StringVar(&Method, "m", "aes-256-cfb", "encryption method, default: aes-256-cfb. end with -auth mean enable OTA")
 	flag.StringVar(&ss.Level, "l", "info", "given the logger level for ss to logout info, can be set in debug info warn error panic")
 	flag.BoolVar(&UDP, "u", false, "use the udp to serve")
+	flag.StringVar(&MultiServerMode, "multiserver", "fastest", "3 modes for shadowsocks local detect ss server: \n\t\tfastest: get fastest server to request\n\t\tround-over: get round over server to request\n\t\tdissable: only request for first server")
 
 	// show the help info when parse flags failed
 	flag.Parse()
@@ -405,6 +417,7 @@ func main() {
 	if LocalPort != 0 {
 		opts = append(opts, ss.WithLocalPort(LocalPort))
 	}
+	opts = append(opts, ss.WithMultiServerMode(MultiServerMode))
 
 	config = ss.NewConfig(opts...)
 

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // Config is used in both ss-server & ss-local server, notice the different role in ss
@@ -20,25 +22,39 @@ import (
 //
 // NOTICE if the config file is setted, the config option will be disabled automaticly
 
+// rolling index give out the index which server will return on next rolling get server
+var rollingIndex int = 0
+
 type Config struct {
-	Server     string `json:"server_addr"` // shadowsocks remote Server address, for multi server split them with comma
-	ServerPort string `json:"server_port"` // shadowsocks remote Server port, split with comma when multi user is enabled
-	Local      string `json:"local_addr"`  // shadowsocks local socks5 Server address
-	LocalPort  int    `json:"local_port"`  // shadowsocks local socks5 Server port
-	Password   string `json:"password"`    // shadowsocks remote server password, for multi server password should plase in order and split eith comma
-	Method     string `json:"method"`      // encryption method for ss local & ss server communication
-	Timeout    int    `json:"timeout"`     // shadowsocks conversation timeout limit
+	Server          string `json:"server_addr"`     // shadowsocks remote Server address, for multi server split them with comma
+	ServerPort      string `json:"server_port"`     // shadowsocks remote Server port, split with comma when multi user is enabled
+	Local           string `json:"local_addr"`      // shadowsocks local socks5 Server address
+	LocalPort       int    `json:"local_port"`      // shadowsocks local socks5 Server port
+	Password        string `json:"password"`        // shadowsocks remote server password, for multi server password should plase in order and split eith comma
+	Method          string `json:"method"`          // encryption method for ss local & ss server communication
+	Timeout         int    `json:"timeout"`         // shadowsocks connection timeout
+	MultiServerMode string `json:"MultiServerMode"` // shadowsocks client multi-server access mode: fastest,round-over,dissable
 
 	// following options are only used by server
 	PortPassword map[string]string `json:"port_password"` // shadowsocks mutli user password
 
 	// following options are only used by client
 	ServerPassword map[string]string `json:"server_password"` // shadowsocks local mutli server password
+
+	// TODO
+	DNSServer string `"json:"dns_server"` // shadowsocks remote dns server, if set to nil, the system DNS will be uesd for dig
+
+	// TODO unsupported function
+	//"fast_open":false,
+	//"tunnel_remote":"8.8.8.8",
+	//"tunnel_remote_port":53,
+	//"tunnel_port":53,
+	servers []string
 }
 
 func (c *Config) String() string {
-	return fmt.Sprintf("Server: %s, ServerPort: %s, Local: %s, LocalPort: %d, Password: %s, Method: %s, Timeout: %d, portpwds: %v, serverpwds: %v",
-		c.Server, c.ServerPort, c.Local, c.LocalPort, c.Password, c.Method, c.Timeout, c.PortPassword, c.ServerPassword)
+	return fmt.Sprintf("Server: %s, ServerPort: %s, Local: %s, LocalPort: %d, Password: %s, Method: %s, Timeout: %d, portpwds: %v, serverpwds: %v, multi-server module:%v",
+		c.Server, c.ServerPort, c.Local, c.LocalPort, c.Password, c.Method, c.Timeout, c.PortPassword, c.ServerPassword, c.MultiServerMode)
 }
 
 type ConfOption func(c *Config)
@@ -51,6 +67,14 @@ func NewConfig(opts ...ConfOption) *Config {
 	for _, v := range opts {
 		v(&config)
 	}
+
+	servers := config.GetServerArray()
+	ports := config.GetServerPortArray()
+	for i, _ := range servers {
+		servers[i] = net.JoinHostPort(servers[i], ports[i])
+	}
+	config.servers = servers
+
 	return &config
 }
 
@@ -98,6 +122,20 @@ func WithEncryptMethod(method string) ConfOption {
 func WithTimeOut(t int) ConfOption {
 	return func(c *Config) {
 		c.Timeout = t
+	}
+}
+func WithMultiServerMode(mode string) ConfOption {
+	return func(c *Config) {
+		switch mode {
+		case "fastest":
+			fallthrough
+		case "round-over":
+			fallthrough
+		case "dissable":
+			c.MultiServerMode = mode
+		default:
+			c.MultiServerMode = "fastest"
+		}
 	}
 }
 
@@ -181,27 +219,41 @@ func ProcessConfig(c *Config) {
 	}
 }
 
+func (c *Config) GetServer() string {
+	return c.servers[0]
+}
+
+func (c *Config) GetServerRoundOver() string {
+	defer func() { rollingIndex += 1 }()
+	servers := c.GetServerArray()
+	index := rollingIndex % len(servers)
+	return servers[index]
+}
+
 // Detect used only when multi tcp based ss server is setted for the client
 // Detect will try to dial each server to caculate a delay and sort server
-func (c *Config) Detect() error {
+func (c *Config) Detect() {
 	if len(c.GetServerArray()) < 2 {
-		return nil
+		return
 	}
 
-	Logger.Info("detecting the server delay and choose best server")
 	type pair struct {
 		server string
 		delay  time.Duration
 	}
 
 	ping := func(addr string) time.Duration {
-		t := time.Now()
-		_, err := net.Dial("tcp", addr)
-		ts := time.Now().Sub(t)
-		if err != nil {
-			return 0xfffffff
+		var avg time.Duration
+		for i := 0; i < 3; i++ {
+			t := time.Now()
+			_, err := net.Dial("tcp", addr)
+			ts := time.Now().Sub(t)
+			if err != nil {
+				return 0xfffffffffffffff
+			}
+			avg += ts
 		}
-		return ts
+		return avg / time.Duration(3)
 	}
 
 	var ss []pair
@@ -221,5 +273,5 @@ func (c *Config) Detect() error {
 	}
 	c.Server = sortedserver
 
-	return nil
+	Logger.Info("Detecting the server delay and sort the server in ascend", zap.String("servers", sortedserver))
 }
