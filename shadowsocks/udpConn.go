@@ -11,11 +11,11 @@ import (
 type SecurePacketConn struct {
 	net.PacketConn
 	*encrypt.Cipher
-	isClient bool
+	Timeout int
 }
 
 // ListenPacket is like net.ListenPacket() but returns an secured connection
-func ListenPacket(network, laddr string, cipher *encrypt.Cipher) (*SecurePacketConn, error) {
+func ListenPacket(network, laddr string, cipher *encrypt.Cipher, timeout int) (*SecurePacketConn, error) {
 	if cipher == nil {
 		return nil, ErrNilCipher
 	}
@@ -23,14 +23,15 @@ func ListenPacket(network, laddr string, cipher *encrypt.Cipher) (*SecurePacketC
 	if err != nil {
 		return nil, err
 	}
-	return NewSecurePacketConn(conn, cipher), nil
+	return NewSecurePacketConn(conn, cipher, timeout), nil
 }
 
 // NewSecurePacketConn creates a secured PacketConn
-func NewSecurePacketConn(c net.PacketConn, cipher *encrypt.Cipher) *SecurePacketConn {
+func NewSecurePacketConn(c net.PacketConn, cipher *encrypt.Cipher, timeout int) *SecurePacketConn {
 	return &SecurePacketConn{
 		PacketConn: c,
 		Cipher:     cipher,
+		Timeout:    timeout,
 	}
 }
 
@@ -80,5 +81,6 @@ func (c *SecurePacketConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
 
 	cipher.Encrypt(cipherData[len(iv):], b)
 	n, err = c.PacketConn.WriteTo(cipherData, dst)
+	n -= len(iv)
 	return
 }

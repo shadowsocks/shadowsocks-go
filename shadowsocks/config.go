@@ -154,7 +154,6 @@ func (c *Config) GetServerPortArray() []string {
 	}
 	return strings.Split(c.ServerPort, ",")
 }
-
 func (c *Config) GetPasswordArray() []string {
 	if c.Password == "" {
 		return nil
@@ -186,37 +185,17 @@ func ParseConfig(path string) (conf *Config, err error) {
 
 // ProcessConfig fill in the map after the config is unmarshaled
 func ProcessConfig(c *Config) {
-	servers := c.GetServerArray()
-	serverports := c.GetServerPortArray()
-	passwds := c.GetPasswordArray()
+	c.PortPassword = make(map[string]string)
+	c.ServerPassword = make(map[string]string)
 
-	if c.ServerPassword != nil {
-		return
-	}
-	// check and set for the ss local config
-	if len(servers) > 0 && len(serverports) > 0 && len(passwds) > 0 {
-		if len(servers) != len(serverports) || len(servers) != len(passwds) {
-			Logger.Fatal("error in proces the config file, Invalid config")
-		}
-		for i := 0; i < len(servers); i++ {
-			addr := serverports[i] + ":" + serverports[i]
-			c.ServerPassword[addr] = passwds[i]
-		}
+	sport := c.ServerPort
+	if !strings.Contains(c.ServerPort, ":") {
+		sport = ":" + c.ServerPort
 	}
 
-	if c.PortPassword != nil {
-		return
-	}
-	// check and set for the ss remote server config
-	if len(serverports) > 0 && len(passwds) > 0 {
-		if len(servers) != len(passwds) {
-			Logger.Fatal("error in proces the config file, Invalid config")
-		}
-		for i, port := range serverports {
-			addr := ":" + port
-			c.PortPassword[addr] = passwds[i]
-		}
-	}
+	addr := c.Server + c.ServerPort
+	c.ServerPassword[addr] = c.Password
+	c.PortPassword[sport] = c.Password
 }
 
 func (c *Config) GetServer() string {

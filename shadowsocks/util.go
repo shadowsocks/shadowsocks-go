@@ -145,7 +145,7 @@ func GetRequest(ss *SecureConn) (host string, err error) {
 	case typeDm:
 		host = string(buf[idDm0 : idDm0+int(buf[idDmLen])])
 		if strings.ContainsRune(host, 0x00) {
-			return "", errInvalidHostname
+			return "", ErrInvalidHostname
 		}
 	}
 
@@ -157,5 +157,40 @@ func GetRequest(ss *SecureConn) (host string, err error) {
 	return
 }
 
-// connectToServer
-func requestForServe() {}
+// GetUDPRequest can handler the ss request header and decryption for ss protocol
+func GetUDPRequest(req []byte) (dst string, length int, err error) {
+	// dst should be the ip:port, host should be resolved here
+	// reqstart & end hold the start and end about the request header
+	var host string
+	addrType := req[idType]
+	switch addrType & AddrMask {
+	case typeIPv4:
+		length = idIP0 + headerLenIPv4
+		host = net.IP(req[idIP0 : idIP0+net.IPv4len]).String()
+	case typeIPv6:
+		length = idIP0 + headerLenIPv6
+		host = net.IP(req[idIP0 : idIP0+net.IPv6len]).String()
+	case typeDm:
+		length = idDm0 + int(req[idDmLen]) + headerLenDmBase - 1
+		host = string(req[idDm0 : idDm0+int(req[idDmLen])])
+		if strings.ContainsRune(host, 0x00) {
+			return "", -1, ErrInvalidHostname
+		}
+		// resolve the host for ip
+		ip, err := net.LookupIP(host)
+		if err != nil || len(ip) == 0 {
+			return "", -1, ErrInvalidHostname
+		}
+		host = ip[0].To4().String()
+	default:
+		err = fmt.Errorf("addr type %d not supported", addrType&AddrMask)
+		return "", -1, err
+	}
+
+	// get the port
+	port := binary.BigEndian.Uint16(req[length-2 : length])
+	// the request host and port
+	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
+
+	return host, length + 2, nil
+}

@@ -21,10 +21,14 @@ import (
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
-const logCntDelta int32 = 100
+const (
+	logCntDelta int32 = 100
+)
 
-var connCnt int32
-var nextLogConnCnt = logCntDelta
+var (
+	connCnt        int32
+	nextLogConnCnt = logCntDelta
+)
 
 // handleConnection forward the request to the destination
 func handleConnection(conn *ss.SecureConn, timeout int) {
@@ -38,9 +42,6 @@ func handleConnection(conn *ss.SecureConn, timeout int) {
 
 	atomic.AddInt32(&connCnt, 1)
 	if atomic.LoadInt32(&connCnt)-nextLogConnCnt >= 0 {
-		// XXX There's no xadd in the atomic package, so it's difficult to log
-		// the message only once with low cost. Also note nextLogConnCnt maybe
-		// added twice for current peak connection number level.
 		ss.Logger.Warn("Number of client connections reaches", zap.Int32("count", nextLogConnCnt))
 		nextLogConnCnt += logCntDelta
 	}
@@ -140,38 +141,41 @@ func run(conf *ss.Config) {
 	}
 }
 
-func serveUDP(SecurePacketConn *ss.SecurePacketConn) {
-	defer SecurePacketConn.Close()
+// serveUDP read from the udp listen and forward the request
+// only do the forward here, the backward doing in another sequence
+func serveUDP(servein *ss.SecurePacketConn) {
+	defer servein.Close()
+	// TODO need a pool
 	buf := make([]byte, 4096)
 	for {
-		n, src, err := SecurePacketConn.ReadFrom(buf)
+		//buf := ss.UDPBufferPool.Get()
+		n, srcAddr, err := servein.ReadFrom(buf)
 		if err != nil {
-			if err == ss.ErrPacketOtaFailed {
-				continue
-			}
-			ss.Logger.Error("[udp]read error", zap.Error(err))
-			return
-		}
-		host, headerLen, err := ss.UDPGetRequest(buf[:n])
-		if err != nil {
-			ss.Logger.Error("[udp]faided to decode request", zap.Error(err))
+			ss.Logger.Error("[udp]read from server packet listen error", zap.Error(err))
+			// TODO should this be continue?
+			// warning may better
 			continue
 		}
-		ss.ForwardUDPConn(SecurePacketConn, src, host, buf[:n], headerLen)
+		// TODO handle the connection : when to close the conn
+		// for loop is right?
+
+		go ss.ForwardUDPConn(servein, srcAddr, buf[:n])
 	}
 }
 
+// strat a server for each port & password
 func runUDP(conf *ss.Config) {
 	addrPadd := conf.PortPassword
 	for addr, pass := range addrPadd {
-		ss.Logger.Info("listening udp", zap.String("port", addr))
+		ss.Logger.Info("[UDP] listening udp", zap.String("port", addr))
 		cipher, err := encrypt.NewCipher(conf.Method, pass)
 		if err != nil {
-			ss.Logger.Error("Failed create cipher", zap.Error(err))
+			ss.Logger.Error("[UDP] failed create cipher", zap.Error(err))
+			os.Exit(1)
 		}
-		SecurePacketConn, err := ss.ListenPacket("udp", addr, cipher)
+		SecurePacketConn, err := ss.ListenPacket("udp", addr, cipher, conf.Timeout)
 		if err != nil {
-			ss.Logger.Error("error listening packetconn ", zap.String("addrsee", addr), zap.Error(err))
+			ss.Logger.Error("[UDP] error listening packetconn ", zap.String("address", addr), zap.Error(err))
 			os.Exit(1)
 		}
 		go serveUDP(SecurePacketConn)
@@ -218,15 +222,15 @@ func main() {
 	var config *ss.Config
 
 	flag.BoolVar(&printVer, "v", false, "print version")
-	flag.StringVar(&configFile, "c", "", "specify config file")
-	flag.StringVar(&Password, "k", "", "password")
-	flag.StringVar(&ServerPort, "p", "", "server port")
-	flag.IntVar(&Timeout, "t", 300, "timeout in seconds")
-	flag.StringVar(&Method, "m", "aes-256-cfb", "encryption method, default: aes-256-cfb")
+	flag.StringVar(&configFile, "config", "", "specify config file")
+	flag.StringVar(&Password, "passwd", "", "password")
+	flag.StringVar(&ServerPort, "port", "", "server port")
+	flag.IntVar(&Timeout, "timeout", 300, "timeout in seconds")
+	flag.StringVar(&Method, "method", "aes-256-cfb", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.IntVar(&matrixport, "pprof", 0, "set the metrix port to Enable the pprof and matrix(TODO), keep it 0 will disable this feature")
-	flag.StringVar(&ss.Level, "l", "info", "given the logger level for ss to logout info, can be set in debug info warn error")
-	flag.BoolVar(&udp, "u", false, "enable UDP service")
+	flag.StringVar(&ss.Level, "level", "info", "given the logger level for ss to logout info, can be set in debug info warn error")
+	flag.BoolVar(&udp, "disable_udp", true, "diasbale UDP service, enable bydefault")
 	flag.Parse()
 	if !flag.Parsed() {
 		flag.Usage()
@@ -294,7 +298,7 @@ func main() {
 
 	// start the shadowsocks server
 	go run(config)
-	if udp {
+	if !udp { //enable udp if diable_udp not set
 		go runUDP(config)
 	}
 
