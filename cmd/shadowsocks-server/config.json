@@ -1,9 +1,12 @@
 {
+    "server_addr":"127.0.0.1",
     "server_port":"16886",
     "password":"foo",
     "method":"aes-256-cfb",
     "timeout":0,
     "port_password":{
         "16886":"foo"
-    }
+    },
+    "MultiServerMode": "fastest",
+    "dns_server":"114.114.114.114"
 }

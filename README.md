@@ -1,6 +1,6 @@
-# shadowsocks-go
+# shadowsocks-go [![Go Report Card](https://goreportcard.com/badge/github.com/arthurkiller/shadowsocks-go)](https://goreportcard.com/report/github.com/arthurkiller/shadowsocks-go) [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go) [![Docker Repository on Quay.io](https://quay.io/repository/arthurkiller/shadowsocks-go/status "Docker Repository on Quay.io")](https://quay.io/repository/arthurkiller/shadowsocks-go/status) 
 
-[![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go) ___Current version: 2.0.0 alpha___ 
+___Current version: 2.0.0 alpha___
 
 shadowsocks-go is a lightweight tunnel proxy which can help you get through firewalls. It is a port of [shadowsocks](https://github.com/clowwindy/shadowsocks).
 
