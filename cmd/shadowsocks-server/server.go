@@ -31,9 +31,11 @@ const (
 var (
 	connCnt        int32
 	nextLogConnCnt = logCntDelta
-	DNSClient      *dns.Client
-	DNSresolver    func(host string) ([]string, error)
-	enableDNS      bool
+	// DNSClient give out the dns client for use
+	DNSClient *dns.Client
+	// DNSresolver give out the dns host to request
+	DNSresolver func(host string) ([]string, error)
+	enableDNS   bool
 )
 
 // handleConnection forward the request to the destination

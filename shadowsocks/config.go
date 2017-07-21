@@ -20,11 +20,12 @@ import (
 // 2) ss local server:
 // Server and ServerPort and Password shoud be care when is used in ss local server module
 //
-// NOTICE if the config file is setted, the config option will be disabled automaticly
+// NOTICE if the config file is setted, the config option will be disabled automatically
 
 // rolling index give out the index which server will return on next rolling get server
-var roundRobinIndex int = 0
+var roundRobinIndex int
 
+// Config implement the ss config
 type Config struct {
 	Server          string `json:"server_addr"`     // shadowsocks remote Server address, for multi server split them with comma
 	ServerPort      string `json:"server_port"`     // shadowsocks remote Server port, split with comma when multi user is enabled
@@ -50,13 +51,16 @@ type Config struct {
 	servers []string
 }
 
+// String return the ss config content in string
 func (c *Config) String() string {
 	return fmt.Sprintf("Server: %s, ServerPort: %s, Local: %s, LocalPort: %d, Password: %s, Method: %s, Timeout: %d, portpwds: %v, serverpwds: %v, multi-server module:%v",
 		c.Server, c.ServerPort, c.Local, c.LocalPort, c.Password, c.Method, c.Timeout, c.PortPassword, c.ServerPassword, c.MultiServerMode)
 }
 
+// ConfOption define the config options
 type ConfOption func(c *Config)
 
+// NewConfig use the option to generate the ss config
 func NewConfig(opts ...ConfOption) *Config {
 	var config = Config{
 		PortPassword:   make(map[string]string),
@@ -69,7 +73,7 @@ func NewConfig(opts ...ConfOption) *Config {
 
 	servers := config.GetServerArray()
 	ports := config.GetServerPortArray()
-	for i, _ := range servers {
+	for i := range servers {
 		servers[i] = net.JoinHostPort(servers[i], ports[i])
 	}
 	config.makeupServers()
@@ -87,7 +91,6 @@ func WithServerPassword(server, passwd string) ConfOption {
 		c.ServerPassword[server] = passwd
 	}
 }
-
 func WithServer(server string) ConfOption {
 	return func(c *Config) {
 		c.Server = server
@@ -146,7 +149,7 @@ func WithMultiServerMode(mode string) ConfOption {
 // return the server addr list split by comma
 func (c *Config) GetServerArray() []string {
 	// Specifying multiple servers in the "server" options is deprecated.
-	// But for backward compatiblity, keep this.
+	// But for backward compatibility, keep this.
 	if c.Server == "" {
 		return nil
 	}
@@ -191,7 +194,7 @@ func (c *Config) makeupServers() {
 	serversaddr := c.GetServerArray()
 	serversport := c.GetServerPortArray()
 	servers := make([]string, len(serversaddr))
-	for i, _ := range servers {
+	for i := range servers {
 		servers[i] = net.JoinHostPort(serversaddr[i], serversport[i])
 	}
 	c.servers = servers
@@ -229,7 +232,7 @@ func (c *Config) GetServer() string {
 }
 
 func (c *Config) GetServerRoundRobin() string {
-	defer func() { roundRobinIndex += 1 }()
+	defer func() { roundRobinIndex++ }()
 	serversaddr := c.GetServerArray()
 	serversport := c.GetServerPortArray()
 	index := roundRobinIndex % len(serversaddr)

@@ -21,6 +21,7 @@ import (
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
+// Error defined the common errors
 var (
 	ErrAddrType          = errors.New("socks addr type not supported")
 	ErrVer               = errors.New("socks version not supported")
@@ -34,10 +35,12 @@ var (
 	ErrInvalidPassword   = errors.New("password illegal")
 	ErrReadUnexpectEOF   = errors.New("unexpect EOF occoured")
 	ErrConvertTCPConn    = errors.New("error in convert into tcp connection")
+	ErrNilCipher         = errors.New("error nil cipher")
 )
 
 const (
-	UDPMaxSize = 65507 // max udp packet size
+	// UDPMaxSize give out max udp packet size
+	UDPMaxSize = 65507
 
 	idVer     = 0 // socks version index
 	idNmethod = 1
@@ -74,8 +77,6 @@ type natTable map[string]*natTableInfo
 var (
 	// HandShakeTimeout give out the socks5 handshake time out
 	HandShakeTimeout = 15
-	// ErrNilCipher illegal cipher
-	ErrNilCipher = errors.New("error nil cipher")
 	// NatInfo used to locate the natTable from server port
 	NatInfo map[int]natTable = make(map[int]natTable)
 )
@@ -307,12 +308,13 @@ func udpAssociate(conn net.Conn) (int, int, net.PacketConn, error) {
 	return int(clietnBindPort), serverBindAddr.Port, serverBindListen, nil
 }
 
+// ServerCipher difined the server and cipher suit
 type ServerCipher struct {
 	server string
 	cipher *encrypt.Cipher
 }
 
-// prepare the infomation for connection to the servers set in the config
+// prepare the information for connection to the servers set in the config
 func prepareToConnect(c *ss.Config) (map[string]*encrypt.Cipher, error) {
 	// connect to server will establish all the server connection with given server address and port
 	cips := make(map[string]*encrypt.Cipher, len(c.GetServerArray()))
@@ -442,12 +444,6 @@ func handleUDPConnection(server string, conn net.Conn, timeout int) {
 	ss.Logger.Debug("handle socks5 connect", zap.Stringer("source", conn.LocalAddr()),
 		zap.Stringer("remote", conn.RemoteAddr()))
 	var err error
-	var closed bool
-	defer func() {
-		if !closed {
-			conn.Close()
-		}
-	}()
 
 	// resolve udp address
 	serverUDPaddr, err := net.ResolveUDPAddr("udp", server)
@@ -497,11 +493,9 @@ func handleUDPConnection(server string, conn net.Conn, timeout int) {
 				return
 			}
 		}
-
-		// TODO correct here?
-		defer serverListener.Close()
-		defer ssPacketConn.Close()
 	}()
+	defer serverListener.Close()
+	defer ssPacketConn.Close()
 
 	cliReq := make([]byte, UDPMaxSize)
 	for {
@@ -550,11 +544,8 @@ func handleUDPConnection(server string, conn net.Conn, timeout int) {
 				zap.String("server", server), zap.Error(err))
 			continue
 		}
+		ss.Logger.Debug("closed server connection", zap.Stringer("ss-local", ssPacketConn.LocalAddr()), zap.String("server", server))
 	}
-
-	closed = true
-	ss.Logger.Debug("closed server connection", zap.Stringer("ss-local", ssPacketConn.LocalAddr()), zap.String("server", server))
-	return
 }
 
 var ciphers map[string]*encrypt.Cipher
@@ -577,12 +568,12 @@ func run(config *ss.Config) {
 
 	servers := config.GetServerArray()
 	ports := config.GetServerPortArray()
-	for i, _ := range servers {
+	for i := range servers {
 		servers[i] = net.JoinHostPort(servers[i], ports[i])
 	}
 
 	// multi server mode
-	var get_server func() string = config.GetServer
+	var getServer func() string = config.GetServer
 
 	switch config.MultiServerMode {
 	case "fastest":
@@ -597,14 +588,14 @@ func run(config *ss.Config) {
 		}()
 	case "round-robin":
 		if len(config.GetServerArray()) >= 2 {
-			get_server = config.GetServerRoundRobin
+			getServer = config.GetServerRoundRobin
 		}
 	}
 
 	// main loop for socks5 accept incoming request
 	var server string
 	for {
-		server = get_server()
+		server = getServer()
 		conn, err := ln.Accept()
 		if err != nil {
 			ss.Logger.Error("error in local server accept socks5", zap.Error(err))
