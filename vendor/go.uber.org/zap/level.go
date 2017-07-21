@@ -74,6 +74,14 @@ func NewAtomicLevel() AtomicLevel {
 	}
 }
 
+// NewAtomicLevelAt is a convienence function that creates an AtomicLevel
+// and then calls SetLevel with the given level.
+func NewAtomicLevelAt(l zapcore.Level) AtomicLevel {
+	a := NewAtomicLevel()
+	a.SetLevel(l)
+	return a
+}
+
 // Enabled implements the zapcore.LevelEnabler interface, which allows the
 // AtomicLevel to be used in place of traditional static levels.
 func (lvl AtomicLevel) Enabled(l zapcore.Level) bool {
@@ -88,6 +96,11 @@ func (lvl AtomicLevel) Level() zapcore.Level {
 // SetLevel alters the logging level.
 func (lvl AtomicLevel) SetLevel(l zapcore.Level) {
 	lvl.l.Store(int32(l))
+}
+
+// String returns the string representation of the underlying Level.
+func (lvl AtomicLevel) String() string {
+	return lvl.Level().String()
 }
 
 // UnmarshalText unmarshals the text to an AtomicLevel. It uses the same text
@@ -105,4 +118,11 @@ func (lvl *AtomicLevel) UnmarshalText(text []byte) error {
 
 	lvl.SetLevel(l)
 	return nil
+}
+
+// MarshalText marshals the AtomicLevel to a byte slice. It uses the same
+// text representation as the static zapcore.Levels ("debug", "info", "warn",
+// "error", "dpanic", "panic", and "fatal").
+func (lvl AtomicLevel) MarshalText() (text []byte, err error) {
+	return lvl.Level().MarshalText()
 }

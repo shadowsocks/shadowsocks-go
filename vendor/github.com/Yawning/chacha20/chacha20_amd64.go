@@ -31,7 +31,7 @@ func blocksAmd64(x *[stateSize]uint32, in []byte, out []byte, nrBlocks int, isIe
 
 	if isIetf {
 		var totalBlocks uint64
-		totalBlocks = uint64(x[8]) + uint64(nrBlocks)
+		totalBlocks = uint64(x[12]) + uint64(nrBlocks)
 		if totalBlocks > math.MaxUint32 {
 			panic("chacha20: Exceeded keystream per nonce limit")
 		}

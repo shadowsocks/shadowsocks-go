@@ -3,88 +3,94 @@
 	"ignore": "test",
 	"package": [
 		{
-			"checksumSHA1": "IFJyJgPCjumDG37lEb0lyRBBGZE=",
+			"checksumSHA1": "H/Smh6uSKqa+WRwpmYuCKkHqeIk=",
 			"path": "github.com/Yawning/chacha20",
-			"revision": "c91e78db502ff629614837aacb7aa4efa61c651a",
-			"revisionTime": "2016-04-30T09:49:23Z"
+			"revision": "70289bb2131350877f4b969b94ac4cf22eef9aa1",
+			"revisionTime": "2017-06-03T04:55:34Z"
+		},
+		{
+			"checksumSHA1": "MeHOAfYrBhN17UI8l6a+hQBD2/s=",
+			"path": "github.com/miekg/dns",
+			"revision": "0559e6d230af0a3a7273853cb6994ebea21bfbe5",
+			"revisionTime": "2017-07-09T06:56:13Z"
 		},
 		{
 			"checksumSHA1": "Aaxx+Uw/8iXCCnnbQFRTGE9C4XQ=",
 			"path": "github.com/shadowsocks/shadowsocks-go/encrypt",
-			"revision": "7e334634c75885160706ca4493eb76cd10184863",
-			"revisionTime": "2017-04-24T07:11:51Z"
+			"revision": "fdf72009ab7a9ff5d426d90ccd25a4e13834fdc0",
+			"revisionTime": "2017-07-21T09:34:47Z"
 		},
 		{
-			"checksumSHA1": "F1UBhlrefuboF4EwXVPCenVxzeQ=",
+			"checksumSHA1": "8Gr/0WhX6i2avQZUzK2gnJBawfM=",
 			"path": "github.com/shadowsocks/shadowsocks-go/shadowsocks",
-			"revision": "7e334634c75885160706ca4493eb76cd10184863",
-			"revisionTime": "2017-04-24T07:11:51Z"
+			"revision": "fdf72009ab7a9ff5d426d90ccd25a4e13834fdc0",
+			"revisionTime": "2017-07-21T09:34:47Z"
 		},
 		{
-			"checksumSHA1": "6NS7FWJl1FobB+Xfe4SzBGD+75g=",
+			"checksumSHA1": "3IdEHJfBkeEE8guKA2tcA8Fv6eg=",
 			"path": "go.uber.org/atomic",
-			"revision": "3b8db5e93c4c02efbc313e17b2e796b0914a01fb",
-			"revisionTime": "2016-12-15T19:56:52Z"
+			"revision": "70bd1261d36be490ebd22a62b385a3c5d23b6240",
+			"revisionTime": "2017-05-09T22:23:09Z"
 		},
 		{
-			"checksumSHA1": "DBP6bPuBoFshYv590L5hauiN4VY=",
+			"checksumSHA1": "xKr6vWlnGeonLsQnmBi7bV56dco=",
 			"path": "go.uber.org/zap",
-			"revision": "1550bc05539134bbf8612a35f34a79ab8bf34ee3",
-			"revisionTime": "2017-04-14T05:12:42Z"
+			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
+			"revisionTime": "2017-06-08T15:36:15Z"
 		},
 		{
 			"checksumSHA1": "HYo/9nwrY08NQA+2ItPOAH8IFW8=",
 			"path": "go.uber.org/zap/buffer",
-			"revision": "1550bc05539134bbf8612a35f34a79ab8bf34ee3",
-			"revisionTime": "2017-04-14T05:12:42Z"
+			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
+			"revisionTime": "2017-06-08T15:36:15Z"
 		},
 		{
 			"checksumSHA1": "MuxOAtZEsJitlWBzhmpm2vGiHok=",
 			"path": "go.uber.org/zap/internal/bufferpool",
-			"revision": "1550bc05539134bbf8612a35f34a79ab8bf34ee3",
-			"revisionTime": "2017-04-14T05:12:42Z"
+			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
+			"revisionTime": "2017-06-08T15:36:15Z"
 		},
 		{
 			"checksumSHA1": "uC0L9eCSAYcCWNC8udJk/t1vvIU=",
 			"path": "go.uber.org/zap/internal/color",
-			"revision": "1550bc05539134bbf8612a35f34a79ab8bf34ee3",
-			"revisionTime": "2017-04-14T05:12:42Z"
+			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
+			"revisionTime": "2017-06-08T15:36:15Z"
 		},
 		{
 			"checksumSHA1": "b80CJExrVpXu3SA1iCQ6uLqTn2c=",
 			"path": "go.uber.org/zap/internal/exit",
-			"revision": "1550bc05539134bbf8612a35f34a79ab8bf34ee3",
-			"revisionTime": "2017-04-14T05:12:42Z"
+			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
+			"revisionTime": "2017-06-08T15:36:15Z"
 		},
 		{
 			"checksumSHA1": "mpgG6h5iItTyTOjG1CsPGYb65bM=",
 			"path": "go.uber.org/zap/internal/multierror",
-			"revision": "1550bc05539134bbf8612a35f34a79ab8bf34ee3",
-			"revisionTime": "2017-04-14T05:12:42Z"
+			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
+			"revisionTime": "2017-06-08T15:36:15Z"
 		},
 		{
-			"checksumSHA1": "BZHi2G+U7WdvjszrzA1gXY6/9S0=",
+			"checksumSHA1": "egEhwGE6+sOPVsOkSj1l5WOv+2w=",
 			"path": "go.uber.org/zap/zapcore",
-			"revision": "1550bc05539134bbf8612a35f34a79ab8bf34ee3",
-			"revisionTime": "2017-04-14T05:12:42Z"
+			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
+			"revisionTime": "2017-06-08T15:36:15Z"
 		},
 		{
-			"checksumSHA1": "JsJdKXhz87gWenMwBeejTOeNE7k=",
+			"checksumSHA1": "oVPHWesOmZ02vLq2fglGvf+AMgk=",
 			"path": "golang.org/x/crypto/blowfish",
-			"revision": "efac7f277b17c19894091e358c6130cb6bd51117",
-			"revisionTime": "2017-04-18T01:50:50Z"
+			"revision": "6914964337150723782436d56b3f21610a74ce7b",
+			"revisionTime": "2017-07-20T17:50:53Z"
 		},
 		{
 			"checksumSHA1": "TT1rac6kpQp2vz24m5yDGUNQ/QQ=",
 			"path": "golang.org/x/crypto/cast5",
-			"revision": "efac7f277b17c19894091e358c6130cb6bd51117",
-			"revisionTime": "2017-04-18T01:50:50Z"
+			"revision": "6914964337150723782436d56b3f21610a74ce7b",
+			"revisionTime": "2017-07-20T17:50:53Z"
 		},
 		{
-			"checksumSHA1": "w8PESKJweP+BCAxCYPU1QC08qUU=",
+			"checksumSHA1": "RUr1Owi1/hTpuAqKeeus6YuEyz8=",
 			"path": "golang.org/x/crypto/salsa20/salsa",
-			"revision": "efac7f277b17c19894091e358c6130cb6bd51117",
-			"revisionTime": "2017-04-18T01:50:50Z"
+			"revision": "6914964337150723782436d56b3f21610a74ce7b",
+			"revisionTime": "2017-07-20T17:50:53Z"
 		}
 	],
 	"rootPath": "github.com/arthurkiller/shadowsocks-go"

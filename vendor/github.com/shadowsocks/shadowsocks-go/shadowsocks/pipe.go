@@ -1,6 +1,7 @@
 package shadowsocks
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"syscall"
@@ -9,53 +10,104 @@ import (
 	"go.uber.org/zap"
 )
 
+// NetConnection inmlements the net.Conn & net.TcpConn with Shutdown liked function
+type NetConnection interface {
+	net.Conn
+	CloseWrite() error
+	CloseRead() error
+}
+
 // PipeThenClose copies data from src to dst, close dst when done.
-func PipeThenClose(src, dst net.Conn, timeout int, done func()) {
+func PipeThenClose(src, dst NetConnection, done func()) {
 	defer done()
+
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
-	if timeout > 0 {
-		src.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
-		dst.SetWriteDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+	connInfo := fmt.Sprintf("src conn: %v <---> %v, dst conn: %v <---> %v",
+		src.RemoteAddr().String(), src.LocalAddr().String(), dst.LocalAddr().String(), dst.RemoteAddr().String())
+
+	for {
+		n, err := src.Read(buf)
+		if n > 0 {
+			var start int
+			for start != n {
+				// XXX retry may cause the data repeated
+				nn, errR := dst.Write(buf[start:n])
+				if errR != nil {
+					//if errR.(*net.OpError).Timeout() {
+					//	Logger.Warn("write into dest TimeOut, retry", zap.String("conn info", connInfo), zap.Error(errR))
+					//}
+					Logger.Error("error in copy from src to dest, write into dest", zap.String("conn info", connInfo), zap.Error(errR))
+					// should read any more cause the dst can not write
+					// XXX src.Close()
+					// dst.CloseWrite()
+
+					// XXX data loose
+					dst.CloseWrite()
+					return
+				}
+				start += nn
+				if nn < n {
+					Logger.Info("write dst, nn < n", zap.Int("read n", n), zap.Int("write n", nn), zap.Int("buffer", start), zap.String("conn info", connInfo))
+				}
+			}
+		}
+
+		if err != nil {
+			//if err.(*net.OpError).Timeout() {
+			//	Logger.Warn("read src TimeOut, retry", zap.String("conn info", connInfo), zap.Error(err))
+			//	continue
+			//} else if err == io.EOF {
+			if err == io.EOF {
+				Logger.Info("src connection was closed, shutdown", zap.String("conn info", connInfo), zap.Error(err))
+			} else {
+				// tell another goroutine to write all and then close, no more data will send
+				Logger.Error("error in copy from src to dest", zap.String("conn info", connInfo), zap.Error(err))
+			}
+			dst.CloseWrite()
+			return
+		}
+		Logger.Debug("write n from src to dest", zap.Int("n", n), zap.String("conn info", connInfo))
 	}
 
-	n, err := io.Copy(dst, src)
+	//src.SetDeadline(time.Now())
+	//dst.SetDeadline(time.Now())
+}
+
+func PipeUDPThenClose(src net.Conn, dst net.PacketConn, dstaddr string, timeout int) {
+	buf := leakyBuf.Get()
+	defer leakyBuf.Put(buf)
+
+	raddr, err := net.ResolveUDPAddr("udp", dstaddr)
 	if err != nil {
-		Logger.Error("error in copy from src to dest", zap.Int64("n", n), zap.Stringer("src", src.LocalAddr()), zap.Stringer("dst", dst.RemoteAddr()), zap.Error(err))
 		return
-	} else {
-		Logger.Debug("copy n from src to dest", zap.Int64("n", n), zap.Stringer("src", src.LocalAddr()), zap.Stringer("dst", dst.RemoteAddr()))
+	}
+
+	// TODO
+	for {
+		n, err := src.Read(buf)
+		if n > 0 {
+			nn, err := dst.WriteTo(buf[:n], raddr)
+			if nn < n || err != nil {
+				Logger.Error("[E] error write to the packet connection", zap.Stringer("local", dst.LocalAddr()), zap.Stringer("dst", raddr))
+			}
+		}
+		if err != nil {
+			if err == io.EOF {
+				return
+			}
+			Logger.Error("[E] error write to the packet connection", zap.Stringer("local", dst.LocalAddr()), zap.Stringer("dst", raddr))
+			return
+		}
 	}
 }
 
-//func UDPClientReceiveThenClose(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
-//	buf := make([]byte, 4096)
-//	defer readClose.Close()
-//	for {
-//		readClose.SetDeadline(time.Now().Add(udpTimeout))
-//		n, _, err := readClose.ReadFrom(buf)
-//		if err != nil {
-//			if ne, ok := err.(*net.OpError); ok {
-//				if ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE {
-//					// log too many open file error
-//					// EMFILE is process reaches open file limits, ENFILE is system limit
-//					Logger.Error("erro in UDP client receive then close, read error:", zap.Error(err))
-//				}
-//			}
-//			//Logger.Info("[udp]closed pipe ", zap.String("msg", fmt.Sprintf("%s<-%s\n", writeAddr, readClose.LocalAddr())))
-//			Logger.Info("[udp]closed pipe ", zap.String("WriteTo", writeAddr.String()), zap.String("ReadFrom", readClose.LocalAddr().String()))
-//			return
-//		}
-//		write.WriteTo(buf[:n], writeAddr) //	}
-//}
-
-func UDPReceiveThenClose(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
+func PipeThenCloseFromUDP(src net.PacketConn, dst net.Conn, timeout int) {
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
-	defer readClose.Close()
 	for {
-		readClose.SetDeadline(time.Now().Add(udpTimeout))
-		n, raddr, err := readClose.ReadFrom(buf)
+		src.SetDeadline(time.Now().Add(udpTimeout))
+		n, _, err := src.ReadFrom(buf)
 		if err != nil {
 			if ne, ok := err.(*net.OpError); ok {
 				if ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE {
@@ -64,15 +116,36 @@ func UDPReceiveThenClose(write net.PacketConn, writeAddr net.Addr, readClose net
 					Logger.Error("error in UDP client receive then close, read error:", zap.Error(err))
 				}
 			}
-			Logger.Info("[udp]closed pipe ", zap.String("WriteTo", writeAddr.String()), zap.String("ReadFrom", readClose.LocalAddr().String()))
+			Logger.Info("[udp]closed pipe ", zap.Stringer("WriteTo", dst.RemoteAddr()), zap.String("ReadFrom", src.LocalAddr().String()))
 			return
 		}
-		// need improvement here
-		if req, ok := reqList.Get(raddr.String()); ok {
-			write.WriteTo(append(req, buf[:n]...), writeAddr)
-		} else {
-			header := parseHeaderFromAddr(raddr)
-			write.WriteTo(append(header, buf[:n]...), writeAddr)
+		if _, err := dst.Write(buf[:n]); err != nil {
+			Logger.Error("error in pipe to the tcp", zap.Stringer("remote", dst.RemoteAddr()))
 		}
 	}
 }
+
+//func UDPReceiveThenClose(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
+//	// write is the connection, writeAddr is the destionation connection, readclose the local listen package
+//	buf := leakyBuf.Get()
+//	defer leakyBuf.Put(buf)
+//	defer readClose.Close()
+//	for {
+//		readClose.SetDeadline(time.Now().Add(udpTimeout))
+//		n, raddr, err := readClose.ReadFrom(buf)
+//		if err != nil {
+//			if ne, ok := err.(*net.OpError); ok {
+//				if ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE {
+//					// log too many open file error
+//					// EMFILE is process reaches open file limits, ENFILE is system limit
+//					Logger.Error("error in UDP client receive then close, read error:", zap.Error(err))
+//				}
+//			}
+//			Logger.Info("[udp]closed pipe ", zap.String("WriteTo", writeAddr.String()), zap.String("ReadFrom", readClose.LocalAddr().String()))
+//			return
+//		}
+//
+//		header := parseHeaderFromAddr(raddr)
+//		write.WriteTo(append(header, buf[:n]...), writeAddr)
+//	}
+//}

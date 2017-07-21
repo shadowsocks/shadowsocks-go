@@ -21,11 +21,12 @@
 package zapcore
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 )
 
-var errMarshalNilLevel = errors.New("can't marshal a nil *Level to text")
+var errUnmarshalNilLevel = errors.New("can't unmarshal a nil *Level")
 
 // A Level is a logging priority. Higher levels are more important.
 type Level int8
@@ -102,10 +103,7 @@ func (l Level) CapitalString() string {
 
 // MarshalText marshals the Level to text. Note that the text representation
 // drops the -Level suffix (see example).
-func (l *Level) MarshalText() ([]byte, error) {
-	if l == nil {
-		return nil, errMarshalNilLevel
-	}
+func (l Level) MarshalText() ([]byte, error) {
 	return []byte(l.String()), nil
 }
 
@@ -116,25 +114,35 @@ func (l *Level) MarshalText() ([]byte, error) {
 // In particular, this makes it easy to configure logging levels using YAML,
 // TOML, or JSON files.
 func (l *Level) UnmarshalText(text []byte) error {
-	switch string(text) {
-	case "debug":
-		*l = DebugLevel
-	case "info", "": // make the zero value useful
-		*l = InfoLevel
-	case "warn":
-		*l = WarnLevel
-	case "error":
-		*l = ErrorLevel
-	case "dpanic":
-		*l = DPanicLevel
-	case "panic":
-		*l = PanicLevel
-	case "fatal":
-		*l = FatalLevel
-	default:
-		return fmt.Errorf("unrecognized level: %v", string(text))
+	if l == nil {
+		return errUnmarshalNilLevel
+	}
+	if !l.unmarshalText(text) && !l.unmarshalText(bytes.ToLower(text)) {
+		return fmt.Errorf("unrecognized level: %q", text)
 	}
 	return nil
+}
+
+func (l *Level) unmarshalText(text []byte) bool {
+	switch string(text) {
+	case "debug", "DEBUG":
+		*l = DebugLevel
+	case "info", "INFO", "": // make the zero value useful
+		*l = InfoLevel
+	case "warn", "WARN":
+		*l = WarnLevel
+	case "error", "ERROR":
+		*l = ErrorLevel
+	case "dpanic", "DPANIC":
+		*l = DPanicLevel
+	case "panic", "PANIC":
+		*l = PanicLevel
+	case "fatal", "FATAL":
+		*l = FatalLevel
+	default:
+		return false
+	}
+	return true
 }
 
 // Set sets the level for the flag.Value interface.

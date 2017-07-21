@@ -86,6 +86,7 @@ func NewProductionEncoderConfig() zapcore.EncoderConfig {
 		CallerKey:      "caller",
 		MessageKey:     "msg",
 		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
 		EncodeLevel:    zapcore.LowercaseLevelEncoder,
 		EncodeTime:     zapcore.EpochTimeEncoder,
 		EncodeDuration: zapcore.SecondsDurationEncoder,
@@ -100,7 +101,7 @@ func NewProductionEncoderConfig() zapcore.EncoderConfig {
 // Stacktraces are automatically included on logs of ErrorLevel and above.
 func NewProductionConfig() Config {
 	return Config{
-		Level:       NewAtomicLevel(),
+		Level:       NewAtomicLevelAt(InfoLevel),
 		Development: false,
 		Sampling: &SamplingConfig{
 			Initial:    100,
@@ -124,6 +125,7 @@ func NewDevelopmentEncoderConfig() zapcore.EncoderConfig {
 		CallerKey:      "C",
 		MessageKey:     "M",
 		StacktraceKey:  "S",
+		LineEnding:     zapcore.DefaultLineEnding,
 		EncodeLevel:    zapcore.CapitalLevelEncoder,
 		EncodeTime:     zapcore.ISO8601TimeEncoder,
 		EncodeDuration: zapcore.StringDurationEncoder,
@@ -138,11 +140,8 @@ func NewDevelopmentEncoderConfig() zapcore.EncoderConfig {
 // console encoder, writes to standard error, and disables sampling.
 // Stacktraces are automatically included on logs of WarnLevel and above.
 func NewDevelopmentConfig() Config {
-	dyn := NewAtomicLevel()
-	dyn.SetLevel(DebugLevel)
-
 	return Config{
-		Level:            dyn,
+		Level:            NewAtomicLevelAt(DebugLevel),
 		Development:      true,
 		Encoding:         "console",
 		EncoderConfig:    NewDevelopmentEncoderConfig(),
