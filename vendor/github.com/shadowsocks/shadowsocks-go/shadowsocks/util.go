@@ -20,7 +20,7 @@ const (
 	AddrMask byte = 0xf
 
 	idType  = 0 // address type index
-	idIP0   = 1 // ip addres start index
+	idIP0   = 1 // ip address start index
 	idDmLen = 1 // domain address length index
 	idDm0   = 2 // domain address start index
 
@@ -133,7 +133,6 @@ func GetRequest(ss *SecureConn) (host string, err error) {
 
 	// read the host & port
 	if _, err = readFull(ss, buf[reqStart:reqEnd]); err != nil {
-		panic(err)
 		return
 	}
 

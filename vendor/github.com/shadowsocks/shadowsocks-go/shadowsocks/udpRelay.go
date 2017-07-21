@@ -140,7 +140,7 @@ func (table *NatTable) Delete(src string) {
 //}
 
 // ForwardUDPConn forwards the payload (should with header) to the dst with UDP.
-// meanwhile, the request header is cached and the connection is alse cached for futher use.
+// meanwhile, the request header is cached and the connection is else cached for further use.
 func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) error {
 	// unpacket the incomming request and get the dest host and payload
 	dstHost, headerLen, err := UDPGetRequest(payload)

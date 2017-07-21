@@ -17,14 +17,14 @@
 		{
 			"checksumSHA1": "Aaxx+Uw/8iXCCnnbQFRTGE9C4XQ=",
 			"path": "github.com/shadowsocks/shadowsocks-go/encrypt",
-			"revision": "fdf72009ab7a9ff5d426d90ccd25a4e13834fdc0",
-			"revisionTime": "2017-07-21T09:34:47Z"
+			"revision": "6b64b538e386e6ce2888f641d8d4f796a977dd97",
+			"revisionTime": "2017-07-21T10:22:24Z"
 		},
 		{
-			"checksumSHA1": "8Gr/0WhX6i2avQZUzK2gnJBawfM=",
+			"checksumSHA1": "XMz0lmgNWNPn6TIFRYjcDmv/dPQ=",
 			"path": "github.com/shadowsocks/shadowsocks-go/shadowsocks",
-			"revision": "fdf72009ab7a9ff5d426d90ccd25a4e13834fdc0",
-			"revisionTime": "2017-07-21T09:34:47Z"
+			"revision": "6b64b538e386e6ce2888f641d8d4f796a977dd97",
+			"revisionTime": "2017-07-21T10:22:24Z"
 		},
 		{
 			"checksumSHA1": "3IdEHJfBkeEE8guKA2tcA8Fv6eg=",
