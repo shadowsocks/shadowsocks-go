@@ -66,12 +66,14 @@ test_shadowsocks() {
     local local_pid
     url=$1
     method=$2
+    level=error
 
-    $SERVER -passwd foo -port $SERVER_PORT -method "$method" -level error &
+    $SERVER -passwd foo -port $SERVER_PORT -method "$method" -level "$level"&
+
     server_pid=$!
     wait_server $SERVER_PORT
 
-    $LOCAL -passwd foo -saddr 127.0.0.1 -sport $SERVER_PORT -port $LOCAL_PORT -method "$method" -level error &
+    $LOCAL -passwd foo -saddr 127.0.0.1 -sport $SERVER_PORT -port $LOCAL_PORT -method "$method" -level "$level"&
     local_pid=$!
     wait_server $LOCAL_PORT
 

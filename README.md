@@ -1,8 +1,10 @@
 # shadowsocks-go
 
-Current version: 1.2.1 [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go)
+[![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go) ___Current version: 2.0.0 alpha___ 
 
 shadowsocks-go is a lightweight tunnel proxy which can help you get through firewalls. It is a port of [shadowsocks](https://github.com/clowwindy/shadowsocks).
+
+shadowsocks-go v2.0 is based on old version and has been totally reconstruct. Aimed to be easy use as a packet for gopher and server developer to by pass GFW.
 
 The protocol is compatible with the origin shadowsocks (if both have been upgraded to the latest version).
 
@@ -11,10 +13,10 @@ The protocol is compatible with the origin shadowsocks (if both have been upgrad
 **Please develop on the latest develop branch if you want to send pull request.**
 
 # What's new
-* Reconstruct this project, finish the job in ss-local and ss-remote
+* Reconstruct this project
 * Bug fix and stability improvement
 * Redesign the interface for easy extension
-* Add more features for easy monitor of shadowsocks
+* New features for shadowsocks-go user
 
 # Install
 
@@ -37,17 +39,9 @@ Both the server and client program will look for `config.json` in the current di
 
 Configuration file is in json format and has the same syntax with [shadowsocks-nodejs](https://github.com/clowwindy/shadowsocks-nodejs/). You can download the sample [`config.json`](https://github.com/shadowsocks/shadowsocks-go/blob/master/config.json), change the following values:
 
-```
-server          your server ip or hostname
-server_port     server port
-local_port      local socks5 proxy port
-method          encryption method, null by default (table), the following methods are supported:
-aes-128-cfb, aes-192-cfb, aes-256-cfb, bf-cfb, cast5-cfb, des-cfb, rc4-md5, chacha20, salsa20, rc4, table
-password        a password used to encrypt transfer
-timeout         server option, in seconds
-```
 
-Run `shadowsocks-server` on your server. To run it in the background, run `shadowsocks-server > log &`.
+
+Run `shadowsocks-server` on your server. To run it in the background, run `hohup shadowsocks-server > log &`.
 
 On client, run `shadowsocks-local`. Change proxy settings of your browser to
 
@@ -61,33 +55,63 @@ AES is recommended for shadowsocks-go. [Intel AES Instruction Set](http://en.wik
 
 **rc4 and table encryption methods are deprecated because they are not secure.**
 
-### One Time Auth
-
-Append `-auth` to the encryption method to enable [One Time Auth (OTA)](https://shadowsocks.org/en/spec/one-time-auth.html).
-
-- For server: this will **force client use OTA**, non-OTA connection will be dropped. Otherwise, both OTA and non-OTA clients can connect
-- For client: the `-A` command line option can also enable OTA
-
-### UDP relay
-
-Use `-u` command line options when starting server to enable UDP relay.
-
-Currently only tested with Shadowsocks-Android, if you have encountered any problem, please report.
-
 ## Command line options
 
 Command line options can override settings from configuration files. Use `-h` option to see all available options.
-
+ss-local
 ```
-shadowsocks-local -s server_address -p server_port -k password
--m aes-128-cfb -c config.json
--b local_address -l local_port
-shadowsocks-server -p server_port -k password
--m aes-128-cfb -c config.json
--t timeout
+Usage of ./shadowsocks-local:
+  -addr string
+        local socks5 proxy serve address (default "127.0.0.1")
+  -config string
+        specify config file
+  -level string
+        given the logger level for ss to logout info, can be set in debug info warn error panic (default "info")
+  -method string
+        encryption method, default: aes-256-cfb. end with -auth mean enable OTA (default "aes-256-cfb")
+  -multiserver string
+        3 modes for shadowsocks local detect ss server:
+                fastest: get fastest server to request
+                round-robin: get round-robin server to request
+                dissable: only request for first server (default "fastest")
+  -passwd string
+        server password
+  -port int
+        local socks5 proxy port (default 1085)
+  -saddr string
+        server address
+  -sport int
+        server port
+  -timeout int
+        timeout in seconds (default 300)
+  -u    use the udp to serve
+  -v    print version
 ```
 
-Use `-d` option to enable debug message.
+ss-remote
+```
+Usage of ./shadowsocks-server:
+  -config string
+        specify config file
+  -core int
+        maximum number of CPU cores to use, default is determinied by Go runtime
+  -disable_udp
+        diasbale UDP service, enable bydefault (default true)
+  -level string
+        given the logger level for ss to logout info, can be set in debug info warn error (default "info")
+  -method string
+        encryption method, default: aes-256-cfb (default "aes-256-cfb")
+  -passwd string
+        password
+  -port string
+        server port
+  -pprof int
+        set the metrix port to Enable the pprof and matrix(TODO), keep it 0 will disable this feature
+  -timeout int
+        timeout in seconds (default 300)
+  -v    print version
+```
+
 
 ## Use multiple servers on client
 
@@ -109,14 +133,10 @@ port_password   specify multiple ports and passwords to support multiple users
 
 Here's a sample configuration [`server-multi-port.json`](https://github.com/shadowsocks/shadowsocks-go/blob/master/sample-config/server-multi-port.json). Given `port_password`, server program will ignore `server_port` and `password` options.
 
-### Update port password for a running server
-
-Edit the config file used to start the server, then send `SIGHUP` to the server process.
-
 # WIP
 * Make up the Encrypt packet with a better interface for easy extension
-* Fix up the UDP module for ss (testing in local)
 * Add the AEAD (testing in local)
+* add PAC list for use
 
 # Note to OpenVZ users
 

@@ -94,13 +94,6 @@ func handShake(conn net.Conn) (cmdtype int, err error) {
 	// set the handshake timeout
 	conn.SetDeadline(time.Now().Add(time.Second * time.Duration(HandShakeTimeout)))
 
-	// make sure we get the nmethod field
-	//if n, err = io.ReadAtLeast(conn, buf, idNmethod+1); err != nil {
-	//	if n == 0 {
-	//		return
-	//	}
-	//}
-
 	if n, err = io.ReadAtLeast(conn, buf, idNmethod+1); err != nil {
 		if err != io.EOF {
 			return -1, err
@@ -411,35 +404,36 @@ func handleConnection(server string, conn net.Conn, timeout int) {
 		return
 	}
 
+	// request the ss-remote with given host
 	if _, err := ssconn.Write(target); err != nil {
 		ss.Logger.Error("request ss remote failed", zap.Stringer("serverlocal", ssconn.LocalAddr()),
 			zap.Stringer("serverremote", ssconn.RemoteAddr()), zap.ByteString("target", target))
 		return
 	}
 
-	// do the pipe between clicnet & server
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-
 	tcpConn, ok := conn.(*net.TCPConn)
 	if !ok {
 		ss.Logger.Error("error in pipthen close", zap.Error(ErrConvertTCPConn))
 	}
 
-	go ss.PipeThenClose(tcpConn, ssconn, timeout, func() {
-		wg.Done()
-	})
-	ss.PipeThenClose(ssconn, tcpConn, timeout, func() {
-	})
+	// do the pipe between clicnet & server
+	defer conn.Close()
+	defer ssconn.Close()
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	// NOTICE: timeout should be setted carefully to avoid cutting the correct tcp stream
+	if timeout > 0 {
+		ss.Logger.Info("connection timeout setted", zap.Int("timeout", timeout))
+		tcpConn.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+		ssconn.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+	}
+
+	go ss.PipeThenClose(tcpConn, ssconn, func() { wg.Done() })
+	ss.PipeThenClose(ssconn, tcpConn, func() {})
 	wg.Wait()
 
-	ssconn.Close()
-	conn.Close()
-
-	//defer conn.Close()
-	//defer ssconn.Close()
-
-	ss.Logger.Debug("closed server connection", zap.String("conn info", fmt.Sprintf("incoming conn: %v <---> %v\t\t outting conn: %v <---> %v", conn.LocalAddr().String(), conn.RemoteAddr().String(), ssconn.LocalAddr().String(), ssconn.RemoteAddr().String())))
+	ss.Logger.Debug("closed server connection", zap.String("conn info", fmt.Sprintf("incoming conn: %v <---> %v, outting conn: %v <---> %v", conn.LocalAddr().String(), conn.RemoteAddr().String(), ssconn.LocalAddr().String(), ssconn.RemoteAddr().String())))
 	return
 }
 
@@ -588,52 +582,67 @@ func run(config *ss.Config) {
 	}
 
 	// multi server mode
-	// FIXME need to be tested
 	var get_server func() string = config.GetServer
+
 	switch config.MultiServerMode {
 	case "fastest":
 		go func() {
+			if len(config.GetServerArray()) < 2 {
+				return
+			}
 			for {
 				config.Detect()
 				time.Sleep(time.Hour * 1)
 			}
 		}()
-	case "round-over":
-		get_server = config.GetServerRoundOver
+	case "round-robin":
+		if len(config.GetServerArray()) >= 2 {
+			get_server = config.GetServerRoundRobin
+		}
 	}
-	var server string
+
 	// main loop for socks5 accept incoming request
+	var server string
 	for {
 		server = get_server()
 		conn, err := ln.Accept()
 		if err != nil {
 			ss.Logger.Error("error in local server accept socks5", zap.Error(err))
 		}
+		conn.(*net.TCPConn).SetKeepAlive(true)
+		// close the Neglo algorythm, for long fat pipe
+		conn.(*net.TCPConn).SetNoDelay(false)
+		// XXX DONOT set linger -1, cause after close write each incomming packet will be rejected and post back a RST packet.
+		// If so, another side of the tcp connection will return connection reset by peer error.
+		//conn.(*net.TCPConn).SetLinger(-1)
 
 		// Hand shake happened when accept the socks5 negotiation request
 		// ss local will accept the negotiation or ask client to reset the connection when unexpect error occours
-		cmd, err := handShake(conn)
-		if err != nil {
-			if err == ErrBadHandshake {
-				ss.Logger.Warn("error in socks5 handShake", zap.Stringer("socks5client", conn.LocalAddr()), zap.Error(err))
+		go func() {
+			cmd, err := handShake(conn)
+			if err != nil {
+				if err == ErrBadHandshake {
+					ss.Logger.Warn("error in socks5 handShake", zap.Stringer("socks5client", conn.LocalAddr()), zap.Error(err))
+				} else {
+					ss.Logger.Error("error in socks5 handShake", zap.Stringer("socks5client", conn.LocalAddr()), zap.Error(err))
+				}
 				conn.Close()
-				continue
+				return
 			}
-			ss.Logger.Error("error in socks5 handShake", zap.Stringer("socks5client", conn.LocalAddr()), zap.Error(err))
-			return
-		}
+			conn.SetDeadline(time.Time{})
 
-		switch cmd {
-		case socksCmdConnect:
-			// in tcp module
-			go handleConnection(server, conn, config.Timeout)
-		case socksCmdUDPAssocation:
-			// in udp module
-			go handleUDPConnection(server, conn, config.Timeout)
-		default:
-			ss.Logger.Error("error in Socks5 dital request read command, ", zap.Int("command", cmd))
-			return
-		}
+			switch cmd {
+			case socksCmdConnect:
+				// in tcp module
+				go handleConnection(server, conn, config.Timeout)
+			case socksCmdUDPAssocation:
+				// in udp module
+				go handleUDPConnection(server, conn, config.Timeout)
+			default:
+				ss.Logger.Error("error in Socks5 dital request read command, ", zap.Int("command", cmd))
+				return
+			}
+		}()
 	}
 }
 
@@ -683,11 +692,8 @@ func checkConfig(config *ss.Config) error {
 	}
 
 	for addr, pwd := range config.ServerPassword {
-		if !hasPort(addr) {
-			delete(config.ServerPassword, addr)
-		}
-		if pwd == "" {
-			ss.Logger.Fatal("Failed generating ciphers", zap.String("address", addr))
+		if !hasPort(addr) || pwd == "" {
+			ss.Logger.Fatal("Failed generating ciphers, server address and password mismatching", zap.String("address", addr))
 		}
 	}
 
@@ -709,10 +715,10 @@ func main() {
 	flag.StringVar(&ServerAddr, "saddr", "", "server address")
 	flag.IntVar(&ServerPort, "sport", 0, "server port")
 	flag.BoolVar(&UDP, "u", false, "use the udp to serve")
-	flag.StringVar(&MultiServerMode, "multiserver", "fastest", "3 modes for shadowsocks local detect ss server: \n\t\tfastest: get fastest server to request\n\t\tround-over: get round over server to request\n\t\tdissable: only request for first server")
+	flag.StringVar(&MultiServerMode, "multiserver", "fastest", "3 modes for shadowsocks local detect ss server: \n\t\tfastest: get fastest server to request\n\t\tround-robin: get round-robin server to request\n\t\tdissable: only request for first server")
 	flag.StringVar(&Password, "passwd", "", "server password")
 	flag.IntVar(&Timeout, "timeout", 300, "timeout in seconds")
-	flag.StringVar(&Method, "method", "aes-256-cfb", "encryption method, default: aes-256-cfb. end with -auth mean enable OTA")
+	flag.StringVar(&Method, "method", "aes-256-cfb", "encryption method, default: aes-256-cfb")
 	flag.StringVar(&ss.Level, "level", "info", "given the logger level for ss to logout info, can be set in debug info warn error panic")
 
 	// show the help info when parse flags failed

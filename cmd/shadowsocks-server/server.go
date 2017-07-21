@@ -11,12 +11,15 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/miekg/dns"
 	"github.com/shadowsocks/shadowsocks-go/encrypt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
@@ -28,6 +31,9 @@ const (
 var (
 	connCnt        int32
 	nextLogConnCnt = logCntDelta
+	DNSClient      *dns.Client
+	DNSresolver    func(host string) ([]string, error)
+	enableDNS      bool
 )
 
 // handleConnection forward the request to the destination
@@ -41,21 +47,31 @@ func handleConnection(conn *ss.SecureConn, timeout int) {
 	ss.Logger.Info("ss server accept the ss request", zap.Stringer("src", conn.RemoteAddr()), zap.String("dst", host))
 
 	atomic.AddInt32(&connCnt, 1)
+	defer atomic.AddInt32(&connCnt, -1)
 	if atomic.LoadInt32(&connCnt)-nextLogConnCnt >= 0 {
 		ss.Logger.Warn("Number of client connections reaches", zap.Int32("count", nextLogConnCnt))
 		nextLogConnCnt += logCntDelta
 	}
-	closed := false
 
-	// function arguments are always evaluated, so surround debug statement
-	// with if statement
-	defer func() {
-		atomic.AddInt32(&connCnt, -1)
-		if !closed {
-			ss.Logger.Warn("unexpect closeing connection:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
-			conn.Close()
+	// do dns resolve
+	if enableDNS {
+		hostname := strings.Split(host, ":")
+		answers, err := DNSresolver(hostname[0])
+		if err != nil {
+			ss.Logger.Error("error in resolve dns, resolver returned error", zap.Error(err))
+		} else if len(hostname) != 2 || len(answers) == 0 {
+			ss.Logger.Error("error in resolve dns, request illegal")
+		} else {
+			ss.Logger.Info("dns look up get response", zap.String("host", hostname[0]), zap.Strings("A record", answers))
+			// use the first hostname to request by default
+			for _, v := range answers {
+				if v != "" {
+					host = net.JoinHostPort(v, hostname[1])
+					break
+				}
+			}
 		}
-	}()
+	}
 
 	// request the remote
 	ss.Logger.Debug("connecting to the request host", zap.String("host", host))
@@ -70,23 +86,26 @@ func handleConnection(conn *ss.SecureConn, timeout int) {
 		}
 		return
 	}
-	defer func() {
-		if !closed {
-			ss.Logger.Warn("unexpect closeing connection:", zap.Stringer("remote", remote.RemoteAddr()), zap.String("host", host))
-			remote.Close()
-		}
-	}()
-	ss.Logger.Debug("piping remote to host:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
 	remote.(*net.TCPConn).SetKeepAlive(true)
+
+	ss.Logger.Debug("piping remote to host:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
+
+	defer conn.Close()
+	defer remote.Close()
+	// NOTICE: timeout should be setted carefully to avoid cutting the correct tcp stream
+	if timeout > 0 {
+		ss.Logger.Info("connection timeout setted", zap.Int("timeout", timeout))
+		conn.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+		remote.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+	}
 
 	// close the server at the right time
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	go ss.PipeThenClose(conn, remote, timeout, func() { wg.Done() })
-	ss.PipeThenClose(remote, conn, timeout, func() { remote.Close() })
+	go ss.PipeThenClose(conn, remote.(*net.TCPConn), wg.Done)
+	ss.PipeThenClose(remote.(*net.TCPConn), conn, func() {})
 	wg.Wait()
 
-	closed = true
 	return
 }
 
@@ -96,11 +115,7 @@ func waitSignal() {
 	for {
 		s := <-sigChan
 		switch s {
-		case syscall.SIGHUP:
-			ss.Logger.Warn("receive the KILL -HUP rebooting")
-			fallthrough
-			// TODO fo the reboot
-		case syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT:
+		case syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT:
 			ss.Logger.Info("Caught signal , shuting down", zap.Stringer("signal", s))
 			os.Exit(0)
 		default:
@@ -114,11 +129,9 @@ func serveTCP(ln *ss.Listener, timeout int) {
 	defer ln.Close()
 	for {
 		// accept should not be blocked, so here just return a ss warped connection
-		// getRequest should do after this
 		sconn, err := ln.Accept()
 		if err != nil {
 			ss.Logger.Error("error in ss server accept connection", zap.Error(err))
-			// XXX should not exit?
 			continue
 		}
 		go handleConnection(sconn, timeout)
@@ -132,6 +145,7 @@ func run(conf *ss.Config) {
 		if err != nil {
 			ss.Logger.Fatal("Failed create cipher", zap.Error(err))
 		}
+		// listen on :addr ,so makesure you have the enough priority to do this
 		ln, err := ss.Listen("tcp", net.JoinHostPort("", addr), cipher.Copy(), conf.Timeout)
 		if err != nil {
 			ss.Logger.Fatal("error listening port", zap.String("port", addr), zap.Error(err))
@@ -145,10 +159,8 @@ func run(conf *ss.Config) {
 // only do the forward here, the backward doing in another sequence
 func serveUDP(servein *ss.SecurePacketConn) {
 	defer servein.Close()
-	// TODO need a pool
 	buf := make([]byte, 4096)
 	for {
-		//buf := ss.UDPBufferPool.Get()
 		n, srcAddr, err := servein.ReadFrom(buf)
 		if err != nil {
 			ss.Logger.Error("[udp]read from server packet listen error", zap.Error(err))
@@ -175,7 +187,7 @@ func runUDP(conf *ss.Config) {
 		}
 		SecurePacketConn, err := ss.ListenPacket("udp", addr, cipher, conf.Timeout)
 		if err != nil {
-			ss.Logger.Error("[UDP] error listening packetconn ", zap.String("address", addr), zap.Error(err))
+			ss.Logger.Error("[UDP] error listening packetconn", zap.String("address", addr), zap.Error(err))
 			os.Exit(1)
 		}
 		go serveUDP(SecurePacketConn)
@@ -183,33 +195,20 @@ func runUDP(conf *ss.Config) {
 }
 
 func checkConfig(config *ss.Config) error {
-	// aviliable config conditions:
-	// 1\ passwd is setted or portpassworf is setted
-	// 2\ serverport & server password should be correspounding
+	//server -- server port should match
+	//port -- port password should patch
 	if config.Password == "" && config.PortPassword == nil {
 		return errors.New("missing passwd for config")
 	}
-
-	if config.PortPassword == nil {
-		if config.ServerPort == "" {
-			return errors.New("missing server port for config")
-		}
-	}
-
 	if len(config.GetServerPortArray()) != len(config.GetPasswordArray()) {
-		return errors.New("server array and password array is illegal")
+		return errors.New("server port array and password array mismatching")
 	}
 
-	// check the port if has a suffix and :
-	//for addr, pass := range config.PortPassword {
-	//	if _, portStr, err := net.SplitHostPort(addr); err == nil {
-	//		if port, err := strconv.Atoi(portStr); err != nil || port == 0 || pass == "" {
-	//			return fmt.Errorf("given config is invalid: address(%s) password(%s)", addr, pass)
-	//		}
-	//	} else {
-	//		return fmt.Errorf("given config is invalid: address(%s) password(%s)", addr, pass)
-	//	}
-	//}
+	if config.DNSServer != "" {
+		enableDNS = true
+		ss.Logger.Info("setting the dns server", zap.String("dns", config.DNSServer))
+		initializeDNSSesolver(config.DNSServer)
+	}
 	return nil
 }
 
@@ -217,7 +216,7 @@ func main() {
 	var err error
 	var udp, printVer bool
 	var Timeout, core, matrixport int
-	var ServerPort, configFile, Password, Method string
+	var ServerPort, configFile, Password, Method, DNSServer string
 
 	var config *ss.Config
 
@@ -230,7 +229,8 @@ func main() {
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.IntVar(&matrixport, "pprof", 0, "set the metrix port to Enable the pprof and matrix(TODO), keep it 0 will disable this feature")
 	flag.StringVar(&ss.Level, "level", "info", "given the logger level for ss to logout info, can be set in debug info warn error")
-	flag.BoolVar(&udp, "disable_udp", true, "diasbale UDP service, enable bydefault")
+	flag.BoolVar(&udp, "disable_udp", true, "diasbale UDP service, enable by default")
+	flag.StringVar(&DNSServer, "dns", "", "set the dns server for server, default will use the system dns server in /etc/resolv.conf")
 	flag.Parse()
 	if !flag.Parsed() {
 		flag.Usage()
@@ -263,6 +263,11 @@ func main() {
 		os.Exit(1)
 	}
 	opts = append(opts, ss.WithEncryptMethod(Method))
+
+	// set the dns server
+	if DNSServer != "" {
+		opts = append(opts, ss.WithDNSServer(DNSServer))
+	}
 
 	// check the passwd if not set
 	if Password != "" {
@@ -304,4 +309,34 @@ func main() {
 
 	// wait for the ctrl-c signal
 	waitSignal()
+}
+
+func initializeDNSSesolver(server string) {
+	if server == "" {
+		ss.Logger.Fatal("error in set dns resolver, server is nil")
+		return
+	}
+
+	c := dns.Client{}
+	m := dns.Msg{}
+
+	DNSresolver = func(host string) ([]string, error) {
+		ansers := make([]string, 1, 4)
+
+		m.SetQuestion(host+".", dns.TypeA)
+		r, t, err := c.Exchange(&m, server+":53")
+		if err != nil {
+			return nil, err
+		}
+		ss.Logger.Debug("DNS lookup domain cost", zap.Stringer("time", t))
+		if len(r.Answer) == 0 {
+			return nil, errors.New("No results returned")
+		}
+		for _, ans := range r.Answer {
+			if ans.Header().Rrtype == dns.TypeA {
+				ansers = append(ansers, ans.(*dns.A).A.String())
+			}
+		}
+		return ansers, nil
+	}
 }

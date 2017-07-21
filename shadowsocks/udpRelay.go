@@ -18,8 +18,9 @@ const (
 )
 
 var (
-	reqList            = newReqList()
+	//reqList            = newReqList()
 	natTable           = NewNatTable()
+	natTableLock       = sync.Mutex{}
 	udpTimeout         = 30 * time.Second
 	reqListRefreshTime = 5 * time.Minute
 	UDPBufferPool      = NewLeakyBuf(1024, UDPMaxSize)
@@ -31,18 +32,25 @@ type BackwardInfo struct {
 	payload []byte
 }
 
+type NatPacketUnit struct {
+	net.PacketConn
+	cancleller chan int
+}
+
 // NatTable used to map the incomming packet to the outgoing packet listener
 type NatTable struct {
 	sync.RWMutex
-	nat map[string]net.PacketConn
+	//nat map[string]net.PacketConn
+	nat map[string]*NatPacketUnit
 }
 
 // NewNatTable returns an empty NatTable
 func NewNatTable() *NatTable {
-	return &NatTable{nat: make(map[string]net.PacketConn, 256)}
+	//return &NatTable{nat: make(map[string]net.PacketConn, 256)}
+	return &NatTable{nat: make(map[string]*NatPacketUnit, 256)}
 }
 
-func (table *NatTable) Get(src net.Addr) (net.PacketConn, bool) {
+func (table *NatTable) Get(src net.Addr) (*NatPacketUnit, bool) {
 	table.RLock()
 	defer table.RUnlock()
 	packetListen, ok := table.nat[src.String()]
@@ -52,81 +60,84 @@ func (table *NatTable) Get(src net.Addr) (net.PacketConn, bool) {
 func (table *NatTable) Put(src net.Addr, packetln net.PacketConn) {
 	table.Lock()
 	defer table.Unlock()
-	natTable.nat[src.String()] = packetln
+	cancel := make(chan int, 1)
+	natTable.nat[src.String()] = &NatPacketUnit{packetln, cancel}
 }
 
 // Delete deletes an item from the table
+// can be called parallel
 func (table *NatTable) Delete(src string) {
 	table.Lock()
 	defer table.Unlock()
 	if ln, ok := table.nat[src]; ok {
 		ln.Close()
+		close(ln.cancleller)
 		delete(table.nat, src)
 	}
 }
 
-type requestHeaderList struct {
-	sync.RWMutex
-	List map[string]([]byte)
-}
-
-func newReqList() *requestHeaderList {
-	ret := &requestHeaderList{List: map[string]([]byte){}}
-	go func() {
-		for {
-			time.Sleep(reqListRefreshTime)
-			ret.Refresh()
-		}
-	}()
-	return ret
-}
-
-func (r *requestHeaderList) Refresh() {
-	r.Lock()
-	defer r.Unlock()
-	for k := range r.List {
-		delete(r.List, k)
-	}
-}
-
-func (r *requestHeaderList) Get(dstaddr string) (req []byte, ok bool) {
-	r.Lock()
-	defer r.Unlock()
-	req, ok = r.List[dstaddr]
-	return
-}
-
-func (r *requestHeaderList) Put(dstaddr string, req []byte) {
-	r.Lock()
-	defer r.Unlock()
-	r.List[dstaddr] = req
-	return
-}
-
-// make up the ss address block
-func parseHeaderFromAddr(addr net.Addr) []byte {
-	// if the request address type is domain, it cannot be reverselookuped
-	ip, port, err := net.SplitHostPort(addr.String())
-	if err != nil {
-		return nil
-	}
-	buf := make([]byte, 20)
-	IP := net.ParseIP(ip)
-	b1 := IP.To4()
-	iplen := 0
-	if b1 == nil { //ipv6
-		b1 = IP.To16()
-		buf[0] = typeIPv6
-		iplen = net.IPv6len
-	} else { //ipv4
-		buf[0] = typeIPv4
-		iplen = net.IPv4len
-	}
-	copy(buf[1:], b1)
-	iPort, _ := strconv.Atoi(port)
-	binary.BigEndian.PutUint16(buf[1+iplen:], uint16(iPort))
-	return buf[:1+iplen+2]
-}
+//type requestHeaderList struct {
+//	sync.RWMutex
+//	List map[string]([]byte)
+//}
+//
+//func newReqList() *requestHeaderList {
+//	ret := &requestHeaderList{List: map[string]([]byte){}}
+//	go func() {
+//		for {
+//			time.Sleep(reqListRefreshTime)
+//			ret.Refresh()
+//		}
+//	}()
+//	return ret
+//}
+//
+//func (r *requestHeaderList) Refresh() {
+//	r.Lock()
+//	defer r.Unlock()
+//	for k := range r.List {
+//		delete(r.List, k)
+//	}
+//}
+//
+//func (r *requestHeaderList) Get(dstaddr string) (req []byte, ok bool) {
+//	r.Lock()
+//	defer r.Unlock()
+//	req, ok = r.List[dstaddr]
+//	return
+//}
+//
+//func (r *requestHeaderList) Put(dstaddr string, req []byte) {
+//	r.Lock()
+//	defer r.Unlock()
+//	r.List[dstaddr] = req
+//	return
+//}
+//
+//// make up the ss address block
+//func parseHeaderFromAddr(addr net.Addr) []byte {
+//	// if the request address type is domain, it cannot be reverselookuped
+//	ip, port, err := net.SplitHostPort(addr.String())
+//	if err != nil {
+//		return nil
+//	}
+//	buf := make([]byte, 20)
+//	IP := net.ParseIP(ip)
+//	b1 := IP.To4()
+//	iplen := 0
+//	if b1 == nil { //ipv6
+//		b1 = IP.To16()
+//		buf[0] = typeIPv6
+//		iplen = net.IPv6len
+//	} else { //ipv4
+//		buf[0] = typeIPv4
+//		iplen = net.IPv4len
+//	}
+//	copy(buf[1:], b1)
+//	iPort, _ := strconv.Atoi(port)
+//	binary.BigEndian.PutUint16(buf[1+iplen:], uint16(iPort))
+//	return buf[:1+iplen+2]
+//}
 
 // ForwardUDPConn forwards the payload (should with header) to the dst with UDP.
 // meanwhile, the request header is cached and the connection is alse cached for futher use.
@@ -135,6 +146,7 @@ func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) er
 	dstHost, headerLen, err := UDPGetRequest(payload)
 	if err != nil {
 		Logger.Error("[UDP] failed to get request", zap.Error(err))
+		return err
 	}
 	dstAddr, err := net.ResolveUDPAddr("udp", dstHost)
 	if err != nil {
@@ -155,6 +167,7 @@ func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) er
 	//}
 
 	// put src into the NAT forward table
+	// packetln is used to serve the src packet connection to write out packet with
 	forwardPacketln, ok := natTable.Get(src)
 	if !ok {
 		// initialize the packet listener into the nat table
@@ -164,13 +177,12 @@ func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) er
 			return err
 		}
 
-		natTable.Lock()
+		natTableLock.Lock()
 		if packetListen, ok := natTable.nat[src.String()]; ok {
 			// other goroutine has creat the packet connection
 			forwardPacketln = packetListen
 		} else {
-			natTable.nat[src.String()] = packetln
-			natTable.Unlock()
+			natTable.Put(src, packetln)
 
 			// Set up the backward worker gorotine for this packetln
 			// this is the key logical for backward UDP request to ss-local
@@ -180,17 +192,46 @@ func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) er
 				buf := UDPBufferPool.Get()
 				defer UDPBufferPool.Put(buf)
 
-				//buf := make([]byte, UDPMaxSize)
+				pktUnit, ok := natTable.Get(src)
+				if !ok {
+					Logger.Error("[UDP] error in get packet goroutine", zap.Error(err))
+					return
+				}
+
 				for {
-					n, raddr, err := packetln.ReadFrom(buf)
-					if err != nil && err != io.EOF {
-						Logger.Error("[UDP] error in udp backward read", zap.Stringer("remote_addr", raddr),
-							zap.Stringer("dest_addr", src), zap.Error(err))
+					select {
+					case <-pktUnit.cancleller:
+						Logger.Info("[UDP] Received the close, shutdown the forwarder goroutine", zap.Stringer("incomming conn addr", src),
+							zap.Stringer("forwarder local addr", pktUnit.LocalAddr()))
 						return
+					default:
+						n, raddr, err := packetln.ReadFrom(buf)
+						if err != nil {
+							if n > 0 {
+								serverIn.WriteTo(append(reqHeader, buf[:n]...), src)
+							}
+							if err != io.EOF {
+								Logger.Error("[UDP] error in udp backward read", zap.Stringer("remote_addr", raddr),
+									zap.Stringer("dest_addr", src), zap.Error(err))
+							}
+							Logger.Info("[UDP] in udp backward read EOF", zap.Stringer("remote_addr", raddr),
+								zap.Stringer("dest_addr", src), zap.Error(err))
+							return
+						}
+						nn, err := serverIn.WriteTo(append(reqHeader, buf[:n]...), src)
+						if err != nil {
+							Logger.Error("[UDP] error in udp backward write", zap.Stringer("remote_addr", raddr),
+								zap.Stringer("dest_addr", src), zap.Error(err))
+						}
+						if nn != n {
+							Logger.Error("[UDP] error in udp backward write", zap.Stringer("remote_addr", raddr),
+								zap.Stringer("dest_addr", src), zap.Error(err))
+						}
 					}
-					serverIn.WriteTo(append(reqHeader, buf[:n]...), src)
 				}
 			}()
+
+			natTableLock.Unlock()
 		}
 	}
 
@@ -204,6 +245,7 @@ func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) er
 			Logger.Error("[UDP] error in forward to the dest address", zap.Stringer("dst", dstAddr), zap.Error(err))
 		}
 		natTable.Delete(src.String())
+		//FIXME goroutine was not terminate
 		return err
 	}
 	Logger.Info("[UDP] forward UDP connecion", zap.Stringer("source", src), zap.Stringer("dest", dstAddr),

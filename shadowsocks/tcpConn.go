@@ -126,7 +126,6 @@ type Listener struct {
 
 // Accept just like net.Listener.Accept(), but with additional return variable host.
 // It will handle the request header for you.
-// BUG the Accept can be blocked by catching a not SS protocol, the acceptr could be blocked
 func (ln *Listener) Accept() (sconn *SecureConn, err error) {
 	conn, err := ln.tcpln.Accept()
 	if err != nil {
@@ -138,7 +137,8 @@ func (ln *Listener) Accept() (sconn *SecureConn, err error) {
 	if !ok {
 		return nil, errors.New("error in convert into tcp connection")
 	}
-	tcpConn.SetKeepAlive(true)
+	//tcpConn.SetKeepAlive(true)
+	//tcpConn.SetNoDelay(true)
 	if ln.timeout > 0 {
 		conn.SetReadDeadline(time.Now().Add(time.Duration(ln.timeout)))
 		conn.SetWriteDeadline(time.Now().Add(time.Duration(ln.timeout)))
