@@ -418,7 +418,6 @@ func handleConnection(server string, conn net.Conn, timeout int) {
 		ss.Logger.Error("error in pipthen close", zap.Error(ErrConvertTCPConn))
 	}
 
-	// do the pipe between clicnet & server
 	defer conn.Close()
 	defer ssconn.Close()
 	wg := sync.WaitGroup{}
@@ -431,7 +430,8 @@ func handleConnection(server string, conn net.Conn, timeout int) {
 		ssconn.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
 	}
 
-	go ss.PipeThenClose(tcpConn, ssconn, func() { wg.Done() })
+	// do the pipe between clicnet & server
+	go ss.PipeThenClose(tcpConn, ssconn, wg.Done)
 	ss.PipeThenClose(ssconn, tcpConn, func() {})
 	wg.Wait()
 
@@ -601,8 +601,10 @@ func run(config *ss.Config) {
 			ss.Logger.Error("error in local server accept socks5", zap.Error(err))
 		}
 		conn.(*net.TCPConn).SetKeepAlive(true)
-		// close the Neglo algorythm, for long fat pipe
-		conn.(*net.TCPConn).SetNoDelay(false)
+
+		// close the Nagle algorythm, for long fat pipe if necessary
+		// conn.(*net.TCPConn).SetNoDelay(false)
+
 		// XXX DONOT set linger -1, cause after close write each incomming packet will be rejected and post back a RST packet.
 		// If so, another side of the tcp connection will return connection reset by peer error.
 		//conn.(*net.TCPConn).SetLinger(-1)

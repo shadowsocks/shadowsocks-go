@@ -21,14 +21,16 @@ type NetConnection interface {
 func PipeThenClose(src, dst NetConnection, done func()) {
 	defer done()
 
-	buf := leakyBuf.Get()
-	defer leakyBuf.Put(buf)
+	buf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buf)
+
 	connInfo := fmt.Sprintf("src conn: %v <---> %v, dst conn: %v <---> %v",
 		src.RemoteAddr().String(), src.LocalAddr().String(), dst.LocalAddr().String(), dst.RemoteAddr().String())
 
 	for {
 		n, err := src.Read(buf)
 		if n > 0 {
+			Logger.Debug("read n from src", zap.Int("n", n), zap.String("conn info", connInfo))
 			var start int
 			for start != n {
 				// XXX retry may cause the data repeated
@@ -37,15 +39,16 @@ func PipeThenClose(src, dst NetConnection, done func()) {
 					//if errR.(*net.OpError).Timeout() {
 					//	Logger.Warn("write into dest TimeOut, retry", zap.String("conn info", connInfo), zap.Error(errR))
 					//}
-					Logger.Error("error in copy from src to dest, write into dest", zap.String("conn info", connInfo), zap.Error(errR))
-					// should read any more cause the dst can not write
-					// XXX src.Close()
-					// dst.CloseWrite()
 
-					// XXX data loose
+					if err == io.EOF {
+						Logger.Info("write meet EOF, close the write", zap.String("conn info", connInfo))
+					} else {
+						Logger.Error("error in copy from src to dest, write into dest", zap.String("conn info", connInfo), zap.Error(errR))
+					}
 					dst.CloseWrite()
 					return
 				}
+				Logger.Debug("write n to dest", zap.Int("n", nn), zap.String("conn info", connInfo))
 				start += nn
 				if nn < n {
 					Logger.Info("write dst, nn < n", zap.Int("read n", n), zap.Int("write n", nn), zap.Int("buffer", start), zap.String("conn info", connInfo))
@@ -58,6 +61,7 @@ func PipeThenClose(src, dst NetConnection, done func()) {
 			//	Logger.Warn("read src TimeOut, retry", zap.String("conn info", connInfo), zap.Error(err))
 			//	continue
 			//} else if err == io.EOF {
+
 			if err == io.EOF {
 				Logger.Info("src connection was closed, shutdown", zap.String("conn info", connInfo), zap.Error(err))
 			} else {
@@ -67,16 +71,12 @@ func PipeThenClose(src, dst NetConnection, done func()) {
 			dst.CloseWrite()
 			return
 		}
-		Logger.Debug("write n from src to dest", zap.Int("n", n), zap.String("conn info", connInfo))
 	}
-
-	//src.SetDeadline(time.Now())
-	//dst.SetDeadline(time.Now())
 }
 
 func PipeUDPThenClose(src net.Conn, dst net.PacketConn, dstaddr string, timeout int) {
-	buf := leakyBuf.Get()
-	defer leakyBuf.Put(buf)
+	buf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buf)
 
 	raddr, err := net.ResolveUDPAddr("udp", dstaddr)
 	if err != nil {
@@ -88,23 +88,30 @@ func PipeUDPThenClose(src net.Conn, dst net.PacketConn, dstaddr string, timeout 
 		n, err := src.Read(buf)
 		if n > 0 {
 			nn, err := dst.WriteTo(buf[:n], raddr)
-			if nn < n || err != nil {
-				Logger.Error("[E] error write to the packet connection", zap.Stringer("local", dst.LocalAddr()), zap.Stringer("dst", raddr))
+			if nn < n {
+				Logger.Warn("[UDP] write to the packet connection less than expect", zap.Int("read", n), zap.Int("write", nn),
+					zap.Stringer("local", dst.LocalAddr()), zap.Stringer("dst", raddr))
+			}
+			if err != nil {
+				Logger.Error("[UDP] error write to the packet connection", zap.Stringer("local", dst.LocalAddr()), zap.Stringer("dst", raddr))
+				dst.Close()
+				return
 			}
 		}
 		if err != nil {
 			if err == io.EOF {
 				return
 			}
-			Logger.Error("[E] error write to the packet connection", zap.Stringer("local", dst.LocalAddr()), zap.Stringer("dst", raddr))
+			Logger.Error("[UDP] error write to the packet connection", zap.Stringer("local", dst.LocalAddr()), zap.Stringer("dst", raddr))
 			return
 		}
 	}
 }
 
 func PipeThenCloseFromUDP(src net.PacketConn, dst net.Conn, timeout int) {
-	buf := leakyBuf.Get()
-	defer leakyBuf.Put(buf)
+	buf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buf)
+
 	for {
 		src.SetDeadline(time.Now().Add(udpTimeout))
 		n, _, err := src.ReadFrom(buf)

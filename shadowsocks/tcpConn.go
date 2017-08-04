@@ -3,6 +3,7 @@ package shadowsocks
 import (
 	"errors"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/shadowsocks/shadowsocks-go/encrypt"
@@ -20,31 +21,37 @@ type SecureConn struct {
 	timeout int
 }
 
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 4108, 10240)
+	},
+}
+
 // NewSecureConn creates a SecureConn
 func NewSecureConn(c *net.TCPConn, cipher *encrypt.Cipher, timeout int) *SecureConn {
 	return &SecureConn{
 		TCPConn:  c,
 		Cipher:   cipher,
-		writeBuf: leakyBuf.Get(),
+		writeBuf: bufferPool.Get().([]byte),
 		timeout:  timeout,
 	}
 }
 
 // CloseRead closes the connection.
 func (c *SecureConn) CloseRead() error {
-	leakyBuf.Put(c.writeBuf)
+	bufferPool.Put(c.writeBuf)
 	return c.TCPConn.CloseRead()
 }
 
 // CloseWrite closes the connection.
 func (c *SecureConn) CloseWrite() error {
-	leakyBuf.Put(c.writeBuf)
+	bufferPool.Put(c.writeBuf)
 	return c.TCPConn.CloseWrite()
 }
 
 // Close closes the connection.
 func (c *SecureConn) Close() error {
-	leakyBuf.Put(c.writeBuf)
+	bufferPool.Put(c.writeBuf)
 	return c.TCPConn.Close()
 }
 
@@ -112,6 +119,7 @@ func (c *SecureConn) Write(b []byte) (n int, err error) {
 		c.TCPConn.SetWriteDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
 	}
 	n, err = c.TCPConn.Write(cipherData[:dataSize])
+
 	// dec the iv lenth
 	n -= len(iv)
 	return
@@ -137,8 +145,9 @@ func (ln *Listener) Accept() (sconn *SecureConn, err error) {
 	if !ok {
 		return nil, errors.New("error in convert into tcp connection")
 	}
-	//tcpConn.SetKeepAlive(true)
+	tcpConn.SetKeepAlive(true)
 	//tcpConn.SetNoDelay(true)
+
 	if ln.timeout > 0 {
 		conn.SetReadDeadline(time.Now().Add(time.Duration(ln.timeout)))
 		conn.SetWriteDeadline(time.Now().Add(time.Duration(ln.timeout)))
