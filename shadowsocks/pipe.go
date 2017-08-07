@@ -43,6 +43,7 @@ func PipeThenClose(src, dst NetConnection, done func()) {
 					if err == io.EOF {
 						Logger.Info("write meet EOF, close the write", zap.String("conn info", connInfo))
 					} else {
+						// XXX FIXME here always get the broken error
 						Logger.Error("error in copy from src to dest, write into dest", zap.String("conn info", connInfo), zap.Error(errR))
 					}
 					dst.CloseWrite()

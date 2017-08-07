@@ -9,54 +9,6 @@
 			"revisionTime": "2017-06-03T04:55:34Z"
 		},
 		{
-			"checksumSHA1": "3IdEHJfBkeEE8guKA2tcA8Fv6eg=",
-			"path": "go.uber.org/atomic",
-			"revision": "70bd1261d36be490ebd22a62b385a3c5d23b6240",
-			"revisionTime": "2017-05-09T22:23:09Z"
-		},
-		{
-			"checksumSHA1": "xKr6vWlnGeonLsQnmBi7bV56dco=",
-			"path": "go.uber.org/zap",
-			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
-			"revisionTime": "2017-06-08T15:36:15Z"
-		},
-		{
-			"checksumSHA1": "HYo/9nwrY08NQA+2ItPOAH8IFW8=",
-			"path": "go.uber.org/zap/buffer",
-			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
-			"revisionTime": "2017-06-08T15:36:15Z"
-		},
-		{
-			"checksumSHA1": "MuxOAtZEsJitlWBzhmpm2vGiHok=",
-			"path": "go.uber.org/zap/internal/bufferpool",
-			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
-			"revisionTime": "2017-06-08T15:36:15Z"
-		},
-		{
-			"checksumSHA1": "uC0L9eCSAYcCWNC8udJk/t1vvIU=",
-			"path": "go.uber.org/zap/internal/color",
-			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
-			"revisionTime": "2017-06-08T15:36:15Z"
-		},
-		{
-			"checksumSHA1": "b80CJExrVpXu3SA1iCQ6uLqTn2c=",
-			"path": "go.uber.org/zap/internal/exit",
-			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
-			"revisionTime": "2017-06-08T15:36:15Z"
-		},
-		{
-			"checksumSHA1": "mpgG6h5iItTyTOjG1CsPGYb65bM=",
-			"path": "go.uber.org/zap/internal/multierror",
-			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
-			"revisionTime": "2017-06-08T15:36:15Z"
-		},
-		{
-			"checksumSHA1": "egEhwGE6+sOPVsOkSj1l5WOv+2w=",
-			"path": "go.uber.org/zap/zapcore",
-			"revision": "9cabc84638b70e564c3dab2766efcb1ded2aac9f",
-			"revisionTime": "2017-06-08T15:36:15Z"
-		},
-		{
 			"checksumSHA1": "oVPHWesOmZ02vLq2fglGvf+AMgk=",
 			"path": "golang.org/x/crypto/blowfish",
 			"revision": "6914964337150723782436d56b3f21610a74ce7b",
