@@ -9,6 +9,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"path"
 	"strconv"
@@ -248,7 +249,7 @@ func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn
 		}
 		return nil, err
 	}
-	debug.Printf("connected to %s via %s\n", addr, se.server)
+	debug.Printf("connected to %s via %s->%s\n", addr, remote.LocalAddr().String(), se.server)
 	servers.failCnt[serverId] = 0
 	return
 }
@@ -347,6 +348,16 @@ func run(listenAddr string) {
 	}
 }
 
+func runHTTPProxy(listenAddr string) {
+	ln, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("starting local http proxy server at %v ...\n", listenAddr)
+	http.Serve(ln, &httpProxyHandler{})
+}
+
 func enoughOptions(config *ss.Config) bool {
 	return config.Server != nil && config.ServerPort != 0 &&
 		config.LocalPort != 0 && config.Password != ""
@@ -425,6 +436,10 @@ func main() {
 	}
 
 	parseServerConfig(config)
+
+	if config.LocalHTTPPort != 0 {
+		go runHTTPProxy(cmdLocal + ":" + strconv.Itoa(config.LocalHTTPPort))
+	}
 
 	run(cmdLocal + ":" + strconv.Itoa(config.LocalPort))
 }
