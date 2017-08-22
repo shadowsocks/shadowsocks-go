@@ -1,8 +1,6 @@
-# shadowsocks-go [![GoDoc](https://godoc.org/github.com/shadowsocks/shadowsocks-go?status.svg)](https://godoc.org/github.com/shadowsocks/shadowsocks-go) [![Go Report Card](https://goreportcard.com/badge/github.com/arthurkiller/shadowsocks-go)](https://goreportcard.com/report/github.com/arthurkiller/shadowsocks-go) [![Build Status](https://travis-ci.org/arthurkiller/shadowsocks-go.png?branch=master)](https://travis-ci.org/arthurkiller/shadowsocks-go) [![Docker Repository on Quay.io](https://quay.io/repository/arthurkiller/shadowsocks-go/status "Docker Repository on Quay.io")](https://quay.io/repository/arthurkiller/shadowsocks-go/status) 
+# shadowsocks-go [![GoDoc](https://godoc.org/github.com/shadowsocks/shadowsocks-go?status.svg)](https://godoc.org/github.com/shadowsocks/shadowsocks-go) [![Go Report Card](https://goreportcard.com/badge/github.com/arthurkiller/shadowsocks-go)](https://goreportcard.com/report/github.com/arthurkiller/shadowsocks-go) [![Build Status](https://travis-ci.org/arthurkiller/shadowsocks-go.png?branch=master)](https://travis-ci.org/arthurkiller/shadowsocks-go) [![Docker Repository on Quay.io](https://quay.io/repository/arthurkiller/shadowsocks-go/status "Docker Repository on Quay.io")](https://quay.io/repository/arthurkiller/shadowsocks-go/status) [![slack](https://img.shields.io/badge/chat%20on%20slack-ready-orange.svg)](https://shadowsocks-go.slack.com)
 
-___Current version: 2.0.0 alpha___
-
-___Testing passed on go1.8___
+___Current version: 2.0.0 alpha & Testing passed via go1.8___
 
 shadowsocks-go is a lightweight tunnel proxy which can help you get through firewalls. It is a port of [shadowsocks](https://github.com/clowwindy/shadowsocks).
 
