@@ -3,21 +3,32 @@ package encrypt
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha1"
 	"io"
-	"net"
 
-	"github.com/lixin9311/shadowsocks-go/shadowsocks"
-
+	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
 )
 
-const (
-	hkdfInfoTag = []byte("ss-subkey")
-	nonceSize   = 12
-	nullNonce   = make([]byte, nonceSize, nonceSize)
+var (
+	hkdfInfoTag      = []byte("ss-subkey")
+	NonceSize        = 12
+	nullNonce        = make([]byte, NonceSize, NonceSize)
+	aeadCipherMethod = map[string]*aeadGenerator{
+		"chacha20-ietf-poly1305": {32, 32, newChaCha20IETFEncoder},
+		"aes-256-gcm":            {32, 32, newAESGCMEncoder},
+		"aes-192-gcm":            {24, 24, newAESGCMEncoder},
+		"aes-128-gcm":            {16, 16, newAESGCMEncoder},
+	}
 )
+
+type aeadGenerator struct {
+	keyLen  int
+	saltLen int
+	newAEAD func(key, salt []byte, keylen int) (cipher.AEAD, error)
+}
 
 // increase uesd for nonce increacement, will warpped when reach the maximum of length byte can reach
 func increase(src []byte) {
@@ -46,6 +57,20 @@ func genSalt(salt []byte) {
 	}
 }
 
+// key-derivation function for key pre-handle
+func kdf(password string, keyLen int) []byte {
+	var b, prev []byte
+	h := md5.New()
+	for len(b) < keyLen {
+		h.Write(prev)
+		h.Write([]byte(password))
+		b = h.Sum(b)
+		prev = b[len(b)-h.Size():]
+		h.Reset()
+	}
+	return b[:keyLen]
+}
+
 type aeadCipher struct {
 	psk        []byte
 	salt       []byte
@@ -53,14 +78,42 @@ type aeadCipher struct {
 	writeNonce []byte
 	readBuffer []byte
 	saltSize   int
+	keySize    int
 	dataLen    int
 
 	enc     cipher.AEAD
 	dec     cipher.AEAD
-	genator func(key, salt []byte, doe DecOrEnc) (cipher.AEAD, error)
+	genator func(key, salt []byte, keylen int) (cipher.AEAD, error)
 }
 
-func (c *aeadCipher) KeySize() int          { return len(c.psk) }
+// NewCipher creates a cipher that can be used in Dial() etc.
+// Use cipher.Copy() to create a new cipher with the same method and password
+// to avoid the cost of repeated cipher initialization.
+func NewAEADCipher(method, password string) (c *aeadCipher, err error) {
+	if password == "" {
+		return nil, ErrEmptyPassword
+	}
+
+	var genator *aeadGenerator
+	genator, ok := aeadCipherMethod[method]
+	if !ok {
+		return nil, ErrUnsupportedMethod
+	}
+
+	cipher := aeadCipher{
+		readNonce:  make([]byte, NonceSize, NonceSize),
+		writeNonce: make([]byte, NonceSize, NonceSize),
+		salt:       make([]byte, genator.saltLen, genator.saltLen),
+		psk:        kdf(password, genator.keyLen), // per handle the passwd
+		saltSize:   genator.saltLen,
+		keySize:    genator.keyLen,
+		genator:    genator.newAEAD,
+	}
+
+	return &cipher, nil
+}
+
+func (c *aeadCipher) KeySize() int          { return c.keySize }
 func (c *aeadCipher) SaltSize() int         { return c.saltSize }
 func (c *aeadCipher) EncryptorInited() bool { return c.enc == nil }
 func (c *aeadCipher) InitEncryptor() ([]byte, error) {
@@ -69,11 +122,9 @@ func (c *aeadCipher) InitEncryptor() ([]byte, error) {
 		genSalt(c.salt)
 	}
 
-	// init the write nonce
-	c.writeNonce = make([]byte, nonceSize, nonceSize)
-
+	var err error
 	// gen the aead cipher
-	c.enc, err = c.genator(c.psk, c.salt, Encrypt)
+	c.enc, err = c.genator(c.psk, c.salt, c.keySize)
 
 	return c.salt, err
 }
@@ -88,28 +139,28 @@ func (c *aeadCipher) InitDecryptor(salt []byte) error {
 		}
 	}
 
-	// init the read nonce
-	c.readNonce = make([]byte, 12)
-
+	var err error
 	// gen the aead cipher
-	c.dec, err = c.genator(c.psk, c.salt, Decrypt)
+	c.dec, err = c.genator(c.psk, c.salt, c.keySize)
 	return err
 }
 
-func (c *aeadCipher) Encrypt(src, dest []byte) error {
+func (c *aeadCipher) Encrypt(src, dest []byte) (int, error) {
+	var dataStart int
 	if c.EncryptorInited() {
 		c.InitEncryptor()
 		// write the salt
 		n := copy(dest, c.salt) // salt lay out if this is the initialization of the encryptor
 		if n != c.saltSize {
-			panic("error dest len")
+			return -1, ErrCapcityNotEnough
 		}
+		dataStart = n
 	}
 
 	msglen := len(src)
 	srclen := make([]byte, 2)
-	destlen := dest[c.SaltSize() : 2+c.enc.Overhead()+msglen+c.enc.Overhead()] // data length layout
-	destdata := dest[2+c.enc.Overhead():]                                      // data layout
+	destlen := dest[dataStart : 2+c.enc.Overhead()+msglen+c.enc.Overhead()] // data length layout
+	destdata := dest[2+c.enc.Overhead():]                                   // data layout
 
 	// handle the length with bigendian encoding
 	srclen[0], srclen[1] = byte(msglen>>8), byte(msglen)
@@ -122,30 +173,32 @@ func (c *aeadCipher) Encrypt(src, dest []byte) error {
 	c.enc.Seal(destdata[:0], c.writeNonce, src, nil)
 	increase(c.writeNonce)
 
-	return nil
+	// dataStart + 2 + c.enc.Overhead() + msglen + c.enc.Overhead()
+	// [salt(if exist)] + [encrypted datalen] + [encrypted data]
+	return dataStart + 2 + c.enc.Overhead() + msglen + c.enc.Overhead(), nil
 }
 
-func (c *aeadCipher) Decrypt(src, dest []byte) error {
+func (c *aeadCipher) Decrypt(src, dest []byte) (int, error) {
+	var n int
 	if c.DecryptorInited() {
 		// FIXME BUG TODO XXX this is uninitialized
-		n = copy(c.readBuffer[c.dataLen:], src)
+		n := copy(c.readBuffer[c.dataLen:], src)
 		if n != len(src) {
-			// XXX fatal error!!!
+			return -1, ErrCapcityNotEnough
 		}
 		c.dataLen += len(src)
 
 		if c.dataLen < c.saltSize {
 			// if salt is not complete, put salt partation in lastReadBuffer and wait for next part
-			// FIXME return error ? or return nothing and nothing wrong
-			return nil, nil
+			return -1, ErrAgain
 		}
 
 		// initialize the decryptor with the salt
 		err := c.InitDecryptor(c.readBuffer[:c.saltSize])
 		if err != nil {
-			panic(err)
+			return -1, err
 		}
-		n := copy(c.readBuffer[0:], c.readBuffer[saltSize:])
+		n = copy(c.readBuffer[0:], c.readBuffer[c.saltSize:])
 		c.dataLen -= c.saltSize
 		goto afterInit
 	}
@@ -154,86 +207,76 @@ func (c *aeadCipher) Decrypt(src, dest []byte) error {
 	n = copy(c.readBuffer[c.dataLen:], src)
 	c.dataLen += n
 	if n != len(src) {
-		// XXX
-		panic()
+		return -1, ErrCapcityNotEnough
 	}
 
 afterInit:
 	// consume the raw data length
 	if c.dataLen < 2+c.dec.Overhead() {
 		//wait for enough data for length dec
-		// XXX
-		return nil
+		return -1, ErrAgain
 	}
 
-	// handle the message block length
+	// read the length and decrypt, handle the message block length
 	srcdatalen := c.readBuffer[:2+c.dec.Overhead()]
 	msglenbyte := make([]byte, 2)
-	n, err = aead.Open(msglenbyte[:0], readNonce, srcdatalen, nil)
+	_, err := c.dec.Open(msglenbyte[:0], c.readNonce, srcdatalen, nil)
 	if err != nil {
-		return nil, err
-	}
-	if n != 2 {
-		// XXX fatal
-		panic("error length 2")
+		return -1, err
 	}
 	msglen := int(msglenbyte[0])<<8 + int(msglenbyte[1])
 
 	blockDataLen := c.dataLen - 2 - c.dec.Overhead()
 	if blockDataLen < msglen+c.dec.Overhead() {
 		// need the comming data for decrypt
-		return
+		return -1, ErrAgain
 	}
 
 	if cap(dest) < msglen+c.dec.NonceSize() {
-		panic("error in dest dec")
+		return -1, ErrCapcityNotEnough
 	}
 
-	// cool! data len is enough, increas the read nonce first time cause the data is consumed
 	increase(c.readNonce)
 
-	// read the length and decrypted
 	// read the data and decrypt
-
-	//dest := make([]byte, msglen, msglen)
-	srcdata = c.readBuffer[2+c.dec.Overhead() : 2+c.dec.Overhead()+msglen+c.dec.Overhead()]
-	n, err = aead.Open(dest[:0], readNonce, srcdata, nil)
+	srcdata := c.readBuffer[2+c.dec.Overhead() : 2+c.dec.Overhead()+msglen+c.dec.Overhead()]
+	_, err = c.dec.Open(dest[:0], c.readNonce, srcdata, nil)
 	if err != nil {
-		return nil, err
+		return -1, err
 	}
-	if n != msglen {
-		panic("error msg len")
-	}
-	increase(readNonce)
+	increase(c.readNonce)
 
 	// left the reamin data in the buffer
 	n = copy(c.readBuffer[0:], c.readBuffer[2+c.dec.Overhead()+msglen+c.dec.Overhead():])
 	c.dataLen = n
 
-	return dest, nil
+	// dataStart + 2 + c.enc.Overhead() + msglen + c.enc.Overhead()
+	// [salt(if exist)] + [encrypted datalen] + [encrypted data]
+
+	return msglen, nil
 }
 
-func (c *aeadCipher) Pack(src, dest []byte) error {
+func (c *aeadCipher) Pack(src, dest []byte) (int, error) {
 	c.InitEncryptor()
 	// write the salt
 	n := copy(dest[0:], c.salt) // salt lay out if this is the initialization of the encryptor
 	if n != c.saltSize {
-		panic("error dest len")
+		return -1, ErrCapcityNotEnough
 	}
 
 	destdata := dest[c.saltSize:]
 
 	// encrypt the data
-	aead.Seal(destdata[:0], nullNonce, src, nil)
+	c.enc.Seal(destdata[:0], nullNonce, src, nil)
 
-	return nil
+	return c.saltSize + c.enc.Overhead() + len(src) + c.enc.Overhead(), nil
 }
 
-func (c *aeadCipher) Unpack(src, dest []byte) error {
+func (c *aeadCipher) Unpack(src, dest []byte) (int, error) {
 	// initialize the decryptor with the salt
 	err := c.InitDecryptor(src[:c.saltSize])
 	if err != nil {
-		panic(err)
+		return -1, err
 	}
 
 	srcdata := src[c.saltSize:]
@@ -243,22 +286,15 @@ func (c *aeadCipher) Unpack(src, dest []byte) error {
 		panic("error cap too small")
 	}
 
-	_, err = aead.Open(dest[:0], nullNonce, srcdata, nil)
+	_, err = c.dec.Open(dest[:0], nullNonce, srcdata, nil)
 	if err != nil {
 		panic(err)
 	}
 
-	return nil
+	return len(srcdata) - c.dec.Overhead(), nil
 }
 
-func (c *aeadCipher) NewConnectionEncryptor(conn net.Conn) net.Conn {
-	return shadowsocks.SecureConn
-}
-func (c *aeadCipher) NewPacketEncryptor(conn net.PacketConn) net.PacketConn {
-	return shadowsocks.SecurePacketConn
-}
-
-func (c *aeadCipher) Copy() AEADCipher {
+func (c *aeadCipher) Copy() Cipher {
 	return &aeadCipher{
 		psk:     c.psk,
 		genator: c.genator,
@@ -266,18 +302,22 @@ func (c *aeadCipher) Copy() AEADCipher {
 }
 
 //HKDFSha1 get the key for encyptor
-func HKDFSha1(key, dest []byte) {
+func HKDFSha1(key, salt, dest []byte) {
 	keyReader := hkdf.New(sha1.New, key, salt, hkdfInfoTag)
-	n, err := io.ReadFull(keyReader, dest)
-	if err != nil || n != len(dest) {
+	_, err := io.ReadFull(keyReader, dest)
+	if err != nil {
 		//XXX panic the error while gen the key
+		// n != len(dest)
 		panic("error internal: hkdf generate the key error," + err.Error())
 	}
 }
 
-func newaesAEAD(key, salt []byte) (cipher.AEAD, error) {
+func newAESGCMEncoder(key, salt []byte, keylen int) (cipher.AEAD, error) {
+	destkey := make([]byte, keylen)
+	HKDFSha1(key, salt, destkey)
+
 	// genreate aes cipher block
-	cipherBlock, err := aes.NewCipher(subkey)
+	cipherBlock, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
@@ -288,5 +328,20 @@ func newaesAEAD(key, salt []byte) (cipher.AEAD, error) {
 		return nil, err
 	}
 
+	key = destkey
+	return aead, nil
+}
+
+func newChaCha20IETFEncoder(key, salt []byte, keylen int) (cipher.AEAD, error) {
+	destkey := make([]byte, keylen)
+	HKDFSha1(key, salt, destkey)
+
+	// genreate chacha20 ietf encryptor
+	aead, err := chacha20poly1305.New(key)
+	if err != nil {
+		return nil, err
+	}
+
+	key = destkey
 	return aead, nil
 }

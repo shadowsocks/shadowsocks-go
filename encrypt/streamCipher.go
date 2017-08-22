@@ -27,39 +27,57 @@ const (
 	Encrypt
 )
 
-var errEmptyPassword = errors.New("empty key")
+var (
+	streamCipherMethod = map[string]*streamGenerator{
+		"aes-128-cfb":   {16, 16, newAESCFBStream},
+		"aes-192-cfb":   {24, 16, newAESCFBStream},
+		"aes-256-cfb":   {32, 16, newAESCFBStream},
+		"aes-128-ctr":   {16, 16, newAESCTRStream},
+		"aes-192-ctr":   {24, 16, newAESCTRStream},
+		"aes-256-ctr":   {32, 16, newAESCTRStream},
+		"des-cfb":       {8, 8, newDESStream},
+		"bf-cfb":        {16, 8, newBlowFishStream},
+		"cast5-cfb":     {16, 8, newCast5Stream},
+		"rc4-md5":       {16, 16, newRC4MD5Stream},
+		"chacha20":      {32, 8, newChaCha20Stream},
+		"chacha20-ietf": {32, 12, newChaCha20IETFStream},
+		"salsa20":       {32, 8, newSalsa20Stream},
+	}
+)
+
+type streamGenerator struct {
+	keyLen    int
+	ivLen     int
+	newStream func(key, iv []byte, doe DecOrEnc) (cipher.Stream, error)
+}
 
 // CheckCipherMethod checks if the cipher method is supported
 func CheckCipherMethod(method string) error {
 	if _, ok := streamCipherMethod[method]; !ok {
-		return errors.New("Unsupported encryption method: " + method)
+		return ErrUnsupportedMethod
 	}
 	return nil
 }
 
-//type StreamCipher interface {
-//	Cipher
-//	//KeySize() int
-//	IVSize() int
-//	Encryptor(iv []byte) cipher.Stream
-//	Decryptor(iv []byte) cipher.Stream
-//}
-
-// Cipher is used to encrypt and decrypt things.
 type streamCipher struct {
-	enc  cipher.Stream
-	dec  cipher.Stream
-	key  []byte
-	info *cipherInfo
-	iv   []byte
+	enc     cipher.Stream
+	dec     cipher.Stream
+	keyLen  int
+	ivLen   int
+	key     []byte
+	iv      []byte
+	genator func(key, iv []byte, doe DecOrEnc) (cipher.Stream, error)
 }
+
+func (c *streamCipher) KeySize() int { return c.keyLen }
+func (c *streamCipher) IVSize() int  { return c.ivLen }
 
 // NewCipher creates a cipher that can be used in Dial() etc.
 // Use cipher.Copy() to create a new cipher with the same method and password
 // to avoid the cost of repeated cipher initialization.
-func NewCipher(method, password string) (c *streamCipher, err error) {
+func NewStreamCipher(method, password string) (c *streamCipher, err error) {
 	if password == "" {
-		return nil, errEmptyPassword
+		return nil, ErrEmptyPassword
 	}
 	mi, ok := streamCipherMethod[method]
 	if !ok {
@@ -68,7 +86,13 @@ func NewCipher(method, password string) (c *streamCipher, err error) {
 
 	key := evpBytesToKey(password, mi.keyLen)
 
-	c = &streamCipher{key: key, info: mi}
+	c = &streamCipher{
+		keyLen:  mi.keyLen,
+		ivLen:   mi.ivLen,
+		key:     key,
+		iv:      make([]byte, mi.ivLen, mi.ivLen),
+		genator: mi.newStream,
+	}
 
 	if err != nil {
 		return nil, err
@@ -78,44 +102,49 @@ func NewCipher(method, password string) (c *streamCipher, err error) {
 }
 
 // InitEncrypt initializes the block cipher, returns IV.
-func (c *streamCipher) InitEncrypt() (iv []byte, err error) {
-	iv = make([]byte, c.info.ivLen)
+func (c *streamCipher) InitEncryptor() (iv []byte, err error) {
+	iv = make([]byte, c.ivLen, c.ivLen)
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		return nil, err
 	}
 	c.iv = iv
-	c.enc, err = c.info.newStream(c.key, c.iv, Encrypt)
+	c.enc, err = c.genator(c.key, c.iv, Encrypt)
 	return
 }
 
 // EncInited checks if the enc cipher is inited.
-func (c *streamCipher) EncInited() bool {
+func (c *streamCipher) EncryptorInited() bool {
 	return c.enc == nil
 }
 
 // InitDecrypt initializes the block cipher from given IV.
-func (c *streamCipher) InitDecrypt(iv []byte) (err error) {
-	c.dec, err = c.info.newStream(c.key, iv, Decrypt)
+func (c *streamCipher) InitDecryptor(iv []byte) (err error) {
+	c.dec, err = c.genator(c.key, iv, Decrypt)
 	return
 }
 
 // DecInited checks if the dec cipher is inited.
-func (c *streamCipher) DecInited() bool {
+func (c *streamCipher) DecryptorInited() bool {
 	return c.dec == nil
 }
 
 // Encrypt encrypts src to dst, maybe the same slice.
-func (c *streamCipher) Encrypt(dst, src []byte) {
+func (c *streamCipher) Encrypt(src, dst []byte) (int, error) {
 	c.enc.XORKeyStream(dst, src)
+	return len(dst), nil
 }
 
 // Decrypt decrypts src to dst, maybe the same slice.
-func (c *streamCipher) Decrypt(dst, src []byte) {
+func (c *streamCipher) Decrypt(src, dst []byte) (int, error) {
 	c.dec.XORKeyStream(dst, src)
+	return len(dst), nil
 }
 
+func (c *streamCipher) Pack(src, dst []byte) (int, error)   { return c.Encrypt(src, dst) }
+func (c *streamCipher) Unpack(src, dst []byte) (int, error) { return c.Decrypt(src, dst) }
+
 // Copy creates a new cipher at it's initial state.
-func (c *streamCipher) Copy() *streamCipher {
+func (c *streamCipher) Copy() Cipher {
 	// This optimization maybe not necessary. But without this function, we
 	// need to maintain a table cache for newTableCipher and use lock to
 	// protect concurrent access to that cache.
@@ -133,36 +162,6 @@ func (c *streamCipher) Copy() *streamCipher {
 	nc.enc = nil
 	nc.dec = nil
 	return &nc
-}
-
-// GetIV returns current IV, safe to use
-func (c *streamCipher) GetIV() []byte {
-	ret := make([]byte, len(c.iv))
-	copy(ret, c.iv)
-	return ret
-}
-
-// GetKey returns current Key, safe to use
-func (c *streamCipher) GetKey() []byte {
-	ret := make([]byte, len(c.key))
-	copy(ret, c.key)
-	return ret
-}
-
-// GetIVLen return the length of IV
-func (c *streamCipher) GetIVLen() int {
-	return c.info.ivLen
-}
-
-// SetIV sets the given IV, please ensure the IV is valid value
-func (c *streamCipher) SetIV(iv []byte) {
-	c.iv = make([]byte, len(iv))
-	copy(c.iv, iv)
-}
-
-// GetKeyLen return the length of Key
-func (c *streamCipher) GetKeyLen() int {
-	return c.info.keyLen
 }
 
 func md5sum(d []byte) []byte {
@@ -289,26 +288,4 @@ func newSalsa20Stream(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
 	copy(c.nonce[:], iv[:8])
 	copy(c.key[:], key[:32])
 	return &c, nil
-}
-
-type streamGenerator struct {
-	keyLen    int
-	ivLen     int
-	newStream func(key, iv []byte, doe DecOrEnc) (cipher.Stream, error)
-}
-
-var streamCipherMethod = map[string]*streamGenerator{
-	"aes-128-cfb":   {16, 16, newAESCFBStream},
-	"aes-192-cfb":   {24, 16, newAESCFBStream},
-	"aes-256-cfb":   {32, 16, newAESCFBStream},
-	"aes-128-ctr":   {16, 16, newAESCTRStream},
-	"aes-192-ctr":   {24, 16, newAESCTRStream},
-	"aes-256-ctr":   {32, 16, newAESCTRStream},
-	"des-cfb":       {8, 8, newDESStream},
-	"bf-cfb":        {16, 8, newBlowFishStream},
-	"cast5-cfb":     {16, 8, newCast5Stream},
-	"rc4-md5":       {16, 16, newRC4MD5Stream},
-	"chacha20":      {32, 8, newChaCha20Stream},
-	"chacha20-ietf": {32, 12, newChaCha20IETFStream},
-	"salsa20":       {32, 8, newSalsa20Stream},
 }
