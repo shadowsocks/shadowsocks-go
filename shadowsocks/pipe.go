@@ -29,17 +29,11 @@ func PipeThenClose(src, dst NetConnection, done func()) {
 
 	for {
 		n, err := src.Read(buf[0:])
-
 		if n > 0 {
 			Logger.Debug("read n from src", zap.Int("n", n), zap.String("conn info", connInfo))
 			nn, errR := dst.Write(buf[:n])
 			if errR != nil { // errR.(*net.OpError).Timeout() can not be assert
-				if errR == io.EOF {
-					Logger.Info("write meet EOF, close the write", zap.String("conn info", connInfo))
-				} else {
-					// FIXME here always get the broken error
-					Logger.Error("error in copy from src to dest, write into dest", zap.String("conn info", connInfo), zap.Error(errR))
-				}
+				Logger.Error("error in copy from src to dest, write into dest", zap.String("conn info", connInfo), zap.Error(errR))
 				dst.CloseWrite()
 				return
 			}
