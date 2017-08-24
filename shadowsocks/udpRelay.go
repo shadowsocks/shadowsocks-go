@@ -35,12 +35,18 @@ const (
 
 var (
 	//reqList            = newReqList()
+	UDPMaxSize         = 65536
 	natTable           = NewNatTable()
 	natTableLock       = sync.Mutex{}
 	udpTimeout         = 30 * time.Second
 	reqListRefreshTime = 5 * time.Minute
-	UDPBufferPool      = NewLeakyBuf(1024, UDPMaxSize)
 )
+
+var UDPBufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, UDPMaxSize)
+	},
+}
 
 // BackwardInfo is defined for the backword packet to the src address
 type BackwardInfo struct {
@@ -157,7 +163,7 @@ func (table *NatTable) Delete(src string) {
 
 // ForwardUDPConn forwards the payload (should with header) to the dst with UDP.
 // meanwhile, the request header is cached and the connection is else cached for further use.
-func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) error {
+func ForwardUDPConn(serverIn net.PacketConn, src net.Addr, payload []byte) error {
 	// unpacket the incomming request and get the dest host and payload
 	dstHost, headerLen, err := UDPGetRequest(payload)
 	if err != nil {
@@ -205,7 +211,7 @@ func ForwardUDPConn(serverIn *SecurePacketConn, src net.Addr, payload []byte) er
 			go func() {
 				defer natTable.Delete(src.String())
 
-				buf := UDPBufferPool.Get()
+				buf := UDPBufferPool.Get().([]byte)
 				defer UDPBufferPool.Put(buf)
 
 				pktUnit, ok := natTable.Get(src)
