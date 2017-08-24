@@ -33,65 +33,74 @@ type SecureConn struct {
 
 // NewSecureConn creates a SecureConn
 func NewSecureConn(c net.Conn, cipher encrypt.Cipher, timeout int) net.Conn {
-	return &SecureConn{
+	conn := SecureConn{
 		Conn:     c,
 		Cipher:   cipher,
 		readBuf:  bufferPool.Get().([]byte),
 		writeBuf: bufferPool.Get().([]byte),
 		timeout:  timeout,
-		//ota:     ota,
-		//isServerSide: isServerSide,
 	}
+	if timeout > 0 {
+		conn.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+	}
+	return &conn
 }
 
 // Close closes the connection.
 func (c *SecureConn) Close() error {
-	defer leakyBuf.Put(c.writeBuf)
-	defer leakyBuf.Put(c.readBuf)
+	defer bufferPool.Put(c.writeBuf)
+	defer bufferPool.Put(c.readBuf)
 	return c.Conn.Close()
 }
 
+// CloseRead closes the connection.
+func (c *SecureConn) CloseRead() error {
+	defer bufferPool.Put(c.readBuf)
+	return c.Conn.(*net.TCPConn).CloseRead()
+}
+
+// CloseWrite closes the connection.
+func (c *SecureConn) CloseWrite() error {
+	defer bufferPool.Put(c.writeBuf)
+	return c.Conn.(*net.TCPConn).CloseWrite()
+}
+
 func (c *SecureConn) Read(b []byte) (n int, err error) {
-	// TODO
-	if c.timeout > 0 {
-		c.SetReadDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
+	n, err = c.Conn.Read(c.readBuf)
+	if err != nil {
+		return n, err
 	}
-	n, err := c.Conn.Read(c.readBuf)
-	return c.Cipher.Decrypt(b, c.readBuf)
+	return c.Cipher.Decrypt(c.readBuf[:n], b)
 }
 
 func (c *SecureConn) Write(b []byte) (n int, err error) {
-	n, err := c.Encrypt(b, c.writeBuf)
+	n, err = c.Encrypt(b, c.writeBuf)
 	if err != nil {
-		// TODO
+		return -1, err
 	}
 
-	// TODO
-	if c.timeout > 0 {
-		c.SetWriteDeadline(time.Now().Add(time.Duration(c.timeout) * time.Second))
-	}
-	nn, err := c.Conn.Write(c.writeBuf)
+	nn, err := c.Conn.Write(c.writeBuf[:n])
 	if nn != n {
-		// XXX FIXME
+		return nn, ErrUnexpectedIO
 	}
 
 	return nn, err
 }
 
-// Listener is like net.Listener
-type Listener struct {
+// secureListener is like net.Listener
+type secureListener struct {
 	net.Listener
 	cipher  encrypt.Cipher
 	timeout int
 }
 
 // Accept just like net.Listener.Accept()
-func (ln *Listener) Accept() (conn net.Conn, err error) {
+func (ln *secureListener) Accept() (conn net.Conn, err error) {
 	conn, err = ln.Listener.Accept()
 	if err != nil {
 		return nil, err
 	}
-	ss := NewSecureConn(conn, ln.cipher.Copy(), false, ln.timeout, true)
+	ss := NewSecureConn(conn, ln.cipher.Copy(), ln.timeout)
 	if err != nil {
 		ss.Close()
 		return nil, err
@@ -103,7 +112,7 @@ func (ln *Listener) Accept() (conn net.Conn, err error) {
 // Net must be "tcp", "tcp4", or "tcp6".
 // If laddr has a port of 0, ListenTCP will choose an available port.
 // The caller can use the Addr method of TCPListener to retrieve the chosen address.
-func Listen(network, laddr string, cipher encrypt.Cipher, timeout int) (net.Listener, error) {
+func SecureListen(network, laddr string, cipher encrypt.Cipher, timeout int) (net.Listener, error) {
 	if cipher == nil {
 		return nil, ErrNilCipher
 	}
@@ -111,5 +120,5 @@ func Listen(network, laddr string, cipher encrypt.Cipher, timeout int) (net.List
 	if err != nil {
 		return nil, err
 	}
-	return &Listener{ln, cipher, timeout}, nil
+	return &secureListener{ln, cipher, timeout}, nil
 }

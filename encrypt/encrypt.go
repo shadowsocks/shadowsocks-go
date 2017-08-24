@@ -41,20 +41,20 @@ type StreamCipher interface {
 	InitDecryptor(iv []byte) error
 }
 
-func PickCipher(method, passwd string) Cipher {
+func PickCipher(method, passwd string) (Cipher, error) {
 	method = strings.ToLower(method)
 
-	if strings.Contains(method, "aead") {
+	if strings.Contains(method, "gcm") || strings.Contains(method, "aead") {
 		cip, err := NewAEADCipher(method, passwd)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
-		return cip
+		return cip, nil
 	}
 
 	cip, err := NewStreamCipher(method, passwd)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return cip
+	return cip, nil
 }

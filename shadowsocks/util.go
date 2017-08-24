@@ -13,32 +13,9 @@ import (
 	"strings"
 )
 
-const (
-	// OneTimeAuthMask is the mask for OTA table bit
-	OneTimeAuthMask byte = 0x10
-	// AddrMask is used to mask the AddrType
-	AddrMask byte = 0xf
-
-	idType  = 0 // address type index
-	idIP0   = 1 // ip address start index
-	idDmLen = 1 // domain address length index
-	idDm0   = 2 // domain address start index
-
-	typeIPv4 = 1 // type is ipv4 address
-	typeDm   = 3 // type is domain address
-	typeIPv6 = 4 // type is ipv6 address
-
-	headerLenIPv4   = 1 + net.IPv4len + 2      // 1addrType + ipv4 + 2port
-	headerLenIPv6   = 1 + net.IPv6len + 2      // 1addrType + ipv6 + 2port
-	headerLenDmBase = 1 + 1 + 2                // 1addrType + 1addrLen + 2port, plus addrLen
-	lenHmacSha1     = 10                       // iv lenth is 10
-	lenDataLen      = 2                        // the length about data length
-	idOTAData0      = lenDataLen + lenHmacSha1 // data with OTA start offset
-)
-
 // PrintVersion prints the current version of shadowsocks-go
 func PrintVersion() {
-	const version = "2.0.0"
+	const version = "2.0.0 alpha"
 	fmt.Println("shadowsocks-go version", version)
 }
 
@@ -86,7 +63,7 @@ func rawAddr(addr string) (buf []byte, err error) {
 }
 
 // read full will read until got b length buffer
-func readFull(c *SecureConn, b []byte) (n int, err error) {
+func readFull(c net.Conn, b []byte) (n int, err error) {
 	min := len(b)
 	for n < min {
 		var nn int
@@ -104,7 +81,7 @@ func readFull(c *SecureConn, b []byte) (n int, err error) {
 }
 
 // GetRequest can handler the ss request header and decryption for ss protocol
-func GetRequest(ss *SecureConn) (host string, err error) {
+func GetRequest(ss net.Conn) (host string, err error) {
 	// read till we get possible domain length field
 	buf := make([]byte, 269)
 

@@ -2,6 +2,7 @@ package shadowsocks
 
 import (
 	"net"
+	"time"
 
 	"github.com/shadowsocks/shadowsocks-go/encrypt"
 )
@@ -10,12 +11,14 @@ import (
 // net.PacketConn interfaces for shadowsocks UDP network connections.
 type SecurePacketConn struct {
 	net.PacketConn
-	*encrypt.Cipher
-	Timeout int
+	encrypt.Cipher
+	timeout  int
+	readBuf  []byte
+	writeBuf []byte
 }
 
 // ListenPacket is like net.ListenPacket() but returns an secured connection
-func ListenPacket(network, laddr string, cipher *encrypt.Cipher, timeout int) (*SecurePacketConn, error) {
+func SecureListenPacket(network, laddr string, cipher encrypt.Cipher, timeout int) (net.PacketConn, error) {
 	if cipher == nil {
 		return nil, ErrNilCipher
 	}
@@ -27,60 +30,38 @@ func ListenPacket(network, laddr string, cipher *encrypt.Cipher, timeout int) (*
 }
 
 // NewSecurePacketConn creates a secured PacketConn
-func NewSecurePacketConn(c net.PacketConn, cipher *encrypt.Cipher, timeout int) *SecurePacketConn {
-	return &SecurePacketConn{
+func NewSecurePacketConn(c net.PacketConn, cipher encrypt.Cipher, timeout int) net.PacketConn {
+	pkt := SecurePacketConn{
 		PacketConn: c,
 		Cipher:     cipher,
-		Timeout:    timeout,
+		timeout:    timeout,
+		readBuf:    bufferPool.Get().([]byte),
 	}
+	if timeout > 0 {
+		pkt.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
+	}
+	return &pkt
 }
 
 // ReadFrom reads a packet from the connection.
 func (c *SecurePacketConn) ReadFrom(b []byte) (n int, src net.Addr, err error) {
-	cipher := c.Copy()
-	buf := make([]byte, 4096)
-	ivLen := cipher.GetIVLen()
 	// it should alway listen for packets, no timeout
-	n, src, err = c.PacketConn.ReadFrom(buf)
+	n, src, err = c.PacketConn.ReadFrom(c.readBuf)
 	if err != nil {
 		return
 	}
 
-	if n < ivLen {
-		return 0, nil, errPacketTooSmall
-	}
-
-	if len(b) < n-ivLen {
-		err = errBufferTooSmall // just a warning
-	}
-
-	iv := make([]byte, ivLen)
-	copy(iv, buf[:ivLen])
-
-	if err = cipher.InitDecrypt(iv); err != nil {
-		return
-	}
-
-	cipher.Decrypt(b[0:], buf[ivLen:n])
-	n -= ivLen
-
-	return
+	nn, err := c.Unpack(b, c.readBuf[:n])
+	return nn, src, err
 }
 
 // WriteTo writes a packet with payload b to addr.
 func (c *SecurePacketConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
-	cipher := c.Copy()
-	iv, err := cipher.InitEncrypt()
+	n, err = c.Pack(b, c.writeBuf[0:])
 	if err != nil {
-		return 0, err
+		return
 	}
-	packetLen := len(b) + len(iv)
 
-	cipherData := make([]byte, packetLen)
-	copy(cipherData, iv)
-
-	cipher.Encrypt(cipherData[len(iv):], b)
-	n, err = c.PacketConn.WriteTo(cipherData, dst)
-	n -= len(iv)
-	return
+	nn, err := c.PacketConn.WriteTo(c.writeBuf[:n], dst)
+	return nn, err
 }

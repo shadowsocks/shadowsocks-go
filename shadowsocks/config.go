@@ -32,10 +32,13 @@ type Config struct {
 	Local           string `json:"local_addr"`      // shadowsocks local socks5 Server address
 	LocalPort       int    `json:"local_port"`      // shadowsocks local socks5 Server port
 	Password        string `json:"password"`        // shadowsocks remote server password, for multi server password should plase in order and split eith comma
-	Method          string `json:"method"`          // shadowsocks encryption method
+	Method          string `json:"method"`          // shadowsocks encryption method, split by comma if multi server is enabled
 	Timeout         int    `json:"timeout"`         // shadowsocks connection timeout
 	MultiServerMode string `json:"MultiServerMode"` // shadowsocks client multi-server access mode: fastest,round-robin,dissable
 	DNSServer       string `json:"dns_server"`      // shadowsocks remote Server DNS server option, if set to nil, the system DNS will be uesd for domain lookup
+
+	servers []string
+	methods []string // methods array, match the server port
 
 	// following options are only used by server
 	PortPassword map[string]string `json:"port_password"` // shadowsocks mutli user password
@@ -48,7 +51,6 @@ type Config struct {
 	//"tunnel_remote":"8.8.8.8",
 	//"tunnel_remote_port":53,
 	//"tunnel_port":53,
-	servers []string
 }
 
 // String return the ss config content in string

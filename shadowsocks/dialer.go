@@ -12,13 +12,13 @@ import (
 // Dialer provides client side connection support
 // and also implements the Dialer interface described in golang.org/x/net/proxy
 type Dialer struct {
-	cipher  *encrypt.Cipher
+	cipher  encrypt.Cipher
 	server  string
 	timeout int
 }
 
 // NewDialer initializes a new Dialer
-func NewDialer(server string, cipher *encrypt.Cipher, timeout int) (dialer *Dialer, err error) {
+func NewDialer(server string, cipher encrypt.Cipher, timeout int) (dialer *Dialer, err error) {
 	// Currently shadowsocks-go supports UDP
 	// But you should not use Dialer to open an UDP connection
 	if cipher == nil {
@@ -56,7 +56,7 @@ func (d *Dialer) DialUDP(network, laddr, raddr string) (c net.PacketConn, err er
 // ListenPacket is used to open an UDP connection on client side
 func (d *Dialer) ListenPacket(network, laddr string) (c net.PacketConn, err error) {
 	if strings.HasPrefix(network, "udp") {
-		return ListenPacket(network, laddr, d.cipher.Copy(), d.timeout)
+		return SecureListenPacket(network, laddr, d.cipher.Copy(), d.timeout)
 	}
 	return nil, fmt.Errorf("unsupported connection type: %s", network)
 }

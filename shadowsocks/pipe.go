@@ -28,41 +28,28 @@ func PipeThenClose(src, dst NetConnection, done func()) {
 		src.RemoteAddr().String(), src.LocalAddr().String(), dst.LocalAddr().String(), dst.RemoteAddr().String())
 
 	for {
-		n, err := src.Read(buf)
+		n, err := src.Read(buf[0:])
+
 		if n > 0 {
 			Logger.Debug("read n from src", zap.Int("n", n), zap.String("conn info", connInfo))
-			var start int
-			for start != n {
-				// XXX retry may cause the data repeated
-				nn, errR := dst.Write(buf[start:n])
-				if errR != nil {
-					//if errR.(*net.OpError).Timeout() {
-					//	Logger.Warn("write into dest TimeOut, retry", zap.String("conn info", connInfo), zap.Error(errR))
-					//}
-
-					if err == io.EOF {
-						Logger.Info("write meet EOF, close the write", zap.String("conn info", connInfo))
-					} else {
-						// XXX FIXME here always get the broken error
-						Logger.Error("error in copy from src to dest, write into dest", zap.String("conn info", connInfo), zap.Error(errR))
-					}
-					dst.CloseWrite()
-					return
+			nn, errR := dst.Write(buf[:n])
+			if errR != nil { // errR.(*net.OpError).Timeout() can not be assert
+				if errR == io.EOF {
+					Logger.Info("write meet EOF, close the write", zap.String("conn info", connInfo))
+				} else {
+					// FIXME here always get the broken error
+					Logger.Error("error in copy from src to dest, write into dest", zap.String("conn info", connInfo), zap.Error(errR))
 				}
-				Logger.Debug("write n to dest", zap.Int("n", nn), zap.String("conn info", connInfo))
-				start += nn
-				if nn < n {
-					Logger.Info("write dst, nn < n", zap.Int("read n", n), zap.Int("write n", nn), zap.Int("buffer", start), zap.String("conn info", connInfo))
-				}
+				dst.CloseWrite()
+				return
+			}
+			Logger.Debug("write n to dest", zap.Int("n", nn), zap.String("conn info", connInfo))
+			if nn < n {
+				Logger.Warn("write dst, nn < n", zap.Int("read n", n), zap.Int("write n", nn), zap.String("conn info", connInfo))
 			}
 		}
 
 		if err != nil {
-			//if err.(*net.OpError).Timeout() {
-			//	Logger.Warn("read src TimeOut, retry", zap.String("conn info", connInfo), zap.Error(err))
-			//	continue
-			//} else if err == io.EOF {
-
 			if err == io.EOF {
 				Logger.Info("src connection was closed, shutdown", zap.String("conn info", connInfo), zap.Error(err))
 			} else {

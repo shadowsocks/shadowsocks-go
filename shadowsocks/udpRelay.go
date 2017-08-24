@@ -9,11 +9,11 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const (
-	// OneTimeAuthMask is the mask for OTA table bit
-	OneTimeAuthMask byte = 0x10
 	// AddrMask is used to mask the AddrType
 	AddrMask byte = 0xf
 
@@ -31,7 +31,6 @@ const (
 	headerLenDmBase = 1 + 1 + 2           // 1addrType + 1addrLen + 2port, plus addrLen
 	lenHmacSha1     = 10
 	lenDataLen      = 2
-	idOTAData0      = lenDataLen + lenHmacSha1
 )
 
 var (
@@ -161,7 +160,6 @@ func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []
 	if _, ok := reqList.Get(dst.String()); !ok {
 		req := make([]byte, headerLen)
 		copy(req, payload)
-		req[0] &= ^OneTimeAuthMask
 		reqList.Put(dst.String(), req)
 	}
 
@@ -173,22 +171,23 @@ func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []
 		}
 		remote = c
 		natlist.Put(src.String(), remote)
-		Debug.Printf("[udp]new client %s->%s via %s\n", src, dst, remote.LocalAddr())
+		Logger.Info("[udp]new client", zap.Stringer("src", src), zap.Stringer("dst", dst), zap.Stringer("remote", remote.LocalAddr()))
 		go func() {
-			udpReceiveThenClose(handle, src, remote)
+			// FIXME XXX TODO
+			//	udpReceiveThenClose(handle, src, remote)
 			natlist.Delete(src.String())
 		}()
 	} else {
-		Debug.Printf("[udp]using cached client %s->%s via %s\n", src, dst, remote.LocalAddr())
+		Logger.Debug("[udp]using cached client", zap.Stringer("src", src), zap.Stringer("dst", dst), zap.Stringer("remote", remote.LocalAddr()))
 	}
 	_, err = remote.WriteTo(payload[headerLen:], dst)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
 			// EMFILE is process reaches open file limits, ENFILE is system limit
-			Debug.Println("[udp]write error:", err)
+			Logger.Error("[udp]write error:", zap.Error(err))
 		} else {
-			Debug.Println("[udp]error connecting to:", dst, err)
+			Logger.Error("[udp]error connecting to:", zap.Error(err))
 		}
 		if conn := natlist.Delete(src.String()); conn != nil {
 			conn.Close()
@@ -200,13 +199,11 @@ func ForwardUDPConn(handle net.PacketConn, src net.Addr, host string, payload []
 // UDPGetRequest deocde the request header from buffer
 func UDPGetRequest(buf []byte, auth bool) (host string, headerLen int, compatibleMode bool, err error) {
 	addrType := buf[idType]
-	ota := addrType&OneTimeAuthMask > 0
-	compatibleMode = !auth && ota
 	switch addrType & AddrMask {
 	case typeIPv4:
 		headerLen = headerLenIPv4
 		if len(buf) < headerLen {
-			Debug.Println("[udp]invalid received message.")
+			Logger.Error("[udp]invalid message received, ipv4 len invalid")
 		}
 		host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
 		port := binary.BigEndian.Uint16(buf[headerLenIPv4-2 : headerLenIPv4])
@@ -214,7 +211,7 @@ func UDPGetRequest(buf []byte, auth bool) (host string, headerLen int, compatibl
 	case typeIPv6:
 		headerLen = headerLenIPv6
 		if len(buf) < headerLen {
-			Debug.Println("[udp]invalid received message.")
+			Logger.Error("[udp]invalid message received, ipv6 len invalid")
 		}
 		host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
 		port := binary.BigEndian.Uint16(buf[headerLenIPv4-2 : headerLenIPv4])
@@ -222,18 +219,17 @@ func UDPGetRequest(buf []byte, auth bool) (host string, headerLen int, compatibl
 	case typeDm:
 		headerLen = int(buf[idDmLen]) + headerLenDmBase
 		if len(buf) < headerLen {
-			Debug.Println("[udp]invalid received message.")
+			Logger.Error("[udp]invalid message received, domain len invalid")
 		}
 		host = string(buf[idDm0 : idDm0+int(buf[idDmLen])])
 		// avoid panic: syscall: string with NUL passed to StringToUTF16 on windows.
 		if strings.ContainsRune(host, 0x00) {
-			err = errInvalidHostname
-			return
+			return "", -1, false, ErrInvalidHostname
 		}
 		port := binary.BigEndian.Uint16(buf[headerLenIPv4-2 : headerLenIPv4])
 		host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 	default:
-		Debug.Printf("[udp]addrType %d not supported", addrType)
+		Logger.Error("[udp]addrType d not supported", zap.Int("addr type", int(addrType)))
 		return
 	}
 	return

@@ -3,11 +3,11 @@ package shadowsocks
 import "errors"
 
 var (
-	errPacketTooSmall  = errors.New("[udp]read error: cannot decrypt, received packet is smaller than ivLen")
-	errBufferTooSmall  = errors.New("[udp]read error: given buffer is too small to hold data")
-	ErrPacketOtaFailed = errors.New("read error: received packet has invalid ota")
-	ErrInvalidHostname = errors.New("errInvalidHostname")
+	ErrPacketTooSmall  = errors.New("[udp]read error: cannot decrypt, received packet is smaller than ivLen")
+	ErrBufferTooSmall  = errors.New("[udp]read error: given buffer is too small to hold data")
+	ErrInvalidHostname = errors.New("error invalid hostname")
 	ErrInvalidPacket   = errors.New("invalid message received")
+	ErrNilCipher       = errors.New("cipher should NOT be nil")
+	ErrUnexpectedIO    = errors.New("error in IO, expect more data to write")
 	//ErrInvalidPara     = errors.New("errInvalidPara")
-	ErrNilCipher = errors.New("Cipher can't be nil")
 )

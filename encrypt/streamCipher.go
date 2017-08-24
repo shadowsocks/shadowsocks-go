@@ -119,7 +119,10 @@ func (c *streamCipher) EncryptorInited() bool {
 
 // InitDecrypt initializes the block cipher from given IV.
 func (c *streamCipher) InitDecryptor(iv []byte) (err error) {
-	c.dec, err = c.genator(c.key, iv, Decrypt)
+	ivC := make([]byte, c.IVSize(), c.IVSize())
+	copy(ivC, iv)
+	c.iv = ivC
+	c.dec, err = c.genator(c.key, ivC, Decrypt)
 	return
 }
 
@@ -130,18 +133,61 @@ func (c *streamCipher) DecryptorInited() bool {
 
 // Encrypt encrypts src to dst, maybe the same slice.
 func (c *streamCipher) Encrypt(src, dst []byte) (int, error) {
-	c.enc.XORKeyStream(dst, src)
-	return len(dst), nil
+	var start, length int
+	length = len(src)
+	if c.EncryptorInited() {
+		iv, err := c.InitEncryptor()
+		if err != nil {
+			return -1, err
+		}
+		n := copy(dst[0:], iv)
+		start += n
+		length += c.IVSize()
+	}
+
+	c.enc.XORKeyStream(dst[start:], src)
+	return length, nil
 }
 
 // Decrypt decrypts src to dst, maybe the same slice.
 func (c *streamCipher) Decrypt(src, dst []byte) (int, error) {
-	c.dec.XORKeyStream(dst, src)
-	return len(dst), nil
+	var start, length int
+	length = len(src)
+	if c.DecryptorInited() {
+		err := c.InitDecryptor(src[:c.IVSize()])
+		if err != nil {
+			return -1, err
+		}
+		start += c.IVSize()
+		length -= c.IVSize()
+	}
+
+	c.dec.XORKeyStream(dst, src[start:])
+	return length, nil
 }
 
-func (c *streamCipher) Pack(src, dst []byte) (int, error)   { return c.Encrypt(src, dst) }
-func (c *streamCipher) Unpack(src, dst []byte) (int, error) { return c.Decrypt(src, dst) }
+func (c *streamCipher) Pack(src, dst []byte) (int, error) {
+	iv, err := c.InitEncryptor()
+	if err != nil {
+		return -1, err
+	}
+	n := copy(dst[0:], iv)
+	if n != c.IVSize() {
+		return -1, ErrCapcityNotEnough
+	}
+
+	c.enc.XORKeyStream(dst[n:], src)
+	return len(src) + c.IVSize(), nil
+}
+func (c *streamCipher) Unpack(src, dst []byte) (int, error) {
+	err := c.InitDecryptor(src[:c.IVSize()])
+	if err != nil {
+		return -1, err
+	}
+
+	c.dec.XORKeyStream(dst, src[c.IVSize():])
+	return len(src) - c.IVSize(), nil
+}
 
 // Copy creates a new cipher at it's initial state.
 func (c *streamCipher) Copy() Cipher {

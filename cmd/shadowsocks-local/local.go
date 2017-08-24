@@ -39,6 +39,8 @@ var (
 )
 
 const (
+	// HandShakeTimeout give out the socks5 handshake time out
+	HandShakeTimeout = 15
 	// UDPMaxSize give out max udp packet size
 	UDPMaxSize = 65507
 
@@ -68,18 +70,14 @@ type natTableInfo struct {
 	ClientBindPort int
 	ServerBindPort int
 	ServerPacketln net.PacketConn
-	SSPacketln     *ss.SecurePacketConn
+	SSPacketln     net.PacketConn
 }
 
 // NatTable keept the connection both client and server side, for route
 type natTable map[string]*natTableInfo
 
-var (
-	// HandShakeTimeout give out the socks5 handshake time out
-	HandShakeTimeout = 15
-	// NatInfo used to locate the natTable from server port
-	NatInfo map[int]natTable = make(map[int]natTable)
-)
+// NatInfo used to locate the natTable from server port
+var NatInfo map[int]natTable = make(map[int]natTable)
 
 // handle the accepted connection ad socks5
 // NOTICE the ss-local wont require any authentication and return 0x05 0x00 to client
@@ -315,13 +313,13 @@ type ServerCipher struct {
 }
 
 // prepare the information for connection to the servers set in the config
-func prepareToConnect(c *ss.Config) (map[string]*encrypt.Cipher, error) {
+func prepareToConnect(c *ss.Config) (map[string]encrypt.Cipher, error) {
 	// connect to server will establish all the server connection with given server address and port
-	cips := make(map[string]*encrypt.Cipher, len(c.GetServerArray()))
+	cips := make(map[string]encrypt.Cipher, len(c.GetServerArray()))
 
 	if c.Server != "" && c.ServerPort != "" {
 		ss := c.Server + ":" + c.ServerPort
-		cipher, err := encrypt.NewCipher(c.Method, c.Password)
+		cipher, err := encrypt.PickCipher(c.Method, c.Password)
 		if err != nil {
 			return nil, err
 		}
@@ -329,7 +327,7 @@ func prepareToConnect(c *ss.Config) (map[string]*encrypt.Cipher, error) {
 	}
 
 	for server, passwd := range c.ServerPassword {
-		cipher, err := encrypt.NewCipher(c.Method, passwd)
+		cipher, err := encrypt.PickCipher(c.Method, passwd)
 		if err != nil {
 			return nil, err
 		}
@@ -339,7 +337,7 @@ func prepareToConnect(c *ss.Config) (map[string]*encrypt.Cipher, error) {
 }
 
 // dial the server establish the ss connection
-func connectToServer(addr string, ciph *encrypt.Cipher, timeout int) (*ss.SecureConn, error) {
+func connectToServer(addr string, ciph encrypt.Cipher, timeout int) (net.Conn, error) {
 	if ciph == nil {
 		return nil, ErrNilCipher
 	}
@@ -348,23 +346,18 @@ func connectToServer(addr string, ciph *encrypt.Cipher, timeout int) (*ss.Secure
 		return nil, err
 	}
 
-	tcpConn, ok := nc.(*net.TCPConn)
-	if !ok {
-		return nil, ErrConvertTCPConn
-	}
-
-	conn := ss.NewSecureConn(tcpConn, ciph.Copy(), timeout)
+	conn := ss.NewSecureConn(nc, ciph.Copy(), timeout)
 	ss.Logger.Debug("ss local connecting to server with TCP", zap.String("server", addr), zap.Int("timeout", timeout))
 	return conn, nil
 }
 
 // dial the server establish the ss connection
-func connectToServerUDP(ciph *encrypt.Cipher, timeout int) (*ss.SecurePacketConn, error) {
+func connectToServerUDP(ciph encrypt.Cipher, timeout int) (net.PacketConn, error) {
 	if ciph == nil {
 		return nil, ErrNilCipher
 	}
 
-	sconn, err := ss.ListenPacket("udp", "", ciph.Copy(), timeout)
+	sconn, err := ss.SecureListenPacket("udp", "", ciph.Copy(), timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -409,10 +402,14 @@ func handleConnection(server string, conn net.Conn, timeout int) {
 	// request the ss-remote with given host
 	if _, err := ssconn.Write(target); err != nil {
 		ss.Logger.Error("request ss remote failed", zap.Stringer("serverlocal", ssconn.LocalAddr()),
-			zap.Stringer("serverremote", ssconn.RemoteAddr()), zap.ByteString("target", target))
+			zap.Stringer("serverremote", ssconn.RemoteAddr()), zap.Error(err))
 		return
 	}
 
+	tcpssconn, ok := ssconn.(*ss.SecureConn)
+	if !ok {
+		ss.Logger.Error("error in pipthen close", zap.Error(ErrConvertTCPConn))
+	}
 	tcpConn, ok := conn.(*net.TCPConn)
 	if !ok {
 		ss.Logger.Error("error in pipthen close", zap.Error(ErrConvertTCPConn))
@@ -431,8 +428,8 @@ func handleConnection(server string, conn net.Conn, timeout int) {
 	}
 
 	// do the pipe between clicnet & server
-	go ss.PipeThenClose(tcpConn, ssconn, wg.Done)
-	ss.PipeThenClose(ssconn, tcpConn, func() {})
+	go ss.PipeThenClose(tcpConn, tcpssconn, wg.Done)
+	ss.PipeThenClose(tcpssconn, tcpConn, func() {})
 	wg.Wait()
 
 	ss.Logger.Debug("closed server connection", zap.String("conn info", fmt.Sprintf("incoming conn: %v <---> %v, outting conn: %v <---> %v", conn.LocalAddr().String(), conn.RemoteAddr().String(), ssconn.LocalAddr().String(), ssconn.RemoteAddr().String())))
@@ -548,7 +545,7 @@ func handleUDPConnection(server string, conn net.Conn, timeout int) {
 	}
 }
 
-var ciphers map[string]*encrypt.Cipher
+var ciphers map[string]encrypt.Cipher
 
 func run(config *ss.Config) {
 	laddr := net.JoinHostPort(config.Local, strconv.Itoa(config.LocalPort))
@@ -564,6 +561,7 @@ func run(config *ss.Config) {
 		ss.Logger.Fatal("error in shadwsocks local server prepaer the cipher", zap.Error(err))
 	}
 
+	// init the ciphers map
 	ciphers = cps
 
 	servers := config.GetServerArray()
@@ -577,6 +575,7 @@ func run(config *ss.Config) {
 
 	switch config.MultiServerMode {
 	case "fastest":
+		// start the test routine for server detection
 		go func() {
 			if len(config.GetServerArray()) < 2 {
 				return
@@ -592,35 +591,29 @@ func run(config *ss.Config) {
 		}
 	}
 
+	// XXX
 	// listen the socks5 on this
-	if enableUDP {
-		go func() {
-			laddr := net.JoinHostPort(config.Local, strconv.Itoa(config.LocalPort))
-			pln, err := net.ListenPacket("udp", laddr)
-			if err != nil {
-				ss.Logger.Fatal("error in shadwsocks local server listen udp", zap.Error(err))
-			}
-			ss.Logger.Info("starting local socks5 server udp", zap.String("listenAddr", laddr))
+	//if enableUDP {
+	//	go func() {
+	//		laddr := net.JoinHostPort(config.Local, strconv.Itoa(config.LocalPort))
+	//		pln, err := net.ListenPacket("udp", laddr)
+	//		if err != nil {
+	//			ss.Logger.Fatal("error in shadwsocks local server listen udp", zap.Error(err))
+	//		}
+	//		ss.Logger.Info("starting local socks5 server udp", zap.String("listenAddr", laddr))
 
-			// main loop for socks5 accept incoming request
-			for {
-				server := servers[0]
-				conn, err := ln.Accept()
-				if err != nil {
-					ss.Logger.Error("error in local server accept socks5", zap.Error(err))
-				} else {
-					go handleUDPConnection(server, conn, config.Timeout)
-				}
-			}
-		}()
-	}
-
-	laddr := net.JoinHostPort(config.Local, strconv.Itoa(config.LocalPort))
-	ln, err := net.Listen("tcp", laddr)
-	if err != nil {
-		ss.Logger.Fatal("error in shadwsocks local server listen", zap.Error(err))
-	}
-	ss.Logger.Info("starting local socks5 server", zap.String("listenAddr", laddr))
+	//		// main loop for socks5 accept incoming request
+	//		for {
+	//			server := servers[0]
+	//			conn, err := ln.Accept()
+	//			if err != nil {
+	//				ss.Logger.Error("error in local server accept socks5", zap.Error(err))
+	//			} else {
+	//				go handleUDPConnection(server, conn, config.Timeout)
+	//			}
+	//		}
+	//	}()
+	//}
 
 	// main loop for socks5 accept incoming request
 	var server string
@@ -727,7 +720,7 @@ func checkConfig(config *ss.Config) error {
 func main() {
 	var configFile, ServerAddr, LocalAddr, Password, Method, MultiServerMode string
 	var ServerPort, Timeout, LocalPort int
-	var printVer, UDP bool
+	var printVer bool
 	var config *ss.Config
 	var err error
 
@@ -737,8 +730,8 @@ func main() {
 	flag.IntVar(&LocalPort, "port", 1085, "local socks5 proxy port")
 	flag.StringVar(&ServerAddr, "saddr", "", "server address")
 	flag.IntVar(&ServerPort, "sport", 0, "server port")
-	flag.BoolVar(&UDP, "u", false, "use the udp to serve")
-	flag.StringVar(&MultiServerMode, "multiserver", "fastest", "3 modes for shadowsocks local detect ss server: \n\t\tfastest: get fastest server to request\n\t\tround-robin: get round-robin server to request\n\t\tdissable: only request for first server")
+	//flag.BoolVar(&UDP, "u", false, "use the udp to serve")
+	flag.StringVar(&MultiServerMode, "multiserver", "fastest", "3 modes for shadowsocks local detect ss server: \n\t\tfastest: get fastest server to request\n\t\tround-robin: get server with round-robin for request\n\t\tdissable: only request for first server")
 	flag.StringVar(&Password, "passwd", "", "server password")
 	flag.IntVar(&Timeout, "timeout", 300, "timeout in seconds")
 	flag.StringVar(&Method, "method", "aes-256-cfb", "encryption method, default: aes-256-cfb")
@@ -763,6 +756,7 @@ func main() {
 
 	// choose the encrypt method then check
 	if Method == "" {
+		// TODO change into gcm AEAD
 		Method = "aes-256-cfb"
 		opts = append(opts, ss.WithEncryptMethod("aes-256-cfb"))
 	}
