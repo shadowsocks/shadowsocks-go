@@ -39,7 +39,7 @@ var (
 )
 
 // handleConnection forward the request to the destination
-func handleConnection(conn *ss.SecureConn, timeout int) {
+func handleConnection(conn net.Conn, timeout int) {
 	// first do the decode for ss protocol
 	host, err := ss.GetRequest(conn)
 	if err != nil {
@@ -88,8 +88,13 @@ func handleConnection(conn *ss.SecureConn, timeout int) {
 		}
 		return
 	}
+	tcpremote, ok := remote.(*net.TCPConn)
+	if !ok {
+		//TODO
+		return
+	}
 
-	remote.(*net.TCPConn).SetKeepAlive(true)
+	tcpremote.SetKeepAlive(true)
 
 	ss.Logger.Debug("piping remote to host:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
 
@@ -105,8 +110,8 @@ func handleConnection(conn *ss.SecureConn, timeout int) {
 	// close the server at the right time
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	go ss.PipeThenClose(conn, remote.(*net.TCPConn), wg.Done)
-	ss.PipeThenClose(remote.(*net.TCPConn), conn, func() {})
+	go ss.PipeThenClose(conn.(*net.TCPConn), tcpremote, wg.Done)
+	ss.PipeThenClose(tcpremote, conn.(*net.TCPConn), func() {})
 	wg.Wait()
 
 	return
@@ -128,7 +133,7 @@ func waitSignal() {
 }
 
 // serveTCP accept incoming request and handle
-func serveTCP(ln *ss.Listener, timeout int) {
+func serveTCP(ln net.Listener, timeout int) {
 	defer ln.Close()
 	for {
 		// accept should not be blocked, so here just return a ss warped connection
@@ -144,12 +149,12 @@ func serveTCP(ln *ss.Listener, timeout int) {
 // start the ss remote servers listen on given ports
 func run(conf *ss.Config) {
 	for addr, pass := range conf.PortPassword {
-		cipher, err := encrypt.NewCipher(conf.Method, pass)
+		cipher, err := encrypt.PickCipher(conf.Method, pass)
 		if err != nil {
 			ss.Logger.Fatal("Failed create cipher", zap.Error(err))
 		}
 		// listen on :addr ,so makesure you have the enough priority to do this
-		ln, err := ss.Listen("tcp", net.JoinHostPort("", addr), cipher.Copy(), conf.Timeout)
+		ln, err := ss.SecureListen("tcp", net.JoinHostPort("", addr), cipher.Copy(), conf.Timeout)
 		if err != nil {
 			ss.Logger.Fatal("error listening port", zap.String("port", addr), zap.Error(err))
 		}
@@ -160,7 +165,7 @@ func run(conf *ss.Config) {
 
 // serveUDP read from the udp listen and forward the request
 // only do the forward here, the backward doing in another sequence
-func serveUDP(servein *ss.SecurePacketConn) {
+func serveUDP(servein net.PacketConn) {
 	defer servein.Close()
 	buf := make([]byte, 4096)
 	for {
@@ -173,7 +178,6 @@ func serveUDP(servein *ss.SecurePacketConn) {
 		}
 		// TODO handle the connection : when to close the conn
 		// for loop is right?
-
 		go ss.ForwardUDPConn(servein, srcAddr, buf[:n])
 	}
 }
@@ -183,12 +187,12 @@ func runUDP(conf *ss.Config) {
 	addrPadd := conf.PortPassword
 	for addr, pass := range addrPadd {
 		ss.Logger.Info("[UDP] listening udp", zap.String("port", addr))
-		cipher, err := encrypt.NewCipher(conf.Method, pass)
+		cipher, err := encrypt.PickCipher(conf.Method, pass)
 		if err != nil {
 			ss.Logger.Error("[UDP] failed create cipher", zap.Error(err))
 			os.Exit(1)
 		}
-		SecurePacketConn, err := ss.ListenPacket("udp", ":"+addr, cipher, conf.Timeout)
+		SecurePacketConn, err := ss.SecureListenPacket("udp", ":"+addr, cipher, conf.Timeout)
 		if err != nil {
 			ss.Logger.Error("[UDP] error listening packetconn", zap.String("address", addr), zap.Error(err))
 			os.Exit(1)
