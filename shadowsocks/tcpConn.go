@@ -1,6 +1,7 @@
 package shadowsocks
 
 import (
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -66,14 +67,63 @@ func (c *SecureConn) CloseWrite() error {
 }
 
 func (c *SecureConn) Read(b []byte) (n int, err error) {
-	n, err = c.Conn.Read(c.readBuf)
+	if c.DecryptorInited() {
+		n, err := io.ReadFull(c.Conn, c.readBuf[:c.InitBolckSize()])
+		if err != nil {
+			return -1, err
+		}
+		if n != c.InitBolckSize() {
+			return -1, ErrUnexpectedIO
+		}
+		err = c.InitDecryptor(c.readBuf[:c.InitBolckSize()])
+		if err != nil {
+			return -1, err
+		}
+	}
+
+	destlen := len(b)
+
+	n, err = c.Conn.Read(c.readBuf[:destlen])
 	if err != nil {
 		return n, err
 	}
-	return c.Cipher.Decrypt(c.readBuf[:n], b)
+
+	nn, err := c.Cipher.Decrypt(c.readBuf[:n], b)
+errAgain:
+	if err != nil {
+		// handle the aead cipher bug
+		if err == encrypt.ErrAgain {
+			nnn, errR := c.Conn.Read(c.readBuf[:nn])
+			if errR != nil {
+				return -1, err
+			}
+			if nnn != nn {
+				return -1, ErrUnexpectedIO
+			}
+			nn, err = c.Cipher.Decrypt(c.readBuf[:nnn], b)
+			n = nnn
+			goto errAgain
+		}
+		return -1, err
+	}
+	return nn, nil
 }
 
 func (c *SecureConn) Write(b []byte) (n int, err error) {
+	if c.EncryptorInited() {
+		data, err := c.InitEncryptor()
+		if err != nil {
+			return -1, err
+		}
+		n, err = c.Conn.Write(data)
+		if err != nil {
+			return -1, err
+		}
+		if n != c.InitBolckSize() {
+			return -1, ErrUnexpectedIO
+		}
+	}
+
 	n, err = c.Encrypt(b, c.writeBuf)
 	if err != nil {
 		return -1, err

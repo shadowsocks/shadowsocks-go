@@ -110,8 +110,8 @@ func handleConnection(conn net.Conn, timeout int) {
 	// close the server at the right time
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	go ss.PipeThenClose(conn.(*net.TCPConn), tcpremote, wg.Done)
-	ss.PipeThenClose(tcpremote, conn.(*net.TCPConn), func() {})
+	go ss.PipeThenClose(conn.(*ss.SecureConn), tcpremote, wg.Done)
+	ss.PipeThenClose(tcpremote, conn.(*ss.SecureConn), func() {})
 	wg.Wait()
 
 	return

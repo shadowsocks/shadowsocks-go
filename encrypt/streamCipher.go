@@ -69,8 +69,8 @@ type streamCipher struct {
 	genator func(key, iv []byte, doe DecOrEnc) (cipher.Stream, error)
 }
 
-func (c *streamCipher) KeySize() int { return c.keyLen }
-func (c *streamCipher) IVSize() int  { return c.ivLen }
+func (c *streamCipher) KeySize() int       { return c.keyLen }
+func (c *streamCipher) InitBolckSize() int { return c.ivLen }
 
 // NewCipher creates a cipher that can be used in Dial() etc.
 // Use cipher.Copy() to create a new cipher with the same method and password
@@ -119,7 +119,7 @@ func (c *streamCipher) EncryptorInited() bool {
 
 // InitDecrypt initializes the block cipher from given IV.
 func (c *streamCipher) InitDecryptor(iv []byte) (err error) {
-	ivC := make([]byte, c.IVSize(), c.IVSize())
+	ivC := make([]byte, c.ivLen, c.ivLen)
 	copy(ivC, iv)
 	c.iv = ivC
 	c.dec, err = c.genator(c.key, ivC, Decrypt)
@@ -133,37 +133,20 @@ func (c *streamCipher) DecryptorInited() bool {
 
 // Encrypt encrypts src to dst, maybe the same slice.
 func (c *streamCipher) Encrypt(src, dst []byte) (int, error) {
-	var start, length int
-	length = len(src)
 	if c.EncryptorInited() {
-		iv, err := c.InitEncryptor()
-		if err != nil {
-			return -1, err
-		}
-		n := copy(dst[0:], iv)
-		start += n
-		length += c.IVSize()
+		return -1, ErrCipherUninitialized
 	}
-
-	c.enc.XORKeyStream(dst[start:], src)
-	return length, nil
+	c.enc.XORKeyStream(dst[:len(src)], src)
+	return len(src), nil
 }
 
 // Decrypt decrypts src to dst, maybe the same slice.
 func (c *streamCipher) Decrypt(src, dst []byte) (int, error) {
-	var start, length int
-	length = len(src)
 	if c.DecryptorInited() {
-		err := c.InitDecryptor(src[:c.IVSize()])
-		if err != nil {
-			return -1, err
-		}
-		start += c.IVSize()
-		length -= c.IVSize()
+		return -1, ErrCipherUninitialized
 	}
-
-	c.dec.XORKeyStream(dst, src[start:])
-	return length, nil
+	c.dec.XORKeyStream(dst[:len(src)], src)
+	return len(src), nil
 }
 
 func (c *streamCipher) Pack(src, dst []byte) (int, error) {
@@ -172,21 +155,21 @@ func (c *streamCipher) Pack(src, dst []byte) (int, error) {
 		return -1, err
 	}
 	n := copy(dst[0:], iv)
-	if n != c.IVSize() {
+	if n != c.ivLen {
 		return -1, ErrCapcityNotEnough
 	}
 
 	c.enc.XORKeyStream(dst[n:], src)
-	return len(src) + c.IVSize(), nil
+	return len(src) + c.ivLen, nil
 }
 func (c *streamCipher) Unpack(src, dst []byte) (int, error) {
-	err := c.InitDecryptor(src[:c.IVSize()])
+	err := c.InitDecryptor(src[:c.ivLen])
 	if err != nil {
 		return -1, err
 	}
 
-	c.dec.XORKeyStream(dst, src[c.IVSize():])
-	return len(src) - c.IVSize(), nil
+	c.dec.XORKeyStream(dst, src[c.ivLen:])
+	return len(src) - c.ivLen, nil
 }
 
 // Copy creates a new cipher at it's initial state.

@@ -6,11 +6,19 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+)
+
+var (
+	ErrPacketTooSmall  = errors.New("[udp]read error: cannot decrypt, received packet is smaller than ivLen")
+	ErrBufferTooSmall  = errors.New("[udp]read error: given buffer is too small to hold data")
+	ErrInvalidHostname = errors.New("error invalid hostname")
+	ErrInvalidPacket   = errors.New("invalid message received")
+	ErrNilCipher       = errors.New("cipher should NOT be nil")
+	ErrUnexpectedIO    = errors.New("error in IO, expect more data to write")
 )
 
 // PrintVersion prints the current version of shadowsocks-go
@@ -62,54 +70,30 @@ func rawAddr(addr string) (buf []byte, err error) {
 	return
 }
 
-// read full will read until got b length buffer
-func readFull(c net.Conn, b []byte) (n int, err error) {
-	min := len(b)
-	for n < min {
-		var nn int
-		nn, err = c.Read(b[n:])
-		n += nn
-	}
-
-	// only get hmacsha1
-	if n >= min {
-		err = nil
-	} else if n > 0 && err == io.EOF {
-		err = io.ErrUnexpectedEOF
-	}
-	return
-}
-
 // GetRequest can handler the ss request header and decryption for ss protocol
 func GetRequest(ss net.Conn) (host string, err error) {
 	// read till we get possible domain length field
 	buf := make([]byte, 269)
 
+	// TODO FIXME need to improve
+	_, err = ss.Read(buf)
 	// read the type of the addr first
-	if _, err = readFull(ss, buf[:idType+1]); err != nil {
-		return
-	}
+	//if _, err = io.ReadFull(ss, buf); err != nil {
+	//	return
+	//}
 
 	// reqstart & end hold the start and end about the request header
-	var reqStart, reqEnd int
+	var reqEnd int
 	addrType := buf[idType]
 	switch addrType & AddrMask {
 	case typeIPv4:
-		reqStart, reqEnd = idIP0, idIP0+headerLenIPv4-1
+		reqEnd = idIP0 + headerLenIPv4 - 1
 	case typeIPv6:
-		reqStart, reqEnd = idIP0, idIP0+headerLenIPv6-1
+		reqEnd = idIP0 + headerLenIPv6 - 1
 	case typeDm:
-		if _, err = readFull(ss, buf[idType+1:idDmLen+1]); err != nil {
-			return
-		}
-		reqStart, reqEnd = idDm0, idDm0+int(buf[idDmLen])+headerLenDmBase-2
+		reqEnd = idDm0 + int(buf[idDmLen]) + headerLenDmBase - 2
 	default:
 		err = fmt.Errorf("addr type %d not supported", addrType&AddrMask)
-		return
-	}
-
-	// read the host & port
-	if _, err = readFull(ss, buf[reqStart:reqEnd]); err != nil {
 		return
 	}
 

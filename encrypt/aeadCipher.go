@@ -52,7 +52,7 @@ func genSalt(salt []byte) {
 	default:
 		panic("error salt len")
 	}
-
+	//FIXME
 	n, err := io.ReadFull(rand.Reader, salt)
 	if err != nil || n != len(salt) {
 		panic("error salt gen")
@@ -117,29 +117,26 @@ func NewAEADCipher(method, password string) (c *aeadCipher, err error) {
 }
 
 func (c *aeadCipher) KeySize() int          { return c.keySize }
-func (c *aeadCipher) SaltSize() int         { return c.saltSize }
+func (c *aeadCipher) InitBolckSize() int    { return c.saltSize }
 func (c *aeadCipher) EncryptorInited() bool { return c.enc == nil }
 func (c *aeadCipher) InitEncryptor() ([]byte, error) {
 	if c.salt == nil {
-		c.salt = make([]byte, c.SaltSize(), c.SaltSize())
+		c.salt = make([]byte, c.saltSize, c.saltSize)
 	}
 	genSalt(c.salt)
 
 	var err error
 	// gen the aead cipher
 	c.enc, err = c.genator(c.psk, c.salt, c.keySize)
-
 	return c.salt, err
 }
 
 func (c *aeadCipher) DecryptorInited() bool { return c.dec == nil }
 func (c *aeadCipher) InitDecryptor(salt []byte) error {
-	if c.salt == nil {
-		c.salt = make([]byte, c.saltSize, c.saltSize)
-		n := copy(c.salt, salt)
-		if n != c.saltSize {
-			panic("TODO")
-		}
+	c.salt = make([]byte, c.saltSize, c.saltSize)
+	n := copy(c.salt, salt)
+	if n != c.saltSize {
+		panic("TODO")
 	}
 
 	var err error
@@ -149,21 +146,13 @@ func (c *aeadCipher) InitDecryptor(salt []byte) error {
 }
 
 func (c *aeadCipher) Encrypt(src, dest []byte) (int, error) {
-	var dataStart int
 	if c.EncryptorInited() {
-		c.InitEncryptor()
-		// write the salt
-		n := copy(dest, c.salt) // salt lay out if this is the initialization of the encryptor
-		if n != c.saltSize {
-			return -1, ErrCapcityNotEnough
-		}
-		dataStart = n
+		return -1, ErrCipherUninitialized
 	}
-
 	msglen := len(src)
 	srclen := make([]byte, 2)
-	destlen := dest[dataStart : dataStart+2+c.enc.Overhead()]                                             // data length layout
-	destdata := dest[dataStart+2+c.enc.Overhead() : dataStart+2+c.enc.Overhead()+msglen+c.enc.Overhead()] // data layout
+	destlen := dest[:2+c.enc.Overhead()]                                              // data length layout
+	destdata := dest[2+c.enc.Overhead() : 2+c.enc.Overhead()+msglen+c.enc.Overhead()] // data layout
 
 	// handle the length with bigendian encoding
 	srclen[0], srclen[1] = byte(msglen>>8), byte(msglen)
@@ -176,47 +165,27 @@ func (c *aeadCipher) Encrypt(src, dest []byte) (int, error) {
 	c.enc.Seal(destdata[:0], c.writeNonce, src, nil)
 	increase(c.writeNonce)
 
-	// dataStart + 2 + c.enc.Overhead() + msglen + c.enc.Overhead()
+	// 2 + c.enc.Overhead() + msglen + c.enc.Overhead()
 	// [salt(if exist)] + [encrypted datalen] + [encrypted data]
-	return dataStart + 2 + c.enc.Overhead() + msglen + c.enc.Overhead(), nil
+	return 2 + c.enc.Overhead() + msglen + c.enc.Overhead(), nil
 }
 
 func (c *aeadCipher) Decrypt(src, dest []byte) (int, error) {
-	var n int
 	if c.DecryptorInited() {
-		n = copy(c.readBuffer[c.dataLen:], src)
-		if n != len(src) {
-			return -1, ErrCapcityNotEnough
-		}
-		c.dataLen += n
-
-		if c.dataLen < c.saltSize {
-			// if salt is not complete, put salt partation in lastReadBuffer and wait for next part
-			return -1, ErrAgain
-		}
-
-		// initialize the decryptor with the salt
-		err := c.InitDecryptor(c.readBuffer[:c.saltSize])
-		if err != nil {
-			return -1, err
-		}
-		n = copy(c.readBuffer[0:], c.readBuffer[c.saltSize:])
-		c.dataLen -= c.saltSize
-		goto afterInit
+		return -1, ErrCipherUninitialized
 	}
 
 	// append the last buffer
-	n = copy(c.readBuffer[c.dataLen:], src)
+	n := copy(c.readBuffer[c.dataLen:], src)
 	c.dataLen += n
 	if n != len(src) {
 		return -1, ErrCapcityNotEnough
 	}
 
-afterInit:
 	// consume the raw data length
 	if c.dataLen < 2+c.dec.Overhead() {
 		//wait for enough data for length dec
-		return -1, ErrAgain
+		return 2 + c.dec.Overhead() - c.dataLen, ErrAgain
 	}
 
 	// read the length and decrypt, handle the message block length
@@ -231,7 +200,7 @@ afterInit:
 	blockDataLen := c.dataLen - 2 - c.dec.Overhead()
 	if blockDataLen < msglen+c.dec.Overhead() {
 		// need the comming data for decrypt
-		return -1, ErrAgain
+		return msglen + c.dec.Overhead() - blockDataLen, ErrAgain
 	}
 
 	if cap(dest) < msglen+c.dec.NonceSize() {
@@ -249,8 +218,7 @@ afterInit:
 	increase(c.readNonce)
 
 	// left the reamin data in the buffer
-	n = copy(c.readBuffer[0:], c.readBuffer[2+c.dec.Overhead()+msglen+c.dec.Overhead():])
-	c.dataLen = n
+	c.dataLen -= 2 + c.dec.Overhead() + msglen + c.dec.Overhead()
 
 	// dataStart + 2 + c.enc.Overhead() + msglen + c.enc.Overhead()
 	// [salt(if exist)] + [encrypted datalen] + [encrypted data]

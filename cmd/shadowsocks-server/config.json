@@ -7,6 +7,5 @@
     "port_password":{
         "16886":"foo"
     },
-    "MultiServerMode": "fastest",
-    "dns_server":"114.114.114.114"
+    "MultiServerMode": "fastest"
 }
