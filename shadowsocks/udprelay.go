@@ -21,10 +21,9 @@ const (
 	typeDm   = 3 // type is domain address
 	typeIPv6 = 4 // type is ipv6 address
 
-	lenIPv4     = 1 + net.IPv4len + 2 // 1addrType + ipv4 + 2port
-	lenIPv6     = 1 + net.IPv6len + 2 // 1addrType + ipv6 + 2port
-	lenDmBase   = 1 + 1 + 2           // 1addrType + 1addrLen + 2port, plus addrLen
-	lenHmacSha1 = 10
+	lenIPv4   = 1 + net.IPv4len + 2 // 1addrType + ipv4 + 2port
+	lenIPv6   = 1 + net.IPv6len + 2 // 1addrType + ipv6 + 2port
+	lenDmBase = 1 + 1 + 2           // 1addrType + 1addrLen + 2port, plus addrLen
 )
 
 var (
@@ -87,7 +86,7 @@ func newReqList() *requestHeaderList {
 func (r *requestHeaderList) Refresh() {
 	r.Lock()
 	defer r.Unlock()
-	for k, _ := range r.List {
+	for k := range r.List {
 		delete(r.List, k)
 	}
 }
@@ -161,15 +160,8 @@ func Pipeloop(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn
 func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive []byte) {
 	var dstIP net.IP
 	var reqLen int
-	var ota bool
 	addrType := receive[idType]
 	defer leakyBuf.Put(receive)
-
-	if addrType&OneTimeAuthMask > 0 {
-		ota = true
-	}
-	receive[idType] &= ^OneTimeAuthMask
-	compatiblemode := !handle.IsOta() && ota
 
 	switch addrType & AddrMask {
 	case typeIPv4:
@@ -220,18 +212,13 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 		return
 	}
 	if !exist {
-		Debug.Printf("[udp]new client %s->%s via %s ota=%v\n", src, dst, remote.LocalAddr(), ota)
+		Debug.Printf("[udp]new client %s->%s via %s\n", src, dst, remote.LocalAddr())
 		go func() {
-			if compatiblemode {
-				Pipeloop(handle.ForceOTA(), src, remote)
-			} else {
-				Pipeloop(handle, src, remote)
-			}
-
+			Pipeloop(handle, src, remote)
 			natlist.Delete(src.String())
 		}()
 	} else {
-		Debug.Printf("[udp]using cached client %s->%s via %s ota=%v\n", src, dst, remote.LocalAddr(), ota)
+		Debug.Printf("[udp]using cached client %s->%s via %s\n", src, dst, remote.LocalAddr())
 	}
 	if remote == nil {
 		fmt.Println("WTF")

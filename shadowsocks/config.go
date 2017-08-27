@@ -14,7 +14,6 @@ import (
 	// "log"
 	"os"
 	"reflect"
-	"strings"
 	"time"
 )
 
@@ -24,7 +23,6 @@ type Config struct {
 	LocalPort  int         `json:"local_port"`
 	Password   string      `json:"password"`
 	Method     string      `json:"method"` // encryption method
-	Auth       bool        `json:"auth"`   // one time auth
 
 	// following options are only used by server
 	PortPassword map[string]string `json:"port_password"`
@@ -87,10 +85,6 @@ func ParseConfig(path string) (config *Config, err error) {
 		return nil, err
 	}
 	readTimeout = time.Duration(config.Timeout) * time.Second
-	if strings.HasSuffix(strings.ToLower(config.Method), "-auth") {
-		config.Method = config.Method[:len(config.Method)-5]
-		config.Auth = true
-	}
 	return
 }
 
