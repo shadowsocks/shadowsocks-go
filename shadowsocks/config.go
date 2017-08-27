@@ -115,7 +115,7 @@ func UpdateConfig(old, new *Config) {
 		// typeOfT.Field(i).Name, newField.Type(), newField.Interface())
 		switch newField.Kind() {
 		case reflect.Interface:
-			if fmt.Sprintf("%v", newField.Interface()) != "" {
+			if newField.Interface() != nil && fmt.Sprintf("%v", newField.Interface()) != "" {
 				oldField.Set(newField)
 			}
 		case reflect.String:
