@@ -51,14 +51,6 @@ type streamGenerator struct {
 	newStream func(key, iv []byte, doe DecOrEnc) (cipher.Stream, error)
 }
 
-// CheckCipherMethod checks if the cipher method is supported
-func CheckCipherMethod(method string) error {
-	if _, ok := streamCipherMethod[method]; !ok {
-		return ErrUnsupportedMethod
-	}
-	return nil
-}
-
 type streamCipher struct {
 	enc     cipher.Stream
 	dec     cipher.Stream
