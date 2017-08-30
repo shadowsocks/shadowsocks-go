@@ -10,6 +10,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+
+	"go.uber.org/zap"
 )
 
 var (
@@ -18,7 +21,12 @@ var (
 	ErrInvalidHostname = errors.New("error invalid hostname")
 	ErrInvalidPacket   = errors.New("invalid message received")
 	ErrNilCipher       = errors.New("cipher should NOT be nil")
-	ErrUnexpectedIO    = errors.New("error in IO, expect more data to write")
+	ErrUnexpectedIO    = errors.New("error in IO, expect more data than we get")
+	requestBufferPool  = sync.Pool{
+		New: func() interface{} {
+			return make([]byte, 269)
+		},
+	}
 )
 
 // PrintVersion prints the current version of shadowsocks-go
@@ -72,28 +80,38 @@ func rawAddr(addr string) (buf []byte, err error) {
 
 // GetRequest can handler the ss request header and decryption for ss protocol
 func GetRequest(ss net.Conn) (host string, err error) {
-	// read till we get possible domain length field
-	buf := make([]byte, 269)
-
-	// TODO FIXME need to improve
-	_, err = ss.Read(buf)
 	// read the type of the addr first
-	//if _, err = io.ReadFull(ss, buf); err != nil {
-	//	return
-	//}
+	// read till we get possible domain length field
+	buf := requestBufferPool.Get().([]byte)
+	defer requestBufferPool.Put(buf)
 
-	// reqstart & end hold the start and end about the request header
-	var reqEnd int
+	//if n, err := io.ReadFull(ss, buf[:idType+1]); err != nil {
+	if n, err := ss.Read(buf[:idType+1]); err != nil {
+		Logger.Error("ss get the encrypted request packet error", zap.Error(err), zap.Int("n", n))
+	}
+
+	// the reqStart and the reqEnd hold the start and end index about the request header
+	var reqStart, reqEnd int
 	addrType := buf[idType]
 	switch addrType & AddrMask {
 	case typeIPv4:
-		reqEnd = idIP0 + headerLenIPv4 - 1
+		reqStart, reqEnd = idIP0, idIP0+headerLenIPv4-1
 	case typeIPv6:
-		reqEnd = idIP0 + headerLenIPv6 - 1
+		reqStart, reqEnd = idIP0, idIP0+headerLenIPv6-1
 	case typeDm:
-		reqEnd = idDm0 + int(buf[idDmLen]) + headerLenDmBase - 2
+		//if _, err = io.ReadFull(ss, buf[idType+1:idDmLen+1]); err != nil {
+		if _, err = ss.Read(buf[idType+1 : idDmLen+1]); err != nil {
+			return
+		}
+		reqStart, reqEnd = idDm0, idDm0+int(buf[idDmLen])+headerLenDmBase-2
 	default:
 		err = fmt.Errorf("addr type %d not supported", addrType&AddrMask)
+		return
+	}
+
+	// read the host & port
+	//if _, err = io.ReadFull(ss, buf[reqStart:reqEnd]); err != nil {
+	if _, err = ss.Read(buf[reqStart:reqEnd]); err != nil {
 		return
 	}
 

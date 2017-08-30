@@ -21,8 +21,8 @@ type NetConnection interface {
 func PipeThenClose(src, dst NetConnection, done func()) {
 	defer done()
 
-	buf := bufferPool.Get().([]byte)
-	defer bufferPool.Put(buf)
+	buf := readBufferPool.Get().([]byte)
+	defer readBufferPool.Put(buf)
 
 	connInfo := fmt.Sprintf("src conn: %v <---> %v, dst conn: %v <---> %v",
 		src.RemoteAddr().String(), src.LocalAddr().String(), dst.LocalAddr().String(), dst.RemoteAddr().String())
@@ -56,9 +56,10 @@ func PipeThenClose(src, dst NetConnection, done func()) {
 	}
 }
 
+// PipeUDPThenClose will copy data to UDP connection
 func PipeUDPThenClose(src net.Conn, dst net.PacketConn, dstaddr string, timeout int) {
-	buf := bufferPool.Get().([]byte)
-	defer bufferPool.Put(buf)
+	buf := readBufferPool.Get().([]byte)
+	defer readBufferPool.Put(buf)
 
 	raddr, err := net.ResolveUDPAddr("udp", dstaddr)
 	if err != nil {
@@ -90,9 +91,10 @@ func PipeUDPThenClose(src net.Conn, dst net.PacketConn, dstaddr string, timeout 
 	}
 }
 
+// PipeThenCloseFromUDP will copy data from UDP connection to tcp connection
 func PipeThenCloseFromUDP(src net.PacketConn, dst net.Conn, timeout int) {
-	buf := bufferPool.Get().([]byte)
-	defer bufferPool.Put(buf)
+	buf := readBufferPool.Get().([]byte)
+	defer readBufferPool.Put(buf)
 
 	for {
 		src.SetDeadline(time.Now().Add(udpTimeout))

@@ -46,7 +46,7 @@ type Config struct {
 	// following options are only used by client
 	ServerPassword map[string]string `json:"server_password"` // shadowsocks local mutli server password
 
-	// TODO unsupported function
+	// TODO unsupported functions
 	//"fast_open":false,
 	//"tunnel_remote":"8.8.8.8",
 	//"tunnel_remote_port":53,
@@ -83,56 +83,77 @@ func NewConfig(opts ...ConfOption) *Config {
 	return &config
 }
 
+// WithPortPassword set the port and password
 func WithPortPassword(port, passwd string) ConfOption {
 	return func(c *Config) {
 		c.PortPassword[port] = passwd
 	}
 }
+
+// WithServerPassword set the server and password
 func WithServerPassword(server, passwd string) ConfOption {
 	return func(c *Config) {
 		c.ServerPassword[server] = passwd
 	}
 }
+
+// WithServer set the server address
 func WithServer(server string) ConfOption {
 	return func(c *Config) {
 		c.Server = server
 	}
 }
+
+// WithServerPort set the server port for server
 func WithServerPort(port string) ConfOption {
 	return func(c *Config) {
 		c.ServerPort = port
 	}
 }
+
+// WithPassword set the password for server
 func WithPassword(pwd string) ConfOption {
 	return func(c *Config) {
 		c.Password = pwd
 	}
 }
+
+// WithLocalAddr set the local socks5 address
 func WithLocalAddr(addr string) ConfOption {
 	return func(c *Config) {
 		c.Local = addr
 	}
 }
+
+// WithLocalPort set the local socks5 port
 func WithLocalPort(port int) ConfOption {
 	return func(c *Config) {
 		c.LocalPort = port
 	}
 }
+
+// WithEncryptMethod set the encrypt method
 func WithEncryptMethod(method string) ConfOption {
 	return func(c *Config) {
 		c.Method = method
 	}
 }
+
+// WithDNSServer set the DNS server address
 func WithDNSServer(server string) ConfOption {
 	return func(c *Config) {
 		c.DNSServer = server
 	}
 }
+
+// WithTimeOut set the timeout for ss connection
 func WithTimeOut(t int) ConfOption {
 	return func(c *Config) {
 		c.Timeout = t
 	}
 }
+
+// WithMultiServerMode choose the mode about multiserver
 func WithMultiServerMode(mode string) ConfOption {
 	return func(c *Config) {
 		switch mode {
@@ -148,7 +169,7 @@ func WithMultiServerMode(mode string) ConfOption {
 	}
 }
 
-// return the server addr list split by comma
+// GetServerArray return the server addr list split by comma
 func (c *Config) GetServerArray() []string {
 	// Specifying multiple servers in the "server" options is deprecated.
 	// But for backward compatibility, keep this.

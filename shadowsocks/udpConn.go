@@ -35,7 +35,7 @@ func NewSecurePacketConn(c net.PacketConn, cipher encrypt.Cipher, timeout int) n
 		PacketConn: c,
 		Cipher:     cipher,
 		timeout:    timeout,
-		readBuf:    bufferPool.Get().([]byte),
+		readBuf:    readBufferPool.Get().([]byte),
 	}
 	if timeout > 0 {
 		pkt.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))

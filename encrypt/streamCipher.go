@@ -72,10 +72,10 @@ type streamCipher struct {
 func (c *streamCipher) KeySize() int       { return c.keyLen }
 func (c *streamCipher) InitBolckSize() int { return c.ivLen }
 
-// NewCipher creates a cipher that can be used in Dial() etc.
+// NewStreamCipher creates a cipher that can be used in Dial() etc.
 // Use cipher.Copy() to create a new cipher with the same method and password
 // to avoid the cost of repeated cipher initialization.
-func NewStreamCipher(method, password string) (c *streamCipher, err error) {
+func NewStreamCipher(method, password string) (c Cipher, err error) {
 	if password == "" {
 		return nil, ErrEmptyPassword
 	}

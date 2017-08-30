@@ -36,6 +36,8 @@ var (
 	// DNSresolver give out the dns host to request
 	DNSresolver func(host string) ([]string, error)
 	enableDNS   bool
+	// DialTimeout set the timeout for dial host in second
+	DialTimeout = 30
 )
 
 // handleConnection forward the request to the destination
@@ -44,6 +46,7 @@ func handleConnection(conn net.Conn, timeout int) {
 	host, err := ss.GetRequest(conn)
 	if err != nil {
 		ss.Logger.Error("ss server get request failed", zap.Stringer("src", conn.RemoteAddr()), zap.Error(err))
+		conn.Close()
 		return
 	}
 	ss.Logger.Info("ss server accept the ss request", zap.Stringer("src", conn.RemoteAddr()), zap.String("dst", host))
@@ -76,30 +79,19 @@ func handleConnection(conn net.Conn, timeout int) {
 	}
 
 	// request the remote
-	ss.Logger.Debug("connecting to the request host", zap.String("host", host))
-	remote, err := net.Dial("tcp", host)
+	//remote, err := net.Dial("tcp", host)
+	remote, err := net.DialTimeout("tcp", host, time.Duration(DialTimeout)*time.Second)
 	if err != nil {
-		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
-			// log too many open file error
-			// EMFILE is process reaches open file limits, ENFILE is system limit
-			ss.Logger.Error("dial error:", zap.Error(err))
-		} else {
-			ss.Logger.Error("error connecting to host:", zap.String("host", host), zap.Error(err))
-		}
+		ss.Logger.Error("error in dial to host:", zap.String("host", host), zap.Error(err))
+		conn.Close()
 		return
 	}
-	tcpremote, ok := remote.(*net.TCPConn)
-	if !ok {
-		//TODO
-		return
-	}
-
+	ss.Logger.Debug("connecting to the request host", zap.String("host", host))
+	tcpremote := remote.(*net.TCPConn)
 	tcpremote.SetKeepAlive(true)
 
 	ss.Logger.Debug("piping remote to host:", zap.Stringer("remote", conn.RemoteAddr()), zap.String("host", host))
 
-	defer conn.Close()
-	defer remote.Close()
 	// NOTICE: timeout should be setted carefully to avoid cutting the correct tcp stream
 	if timeout > 0 {
 		ss.Logger.Info("connection timeout setted", zap.Int("timeout", timeout))
@@ -114,6 +106,8 @@ func handleConnection(conn net.Conn, timeout int) {
 	ss.PipeThenClose(tcpremote, conn.(*ss.SecureConn), func() {})
 	wg.Wait()
 
+	remote.Close()
+	conn.Close()
 	return
 }
 

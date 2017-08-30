@@ -9,8 +9,10 @@ import (
 )
 
 var (
-	Logger *zap.Logger // Logger used to out put the log, zap logger is fast and efficiency
-	Level  string      // Level can be set into Debug Info Error, and Error level is used by default
+	// Logger used to out put the log, zap logger is fast and efficiency
+	Logger *zap.Logger
+	// Level can be set into Debug Info Error, and Error level is used by default
+	Level string
 )
 
 // SetLogger will generate a zap logger with given level for log output
