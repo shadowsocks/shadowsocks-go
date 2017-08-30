@@ -66,7 +66,7 @@ test_shadowsocks() {
     local local_pid
     url=$1
     method=$2
-    level=error
+    level=Fatal
 
     $SERVER -passwd foo -port $SERVER_PORT -method "$method" -level "$level"&
 
@@ -99,11 +99,15 @@ test_server_local_pair() {
     echo "============================================================"
 
     local url
-    url=http://127.0.0.1:$HTTP_PORT/README.md
+    url=http://127.0.0.1:$HTTP_PORT
     test_shadowsocks $url rc4-md5
     test_shadowsocks $url aes-128-cfb
     #test_shadowsocks $url aes-192-cfb
     #test_shadowsocks $url aes-256-cfb
+    test_shadowsocks $url aes-128-gcm
+    #test_shadowsocks $url aes-192-gcm
+    #test_shadowsocks $url aes-256-gcm
+    test_shadowsocks $url chacha20-ietf-poly1305
     test_shadowsocks $url bf-cfb
     test_shadowsocks $url des-cfb
     test_shadowsocks $url cast5-cfb
