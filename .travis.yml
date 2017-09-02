@@ -7,5 +7,4 @@ before_install:
   - go get -v -u github.com/arthurkiller/shadowsocks-go/cmd/shadowsocks-local
   - go get -v -u github.com/arthurkiller/shadowsocks-go/cmd/shadowsocks-server
 script:
-  - ln -s $GOPATH/src/github.com/shadowsocks/shadowsocks-go $GOPATH/src/github.com/arthurkiller/shadowsocks-go
   - PATH=$PATH:$HOME/gopath/bin bash -x ./script/test.sh

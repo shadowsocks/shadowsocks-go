@@ -148,7 +148,7 @@ func run(conf *ss.Config) {
 			ss.Logger.Fatal("Failed create cipher", zap.Error(err))
 		}
 		// listen on :addr ,so makesure you have the enough priority to do this
-		ln, err := ss.SecureListen("tcp", net.JoinHostPort("", addr), cipher.Copy(), conf.Timeout)
+		ln, err := ss.SecureListen("tcp", net.JoinHostPort("", addr), cipher, conf.Timeout)
 		if err != nil {
 			ss.Logger.Fatal("error listening port", zap.String("port", addr), zap.Error(err))
 		}

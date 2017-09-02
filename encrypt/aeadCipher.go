@@ -284,7 +284,7 @@ func (c *aeadCipher) Pack(src, dest []byte) (int, error) {
 	// TODO FIXME
 	c.InitEncryptor()
 	// write the salt
-	n := copy(dest[0:], c.salt) // salt lay out if this is the initialization of the encryptor
+	n := copy(dest, c.salt) // salt lay out if this is the initialization of the encryptor
 	if n != c.saltSize {
 		return -1, ErrCapcityNotEnough
 	}

@@ -122,7 +122,7 @@ func (c *SecureConn) Read(b []byte) (n int, err error) {
 		return ncp, nil
 	}
 
-	n, err = c.Conn.Read(c.readBuf[0:])
+	n, err = c.Conn.Read(c.readBuf)
 	if err != nil {
 		return -1, err
 	}

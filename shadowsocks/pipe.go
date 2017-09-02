@@ -24,14 +24,17 @@ func PipeThenClose(src, dst NetConnection, done func()) {
 	buf := readBufferPool.Get().([]byte)
 	defer readBufferPool.Put(buf)
 
-	connInfo := fmt.Sprintf("src conn: %v <---> %v, dst conn: %v <---> %v",
-		src.RemoteAddr().String(), src.LocalAddr().String(), dst.LocalAddr().String(), dst.RemoteAddr().String())
+	//	connInfo := fmt.Sprintf("src conn: %v <---> %v, dst conn: %v <---> %v",
+	//		src.RemoteAddr().String(), src.LocalAddr().String(), dst.LocalAddr().String(), dst.RemoteAddr().String())
+	connInfo := fmt.Sprintf("piping between  %v <--- ss ---> %v", src.RemoteAddr().String(), dst.RemoteAddr().String())
 
+	var n, nn int
+	var err, errR error
 	for {
-		n, err := src.Read(buf[0:])
+		n, err = src.Read(buf)
 		if n > 0 {
 			Logger.Debug("read n from src", zap.Int("n", n), zap.String("conn info", connInfo))
-			nn, errR := dst.Write(buf[:n])
+			nn, errR = dst.Write(buf[:n])
 			if errR != nil { // errR.(*net.OpError).Timeout() can not be assert
 				Logger.Error("error in copy from src to dest, write into dest", zap.String("conn info", connInfo), zap.Error(errR))
 				dst.CloseWrite()
@@ -61,6 +64,9 @@ func PipeUDPThenClose(src net.Conn, dst net.PacketConn, dstaddr string, timeout 
 	buf := readBufferPool.Get().([]byte)
 	defer readBufferPool.Put(buf)
 
+	var n, nn int
+	var err, errR error
+
 	raddr, err := net.ResolveUDPAddr("udp", dstaddr)
 	if err != nil {
 		return
@@ -68,15 +74,15 @@ func PipeUDPThenClose(src net.Conn, dst net.PacketConn, dstaddr string, timeout 
 
 	// TODO
 	for {
-		n, err := src.Read(buf)
+		n, err = src.Read(buf)
 		if n > 0 {
-			nn, err := dst.WriteTo(buf[:n], raddr)
+			nn, errR = dst.WriteTo(buf[:n], raddr)
 			if nn < n {
 				Logger.Warn("[UDP] write to the packet connection less than expect", zap.Int("read", n), zap.Int("write", nn),
 					zap.Stringer("local", dst.LocalAddr()), zap.Stringer("dst", raddr))
 			}
-			if err != nil {
-				Logger.Error("[UDP] error write to the packet connection", zap.Stringer("local", dst.LocalAddr()), zap.Stringer("dst", raddr))
+			if errR != nil {
+				Logger.Error("[UDP] error write to the packet connection", zap.Stringer("local", dst.LocalAddr()), zap.Stringer("dst", raddr), zap.Error(errR))
 				dst.Close()
 				return
 			}

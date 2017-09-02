@@ -146,7 +146,7 @@ func (c *streamCipher) Pack(src, dst []byte) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	n := copy(dst[0:], iv)
+	n := copy(dst, iv)
 	if n != c.ivLen {
 		return -1, ErrCapcityNotEnough
 	}

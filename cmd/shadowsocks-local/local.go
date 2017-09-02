@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -719,7 +721,7 @@ func checkConfig(config *ss.Config) error {
 // main locical about the local server
 func main() {
 	var configFile, ServerAddr, LocalAddr, Password, Method, MultiServerMode string
-	var ServerPort, Timeout, LocalPort int
+	var ServerPort, Timeout, LocalPort, matrixport int
 	var printVer bool
 	var config *ss.Config
 	var err error
@@ -731,6 +733,7 @@ func main() {
 	flag.StringVar(&ServerAddr, "saddr", "", "server address")
 	flag.IntVar(&ServerPort, "sport", 0, "server port")
 	//flag.BoolVar(&UDP, "u", false, "use the udp to serve")
+	flag.IntVar(&matrixport, "pprof", 0, "set the metrix port to Enable the pprof and matrix(TODO), keep it 0 will disable this feature")
 	flag.StringVar(&MultiServerMode, "multiserver", "fastest", "3 modes for shadowsocks local detect ss server: \n\t\tfastest: get fastest server to request\n\t\tround-robin: get server with round-robin for request\n\t\tdissable: only request for first server")
 	flag.StringVar(&Password, "passwd", "", "server password")
 	flag.IntVar(&Timeout, "timeout", 300, "timeout in seconds")
@@ -750,6 +753,12 @@ func main() {
 
 	// init the logger
 	ss.SetLogger()
+	ss.Logger.Info("Starting shadowsocks local server")
+
+	// set the pprof
+	if matrixport > 0 {
+		go http.ListenAndServe(":"+strconv.Itoa(matrixport), nil)
+	}
 
 	// set the options for the config new
 	var opts []ss.ConfOption

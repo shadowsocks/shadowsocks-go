@@ -57,7 +57,7 @@ func (c *SecurePacketConn) ReadFrom(b []byte) (n int, src net.Addr, err error) {
 
 // WriteTo writes a packet with payload b to addr.
 func (c *SecurePacketConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
-	n, err = c.Pack(b, c.writeBuf[0:])
+	n, err = c.Pack(b, c.writeBuf)
 	if err != nil {
 		return
 	}
