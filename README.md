@@ -68,7 +68,7 @@ Usage of ./shadowsocks-local:
   -level string
         given the logger level for ss to logout info, can be set in debug info warn error panic (default "info")
   -method string
-        encryption method, default: aes-256-cfb. end with -auth mean enable OTA (default "aes-256-cfb")
+        pick encryption method (default "aes-256-cfb")
   -multiserver string
         3 modes for shadowsocks local detect ss server:
                 fastest: get fastest server to request

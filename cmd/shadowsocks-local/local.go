@@ -317,7 +317,7 @@ type ServerCipher struct {
 // prepare the information for connection to the servers set in the config
 func prepareToConnect(c *ss.Config) (map[string]encrypt.Cipher, error) {
 	// connect to server will establish all the server connection with given server address and port
-	cips := make(map[string]encrypt.Cipher, len(c.GetServerArray()))
+	cips := make(map[string]encrypt.Cipher, len(c.ServerList))
 
 	if c.Server != "" && c.ServerPort != "" {
 		ss := c.Server + ":" + c.ServerPort
@@ -328,12 +328,12 @@ func prepareToConnect(c *ss.Config) (map[string]encrypt.Cipher, error) {
 		cips[ss] = cipher
 	}
 
-	for server, passwd := range c.ServerPassword {
-		cipher, err := encrypt.PickCipher(c.Method, passwd)
+	for _, v := range c.ServerList {
+		cipher, err := encrypt.PickCipher(v.Method, v.Password)
 		if err != nil {
 			return nil, err
 		}
-		cips[server] = cipher
+		cips[v.Address] = cipher
 	}
 	return cips, nil
 }
@@ -550,7 +550,7 @@ func handleUDPConnection(server string, conn net.Conn, timeout int) {
 var ciphers map[string]encrypt.Cipher
 
 func run(config *ss.Config) {
-	laddr := net.JoinHostPort(config.Local, strconv.Itoa(config.LocalPort))
+	laddr := net.JoinHostPort(config.Local, config.LocalPort)
 	ln, err := net.Listen("tcp", laddr)
 	if err != nil {
 		ss.Logger.Fatal("error in shadwsocks local server listen", zap.Error(err))
@@ -566,20 +566,14 @@ func run(config *ss.Config) {
 	// init the ciphers map
 	ciphers = cps
 
-	servers := config.GetServerArray()
-	ports := config.GetServerPortArray()
-	for i := range servers {
-		servers[i] = net.JoinHostPort(servers[i], ports[i])
-	}
-
 	// multi server mode
-	var getServer func() string = config.GetServer
+	var getServer func() ss.ServerEntry = config.GetServer
 
 	switch config.MultiServerMode {
 	case "fastest":
 		// start the test routine for server detection
 		go func() {
-			if len(config.GetServerArray()) < 2 {
+			if len(config.ServerList) < 2 {
 				return
 			}
 			for {
@@ -588,7 +582,7 @@ func run(config *ss.Config) {
 			}
 		}()
 	case "round-robin":
-		if len(config.GetServerArray()) >= 2 {
+		if len(config.ServerList) >= 2 {
 			getServer = config.GetServerRoundRobin
 		}
 	}
@@ -620,7 +614,7 @@ func run(config *ss.Config) {
 	// main loop for socks5 accept incoming request
 	var server string
 	for {
-		server = getServer()
+		server = getServer().Address
 		conn, err := ln.Accept()
 		if err != nil {
 			ss.Logger.Error("error in local server accept socks5", zap.Error(err))
@@ -683,53 +677,18 @@ func waitSignal() {
 	}
 }
 
-func checkConfig(config *ss.Config) error {
-	// server addr port
-	// passwd
-	// local port
-	if config.Local == "" || config.LocalPort < 0 {
-		return ErrServerInfoIllegal
-	}
-
-	if config.ServerPassword == nil {
-		if config.Server == "" || config.ServerPort == "" {
-			return ErrInvalidPassword
-		}
-
-		if config.Password == "" {
-			return ErrInvalidPassword
-		}
-	}
-
-	hasPort := func(s string) bool {
-		_, port, err := net.SplitHostPort(s)
-		if err != nil {
-			return false
-		}
-		return port != ""
-	}
-
-	for addr, pwd := range config.ServerPassword {
-		if !hasPort(addr) || pwd == "" {
-			ss.Logger.Fatal("Failed generating ciphers, server address and password mismatching", zap.String("address", addr))
-		}
-	}
-
-	return nil
-}
-
 // main locical about the local server
 func main() {
-	var configFile, ServerAddr, LocalAddr, Password, Method, MultiServerMode string
-	var ServerPort, Timeout, LocalPort, matrixport int
+	var configFile, ServerAddr, LocalPort, LocalAddr, Password, Method, MultiServerMode string
+	var ServerPort, Timeout, matrixport int
 	var printVer bool
 	var config *ss.Config
 	var err error
 
-	flag.BoolVar(&printVer, "v", false, "print version")
+	flag.BoolVar(&printVer, "version", false, "print version")
 	flag.StringVar(&configFile, "config", "", "specify config file")
 	flag.StringVar(&LocalAddr, "addr", "127.0.0.1", "local socks5 proxy serve address")
-	flag.IntVar(&LocalPort, "port", 1085, "local socks5 proxy port")
+	flag.StringVar(&LocalPort, "port", "1085", "local socks5 proxy port")
 	flag.StringVar(&ServerAddr, "saddr", "", "server address")
 	flag.IntVar(&ServerPort, "sport", 0, "server port")
 	//flag.BoolVar(&UDP, "u", false, "use the udp to serve")
@@ -787,23 +746,21 @@ func main() {
 	if LocalAddr != "" {
 		opts = append(opts, ss.WithLocalAddr(LocalAddr))
 	}
-	if LocalPort != 0 {
+	if LocalPort != "" {
 		opts = append(opts, ss.WithLocalPort(LocalPort))
 	}
 	opts = append(opts, ss.WithMultiServerMode(MultiServerMode))
 
-	config = ss.NewConfig(opts...)
+	config, err = ss.NewConfig(opts...)
+	if err != nil {
+		ss.Logger.Fatal("error in new config", zap.Error(err))
+	}
 
 	// parse the config from the config file
 	if configFile != "" {
 		if config, err = ss.ParseConfig(configFile); err != nil {
 			ss.Logger.Fatal("error in read the config file", zap.String("config file", configFile), zap.Error(err))
 		}
-	}
-
-	// check the config
-	if err = checkConfig(config); err != nil {
-		ss.Logger.Fatal("error in check the config for the local shadowsocks server", zap.Error(err))
 	}
 
 	ss.Logger.Debug("show the ss config", zap.Stringer("config", config))

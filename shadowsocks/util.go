@@ -16,13 +16,19 @@ import (
 )
 
 var (
-	ErrPacketTooSmall  = errors.New("[udp]read error: cannot decrypt, received packet is smaller than ivLen")
-	ErrBufferTooSmall  = errors.New("[udp]read error: given buffer is too small to hold data")
-	ErrInvalidHostname = errors.New("error invalid hostname")
-	ErrInvalidPacket   = errors.New("invalid message received")
-	ErrNilCipher       = errors.New("cipher should NOT be nil")
-	ErrUnexpectedIO    = errors.New("error in IO, expect more data than we get")
-	requestBufferPool  = sync.Pool{
+	ErrPacketTooSmall       = errors.New("[udp]read error: cannot decrypt, received packet is smaller than ivLen")
+	ErrBufferTooSmall       = errors.New("[udp]read error: given buffer is too small to hold data")
+	ErrInvalidHostname      = errors.New("error invalid hostname")
+	ErrInvalidPacket        = errors.New("invalid message received")
+	ErrInvalidServerAddress = errors.New("invalid server ip address, can not be parsed")
+	ErrNilPasswd            = errors.New("password should NOT be nil")
+	ErrParesConfigfile      = errors.New("can not parse the config fire")
+	ErrNilCipher            = errors.New("cipher should NOT be nil")
+	ErrInvalidCipher        = errors.New("cipher method invalid or not supported")
+	ErrUnexpectedIO         = errors.New("error in IO, expect more data than we get")
+	ErrInvalidConfig        = errors.New("error in config check, config fields invalid")
+
+	requestBufferPool = sync.Pool{
 		New: func() interface{} {
 			return make([]byte, 269)
 		},

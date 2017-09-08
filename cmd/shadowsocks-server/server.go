@@ -142,17 +142,19 @@ func serveTCP(ln net.Listener, timeout int) {
 
 // start the ss remote servers listen on given ports
 func run(conf *ss.Config) {
-	for addr, pass := range conf.PortPassword {
-		cipher, err := encrypt.PickCipher(conf.Method, pass)
+	for _, v := range conf.ServerList {
+		cipher, err := encrypt.PickCipher(v.Method, v.Password)
 		if err != nil {
 			ss.Logger.Fatal("Failed create cipher", zap.Error(err))
+			continue
 		}
 		// listen on :addr ,so makesure you have the enough priority to do this
-		ln, err := ss.SecureListen("tcp", net.JoinHostPort("", addr), cipher, conf.Timeout)
+		ln, err := ss.SecureListen("tcp", v.Address, cipher, conf.Timeout)
 		if err != nil {
-			ss.Logger.Fatal("error listening port", zap.String("port", addr), zap.Error(err))
+			ss.Logger.Fatal("error listening port", zap.String("port", v.Address), zap.Error(err))
+			continue
 		}
-		ss.Logger.Info("server listening port", zap.String("port", addr))
+		ss.Logger.Info("server listening port", zap.String("port", v.Address))
 		go serveTCP(ln, conf.Timeout)
 	}
 }
@@ -178,52 +180,34 @@ func serveUDP(servein net.PacketConn) {
 
 // strat a server for each port & password
 func runUDP(conf *ss.Config) {
-	addrPadd := conf.PortPassword
-	for addr, pass := range addrPadd {
-		ss.Logger.Info("[UDP] listening udp", zap.String("port", addr))
-		cipher, err := encrypt.PickCipher(conf.Method, pass)
+	for _, v := range conf.ServerList {
+		cipher, err := encrypt.PickCipher(v.Method, v.Password)
 		if err != nil {
 			ss.Logger.Error("[UDP] failed create cipher", zap.Error(err))
-			os.Exit(1)
+			continue
 		}
-		SecurePacketConn, err := ss.SecureListenPacket("udp", ":"+addr, cipher, conf.Timeout)
+		ln, err := ss.SecureListenPacket("udp", v.Address, cipher, conf.Timeout)
 		if err != nil {
-			ss.Logger.Error("[UDP] error listening packetconn", zap.String("address", addr), zap.Error(err))
-			os.Exit(1)
+			ss.Logger.Error("[UDP] error listening packetconn", zap.String("address", v.Address), zap.Error(err))
+			continue
 		}
-		go serveUDP(SecurePacketConn)
+		ss.Logger.Info("[UDP] listening udp", zap.String("addr", v.Address))
+		go serveUDP(ln)
 	}
-}
-
-func checkConfig(config *ss.Config) error {
-	//server -- server port should match
-	//port -- port password should patch
-	if config.Password == "" && config.PortPassword == nil {
-		return errors.New("missing passwd for config")
-	}
-	if len(config.GetServerPortArray()) != len(config.GetPasswordArray()) {
-		return errors.New("server port array and password array mismatching")
-	}
-
-	if config.DNSServer != "" {
-		enableDNS = true
-		ss.Logger.Info("setting the dns server", zap.String("dns", config.DNSServer))
-		initializeDNSResolver(config.DNSServer)
-	}
-	return nil
 }
 
 func main() {
 	var err error
 	var udp, printVer bool
 	var Timeout, core, matrixport int
-	var ServerPort, configFile, Password, Method, DNSServer string
+	var Server, ServerPort, configFile, Password, Method, DNSServer string
 
 	var config *ss.Config
 
-	flag.BoolVar(&printVer, "v", false, "print version")
+	flag.BoolVar(&printVer, "version", false, "print version")
 	flag.StringVar(&configFile, "config", "", "specify config file")
 	flag.StringVar(&Password, "passwd", "", "password")
+	flag.StringVar(&Server, "address", "", "server address")
 	flag.StringVar(&ServerPort, "port", "", "server port")
 	flag.IntVar(&Timeout, "timeout", 300, "timeout in seconds")
 	flag.StringVar(&Method, "method", "aes-256-cfb", "encryption method, default: aes-256-cfb")
@@ -273,13 +257,18 @@ func main() {
 	// check the passwd if not set
 	if Password != "" {
 		opts = append(opts, ss.WithPassword(Password))
-		if ServerPort != "" {
-			opts = append(opts, ss.WithServerPort(ServerPort))
-			opts = append(opts, ss.WithPortPassword(ServerPort, Password))
-		}
+	}
+	if ServerPort != "" {
+		opts = append(opts, ss.WithServerPort(ServerPort))
+	}
+	if Server != "" {
+		opts = append(opts, ss.WithServer(Server))
 	}
 
-	config = ss.NewConfig(opts...)
+	config, err = ss.NewConfig(opts...)
+	if err != nil {
+		ss.Logger.Fatal("error in openup server addrss", zap.Error(err))
+	}
 
 	// parse the config from the config file
 	if configFile != "" {
@@ -291,15 +280,15 @@ func main() {
 	}
 	ss.Logger.Debug("show the ss config", zap.Stringer("config", config))
 
-	// check the config
-	if err = checkConfig(config); err != nil {
-		ss.Logger.Error("error in chack config", zap.Error(err))
-		os.Exit(1)
-	}
-
 	// if core is defined ,then set the max proecssor
 	if core > 0 {
 		runtime.GOMAXPROCS(core)
+	}
+
+	if config.DNSServer != "" {
+		enableDNS = true
+		ss.Logger.Info("setting the dns server", zap.String("dns", config.DNSServer))
+		initializeDNSResolver(config.DNSServer)
 	}
 
 	// start the shadowsocks server

@@ -66,7 +66,7 @@ test_shadowsocks() {
     local local_pid
     url=$1
     method=$2
-    level=Fatal
+    level=fatal
 
     $SERVER -passwd foo -port $SERVER_PORT -method "$method" -level "$level"&
 

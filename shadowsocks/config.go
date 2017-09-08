@@ -8,7 +8,10 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/arthurkiller/shadowsocks-go/encrypt"
 
 	"go.uber.org/zap"
 )
@@ -22,30 +25,25 @@ import (
 //
 // NOTICE if the config file is setted, the config option will be disabled automatically
 
-// rolling index give out the index which server will return on next rolling get server
-var roundRobinIndex int
+var (
+	// rolling index give out the index which server will return on next rolling get server
+	roundRobinIndex int
+)
 
 // Config implement the ss config
 type Config struct {
-	Server          string `json:"server_addr"`     // shadowsocks remote Server address, for multi server split them with comma
-	ServerPort      string `json:"server_port"`     // shadowsocks remote Server port, split with comma when multi user is enabled
-	Local           string `json:"local_addr"`      // shadowsocks local socks5 Server address
-	LocalPort       int    `json:"local_port"`      // shadowsocks local socks5 Server port
-	Password        string `json:"password"`        // shadowsocks remote server password, for multi server password should plase in order and split eith comma
-	Method          string `json:"method"`          // shadowsocks encryption method, split by comma if multi server is enabled
-	Timeout         int    `json:"timeout"`         // shadowsocks connection timeout
-	MultiServerMode string `json:"MultiServerMode"` // shadowsocks client multi-server access mode: fastest,round-robin,dissable
-	DNSServer       string `json:"dns_server"`      // shadowsocks remote Server DNS server option, if set to nil, the system DNS will be uesd for domain lookup
+	Server          string        `json:"server_addr"`       // shadowsocks remote Server address
+	ServerPort      string        `json:"server_port"`       // shadowsocks remote Server port
+	Local           string        `json:"local_addr"`        // shadowsocks local socks5 Server address
+	LocalPort       string        `json:"local_port"`        // shadowsocks local socks5 Server port
+	Password        string        `json:"password"`          // shadowsocks remote server password
+	Method          string        `json:"method"`            // shadowsocks encryption method
+	Timeout         int           `json:"timeout"`           // shadowsocks connection timeout
+	MultiServerMode string        `json:"multi_server_mode"` // shadowsocks client multi-server access mode: fastest,round-robin,dissable
+	DNSServer       string        `json:"dns_server"`        // shadowsocks remote Server DNS server option, the system DNS will be uesd for domain lookup by defalut
+	ServerList      []ServerEntry `json:"server_list"`       // shadowsocks server list keep a list of remot-server information, this will be coverd with the server and ServerPort field
 
-	servers []string
-	methods []string // methods array, match the server port
-
-	// following options are only used by server
-	PortPassword map[string]string `json:"port_password"` // shadowsocks mutli user password
-
-	// following options are only used by client
-	ServerPassword map[string]string `json:"server_password"` // shadowsocks local mutli server password
-
+	lock sync.Mutex
 	// TODO unsupported functions
 	//"fast_open":false,
 	//"tunnel_remote":"8.8.8.8",
@@ -53,47 +51,123 @@ type Config struct {
 	//"tunnel_port":53,
 }
 
+// ServerEntry give out basic elements a server needs
+type ServerEntry struct {
+	Address  string `json:"Address"`
+	Method   string `json:"Method"`
+	Password string `json:"Password"`
+}
+
+func (se *ServerEntry) String() string {
+	return fmt.Sprintf("server: %s, password: %s, method: %s", se.Address, se.Password, se.Method)
+}
+
+// Check the server entry if invalid
+func (se *ServerEntry) Check() error {
+	if !strings.Contains(se.Address, ":") {
+		return ErrInvalidServerAddress
+	}
+	if _, err := net.ResolveIPAddr("", strings.Split(se.Address, ":")[0]); err != nil {
+		return ErrInvalidServerAddress
+	}
+	if se.Password == "" {
+		return ErrNilPasswd
+	}
+	if encrypt.CheckCipherMethod(se.Method) != nil {
+		return ErrInvalidCipher
+	}
+	return nil
+}
+
+func (c *Config) Check() error {
+	for _, v := range c.ServerList {
+		if err := v.Check(); err != nil {
+			return err
+		}
+	}
+	if len(c.ServerList) == 0 {
+		return ErrInvalidConfig
+	}
+	if _, err := net.ResolveIPAddr("", c.Local); err != nil {
+		return err
+	}
+	if err := encrypt.CheckCipherMethod(c.Method); err != nil {
+		return err
+	}
+	return nil
+}
+
 // String return the ss config content in string
 func (c *Config) String() string {
-	return fmt.Sprintf("Server: %s, ServerPort: %s, Local: %s, LocalPort: %d, Password: %s, Method: %s, Timeout: %d, portpwds: %v, serverpwds: %v, multi-server module:%v",
-		c.Server, c.ServerPort, c.Local, c.LocalPort, c.Password, c.Method, c.Timeout, c.PortPassword, c.ServerPassword, c.MultiServerMode)
+	return fmt.Sprintf("Server: %s, ServerPort: %s, Local: %s , LocalPort: %d, Password: %s, Method: %s, Timeout: %d, server_DNS: %s, multi-server module: %v",
+		c.Server, c.ServerPort, c.Local, c.LocalPort, c.Password, c.Method, c.Timeout, c.DNSServer, c.MultiServerMode)
+}
+
+// ParseConfig parses a config file
+func ParseConfig(path string) (conf *Config, err error) {
+	file, err := os.Open(path) // For read access.
+	if err != nil {
+		return nil, ErrParesConfigfile
+	}
+	defer file.Close()
+
+	data, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, ErrParesConfigfile
+	}
+
+	c := &Config{}
+	c.ServerList = make([]ServerEntry, 0, 1)
+	if err = json.Unmarshal(data, c); err != nil {
+		return nil, ErrParesConfigfile
+	}
+
+	switch c.MultiServerMode {
+	case "fastest":
+		fallthrough
+	case "round-robin":
+		fallthrough
+	case "dissable":
+		break
+	default:
+		c.MultiServerMode = "fastest"
+	}
+
+	c.ServerList = append(c.ServerList, ServerEntry{net.JoinHostPort(c.Server, c.ServerPort), c.Method, c.Password})
+	c.lock = sync.Mutex{}
+
+	if err := c.Check(); err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
+// NewConfig use the option to generate the ss config
+func NewConfig(opts ...ConfOption) (*Config, error) {
+	var c = Config{
+		ServerList: make([]ServerEntry, 0, 1),
+	}
+	for _, opt := range opts {
+		opt(&c)
+	}
+	c.ServerList = append(c.ServerList, ServerEntry{net.JoinHostPort(c.Server, c.ServerPort), c.Method, c.Password})
+	c.lock = sync.Mutex{}
+
+	if err := c.Check(); err != nil {
+		return nil, err
+	}
+
+	return &c, nil
 }
 
 // ConfOption define the config options
 type ConfOption func(c *Config)
 
-// NewConfig use the option to generate the ss config
-func NewConfig(opts ...ConfOption) *Config {
-	var config = Config{
-		PortPassword:   make(map[string]string),
-		ServerPassword: make(map[string]string),
-		servers:        make([]string, 1),
-	}
-	for _, v := range opts {
-		v(&config)
-	}
-
-	servers := config.GetServerArray()
-	ports := config.GetServerPortArray()
-	for i := range servers {
-		servers[i] = net.JoinHostPort(servers[i], ports[i])
-	}
-	config.makeupServers()
-
-	return &config
-}
-
-// WithPortPassword set the port and password
-func WithPortPassword(port, passwd string) ConfOption {
+// WithRemoteServer add a remote server entry into serverlist
+func WithRemoteServer(server, method, passwd string) ConfOption {
 	return func(c *Config) {
-		c.PortPassword[port] = passwd
-	}
-}
-
-// WithServerPassword set the server and password
-func WithServerPassword(server, passwd string) ConfOption {
-	return func(c *Config) {
-		c.ServerPassword[server] = passwd
+		c.ServerList = append(c.ServerList, ServerEntry{server, method, passwd})
 	}
 }
 
@@ -126,7 +200,7 @@ func WithLocalAddr(addr string) ConfOption {
 }
 
 // WithLocalPort set the local socks5 port
-func WithLocalPort(port int) ConfOption {
+func WithLocalPort(port string) ConfOption {
 	return func(c *Config) {
 		c.LocalPort = port
 	}
@@ -169,105 +243,23 @@ func WithMultiServerMode(mode string) ConfOption {
 	}
 }
 
-// GetServerArray return the server addr list split by comma
-func (c *Config) GetServerArray() []string {
-	// Specifying multiple servers in the "server" options is deprecated.
-	// But for backward compatibility, keep this.
-	if c.Server == "" {
-		return nil
-	}
-	return strings.Split(c.Server, ",")
-}
-func (c *Config) GetServerPortArray() []string {
-	if c.ServerPort == "" {
-		return nil
-	}
-	return strings.Split(c.ServerPort, ",")
-}
-func (c *Config) GetPasswordArray() []string {
-	if c.Password == "" {
-		return nil
-	}
-	return strings.Split(c.Password, ",")
+func (c *Config) GetServer() ServerEntry {
+	return c.ServerList[0]
 }
 
-// ParseConfig parses a config file
-func ParseConfig(path string) (conf *Config, err error) {
-	file, err := os.Open(path) // For read access.
-	if err != nil {
-		return
-	}
-	defer file.Close()
-
-	data, err := ioutil.ReadAll(file)
-	if err != nil {
-		return
-	}
-
-	c := &Config{}
-	if err = json.Unmarshal(data, c); err != nil {
-		return nil, err
-	}
-
-	ProcessConfig(c)
-	return c, nil
-}
-
-func (c *Config) makeupServers() {
-	serversaddr := c.GetServerArray()
-	serversport := c.GetServerPortArray()
-	servers := make([]string, len(serversaddr))
-	for i := range servers {
-		servers[i] = net.JoinHostPort(serversaddr[i], serversport[i])
-	}
-	c.servers = servers
-}
-
-// ProcessConfig fill in the map after the config is unmarshaled
-func ProcessConfig(c *Config) {
-	c.PortPassword = make(map[string]string)
-	c.ServerPassword = make(map[string]string)
-
-	serversaddr := c.GetServerArray()
-	serversport := c.GetServerPortArray()
-	portspasswd := c.GetPasswordArray()
-
-	if len(serversaddr) != len(serversport) {
-		Logger.Fatal("error in config check, length of multi servers and ports mismatching")
-	}
-	if len(serversport) != len(portspasswd) {
-		Logger.Fatal("error in config check, length of multi ports and passwards mismatching")
-	}
-	c.makeupServers()
-
-	for i, v := range portspasswd {
-		c.PortPassword[serversport[i]] = v
-		c.ServerPassword[c.servers[i]] = v
-	}
-}
-
-// GetServer return the server array's first item
-func (c *Config) GetServer() string {
-	if len(c.servers) == 0 {
-		Logger.Fatal("error in get server, null slice returned")
-	}
-	return c.servers[0]
-}
-
-func (c *Config) GetServerRoundRobin() string {
+func (c *Config) GetServerRoundRobin() ServerEntry {
+	defer c.lock.Unlock()
 	defer func() { roundRobinIndex++ }()
-	serversaddr := c.GetServerArray()
-	serversport := c.GetServerPortArray()
-	index := roundRobinIndex % len(serversaddr)
-	return serversaddr[index] + ":" + serversport[index]
+
+	c.lock.Lock()
+	return c.ServerList[roundRobinIndex%len(c.ServerList)]
 }
 
 // Detect used only when multi tcp based ss server is setted for the client
 // Detect will try to dial each server to caculate a delay and sort server
 func (c *Config) Detect() {
-
 	type pair struct {
-		server string
+		server *ServerEntry
 		delay  time.Duration
 	}
 
@@ -285,23 +277,23 @@ func (c *Config) Detect() {
 		return avg / time.Duration(3)
 	}
 
-	var ss []pair
-	serversPort := c.GetServerPortArray()
-	for i, v := range c.GetServerArray() {
-		t := ping(v + ":" + serversPort[i])
-		ss = append(ss, pair{v, t})
+	ss := make([]pair, 0, len(c.ServerList))
+	for _, v := range c.ServerList {
+		t := ping(v.Address)
+		ss = append(ss, pair{&v, t})
 	}
+
 	sort.Slice(ss, func(i, j int) bool { return ss[i].delay < ss[j].delay })
 
-	var sortedserver string
-	for i, v := range ss {
-		if i == 0 {
-			sortedserver += v.server
-		}
-		sortedserver += ","
-		sortedserver += v.server
-	}
-	c.Server = sortedserver
+	sortedServerlist := make([]ServerEntry, 0, len(c.ServerList))
 
-	Logger.Info("Detecting the server delay and sort the server in ascend", zap.String("servers", sortedserver))
+	for _, v := range ss {
+		sortedServerlist = append(sortedServerlist, *v.server)
+	}
+
+	c.lock.Lock()
+	c.ServerList = sortedServerlist
+	c.lock.Unlock()
+
+	Logger.Info("Detecting the server delay and sort the server in ascend", zap.Reflect("serverlist", c.ServerList))
 }

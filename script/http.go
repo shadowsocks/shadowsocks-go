@@ -9,7 +9,7 @@ import (
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("get request", r.RemoteAddr)
+	fmt.Println("-*- Server get request", r.RemoteAddr)
 	io.WriteString(w, "Hello, shadowsocks-go!")
 }
 
