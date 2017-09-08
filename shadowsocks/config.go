@@ -53,9 +53,9 @@ type Config struct {
 
 // ServerEntry give out basic elements a server needs
 type ServerEntry struct {
-	Address  string `json:"Address"`
-	Method   string `json:"Method"`
-	Password string `json:"Password"`
+	Address  string `json:"address"`
+	Method   string `json:"method"`
+	Password string `json:"password"`
 }
 
 func (se *ServerEntry) String() string {

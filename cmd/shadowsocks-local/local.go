@@ -751,15 +751,15 @@ func main() {
 	}
 	opts = append(opts, ss.WithMultiServerMode(MultiServerMode))
 
-	config, err = ss.NewConfig(opts...)
-	if err != nil {
-		ss.Logger.Fatal("error in new config", zap.Error(err))
-	}
-
 	// parse the config from the config file
 	if configFile != "" {
 		if config, err = ss.ParseConfig(configFile); err != nil {
 			ss.Logger.Fatal("error in read the config file", zap.String("config file", configFile), zap.Error(err))
+		}
+	} else {
+		config, err = ss.NewConfig(opts...)
+		if err != nil {
+			ss.Logger.Fatal("error in new config", zap.Error(err))
 		}
 	}
 

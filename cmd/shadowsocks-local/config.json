@@ -2,11 +2,14 @@
     "server_addr":"127.0.0.1",
     "server_port":"16886",
     "local_addr":"127.0.0.1",
-    "local_port":1080,
+    "local_port":"1080",
     "password":"foo",
-    "method":"aes-256-cfb",
-    "timeout":0,
-    "server_password":{
-        "127.0.0.1:16886":"foo"
-    }
+    "method":"aes-256-gcm",
+    "timeout":300,
+    "multi_server_mode":"round_robin",
+    "dns_server":"114.114.114.114",
+    "server_list":[
+        {"address":"127.0.0.1:16886","method":"aes-256-gcm","password":"foo"},
+        {"address":"127.0.0.1:16887","method":"aes-256-cfb","password":"bar"}
+    ]
 }

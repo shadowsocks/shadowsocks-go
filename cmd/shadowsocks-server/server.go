@@ -265,17 +265,17 @@ func main() {
 		opts = append(opts, ss.WithServer(Server))
 	}
 
-	config, err = ss.NewConfig(opts...)
-	if err != nil {
-		ss.Logger.Fatal("error in openup server addrss", zap.Error(err))
-	}
-
 	// parse the config from the config file
 	if configFile != "" {
 		ss.Logger.Info("ss server loading config file", zap.String("path", configFile))
 		config, err = ss.ParseConfig(configFile)
 		if err != nil {
 			ss.Logger.Fatal("error in reading the ss config file", zap.String("path", configFile), zap.Error(err))
+		}
+	} else {
+		config, err = ss.NewConfig(opts...)
+		if err != nil {
+			ss.Logger.Fatal("error in openup server addrss", zap.Error(err))
 		}
 	}
 	ss.Logger.Debug("show the ss config", zap.Stringer("config", config))
