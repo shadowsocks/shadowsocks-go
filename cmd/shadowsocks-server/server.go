@@ -189,34 +189,29 @@ type UDPListener struct {
 }
 
 type PasswdManager struct {
-	sync.Mutex
-	portListener map[string]*PortListener
-	udpListener  map[string]*UDPListener
+	portListener *sync.Map
+	udpListener  *sync.Map
 }
 
 func (pm *PasswdManager) add(port, password string, listener net.Listener) {
-	pm.Lock()
-	pm.portListener[port] = &PortListener{password, listener}
-	pm.Unlock()
+	pm.portListener.Store(port, &PortListener{password, listener})
 }
 
 func (pm *PasswdManager) addUDP(port, password string, listener *net.UDPConn) {
-	pm.Lock()
-	pm.udpListener[port] = &UDPListener{password, listener}
-	pm.Unlock()
+	pm.udpListener.Store(port, &UDPListener{password, listener})
 }
 
 func (pm *PasswdManager) get(port string) (pl *PortListener, ok bool) {
-	pm.Lock()
-	pl, ok = pm.portListener[port]
-	pm.Unlock()
+	if pl1, ok := pm.portListener.Load(port); ok {
+		pl, ok = pl1.(*PortListener)
+	}
 	return
 }
 
 func (pm *PasswdManager) getUDP(port string) (pl *UDPListener, ok bool) {
-	pm.Lock()
-	pl, ok = pm.udpListener[port]
-	pm.Unlock()
+	if pl1, ok := pm.udpListener.Load(port); ok {
+		pl, ok = pl1.(*UDPListener)
+	}
 	return
 }
 
@@ -233,12 +228,11 @@ func (pm *PasswdManager) del(port string) {
 		upl.listener.Close()
 	}
 	pl.listener.Close()
-	pm.Lock()
-	delete(pm.portListener, port)
+
+	pm.portListener.Delete(port)
 	if udp {
-		delete(pm.udpListener, port)
+		pm.udpListener.Delete(port)
 	}
-	pm.Unlock()
 }
 
 // Update port password would first close a port and restart listening on that
@@ -266,7 +260,7 @@ func (pm *PasswdManager) updatePortPasswd(port, password string, auth bool) {
 	}
 }
 
-var passwdManager = PasswdManager{portListener: map[string]*PortListener{}, udpListener: map[string]*UDPListener{}}
+var passwdManager = PasswdManager{portListener: &sync.Map{}, udpListener: &sync.Map{}}
 
 func updatePasswd() {
 	log.Println("updating password")
