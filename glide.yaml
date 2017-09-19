@@ -1,0 +1,8 @@
+package: github.com/shadowsocks/shadowsocks-go
+import:
+- package: github.com/Yawning/chacha20
+- package: golang.org/x/crypto
+  subpackages:
+  - blowfish
+  - cast5
+  - salsa20/salsa

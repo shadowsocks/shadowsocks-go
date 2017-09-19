@@ -1,0 +1,12 @@
+hash: 7212629b1ee50da9fdf765001ef80b5932715524149940a0c497497a5cb951b9
+updated: 2017-09-19T00:23:38.068957906+08:00
+imports:
+- name: github.com/Yawning/chacha20
+  version: e3b1f968fc6397b51d963fee8ec8711a47bc0ce8
+- name: golang.org/x/crypto
+  version: 7d9177d70076375b9a59c8fde23d52d9c4a7ecd5
+  subpackages:
+  - blowfish
+  - cast5
+  - salsa20/salsa
+testImports: []
