@@ -8,7 +8,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/arthurkiller/shadowsocks-go/encrypt"
@@ -32,23 +31,22 @@ var (
 
 // Config implement the ss config
 type Config struct {
-	Server          string        `json:"server_addr"`       // shadowsocks remote Server address
-	ServerPort      string        `json:"server_port"`       // shadowsocks remote Server port
-	Local           string        `json:"local_addr"`        // shadowsocks local socks5 Server address
-	LocalPort       string        `json:"local_port"`        // shadowsocks local socks5 Server port
-	Password        string        `json:"password"`          // shadowsocks remote server password
-	Method          string        `json:"method"`            // shadowsocks encryption method
-	Timeout         int           `json:"timeout"`           // shadowsocks connection timeout
-	MultiServerMode string        `json:"multi_server_mode"` // shadowsocks client multi-server access mode: fastest,round-robin,dissable
-	DNSServer       string        `json:"dns_server"`        // shadowsocks remote Server DNS server option, the system DNS will be uesd for domain lookup by defalut
-	ServerList      []ServerEntry `json:"server_list"`       // shadowsocks server list keep a list of remot-server information, this will be coverd with the server and ServerPort field
+	Server           string        `json:"server_addr"`        // shadowsocks remote Server address
+	ServerPort       string        `json:"server_port"`        // shadowsocks remote Server port
+	Local            string        `json:"local_addr"`         // shadowsocks local socks5 Server address
+	LocalPort        string        `json:"local_port"`         // shadowsocks local socks5 Server port
+	Password         string        `json:"password"`           // shadowsocks encrypt password
+	Method           string        `json:"method"`             // shadowsocks encryption method
+	TunnelPort       string        `json:"tunnel_port"`        // shadowsocks tunnel port local, this will enable tunnel mode only tunnel remote port setted
+	TunnelRemotePort string        `json:"tunnel_remote_port"` // shadowsocks tunnel remote port for tunnel access
+	TunnelDest       string        `json:"tunnel_destination"` // shadowsocks tunnel remote address for ss-remote to access
+	MultiServerMode  string        `json:"multi_server_mode"`  // shadowsocks client multi-server access mode: fastest,round-robin,dissable
+	DNSServer        string        `json:"dns_server"`         // shadowsocks remote Server DNS server option, the system DNS will be uesd for domain lookup by defalut
+	Timeout          int           `json:"timeout"`            // shadowsocks connection timeout
+	ServerList       []ServerEntry `json:"server_list"`        // shadowsocks server list keep a list of remote ss-server information
 
-	lock sync.Mutex
 	// TODO unsupported functions
-	//"fast_open":false,
-	//"tunnel_remote":"8.8.8.8",
-	//"tunnel_remote_port":53,
-	//"tunnel_port":53,
+	//"fast_open":false
 }
 
 // ServerEntry give out basic elements a server needs
@@ -99,7 +97,7 @@ func (c *Config) Check() error {
 
 // String return the ss config content in string
 func (c *Config) String() string {
-	return fmt.Sprintf("Server: %s, ServerPort: %s, Local: %s , LocalPort: %d, Password: %s, Method: %s, Timeout: %d, server_DNS: %s, multi-server module: %v",
+	return fmt.Sprintf("Server: %s, ServerPort: %s, Local: %s , LocalPort: %d, Password: %s, Method: %s, Timeout: %d, DNS_server: %s, multiserver module: %v",
 		c.Server, c.ServerPort, c.Local, c.LocalPort, c.Password, c.Method, c.Timeout, c.DNSServer, c.MultiServerMode)
 }
 
@@ -125,7 +123,7 @@ func ParseConfig(path string) (conf *Config, err error) {
 	switch c.MultiServerMode {
 	case "fastest":
 		fallthrough
-	case "round-robin":
+	case "round_robin":
 		fallthrough
 	case "dissable":
 		break
@@ -134,7 +132,6 @@ func ParseConfig(path string) (conf *Config, err error) {
 	}
 
 	c.ServerList = append(c.ServerList, ServerEntry{net.JoinHostPort(c.Server, c.ServerPort), c.Method, c.Password})
-	c.lock = sync.Mutex{}
 
 	if err := c.Check(); err != nil {
 		return nil, err
@@ -152,7 +149,6 @@ func NewConfig(opts ...ConfOption) (*Config, error) {
 		opt(&c)
 	}
 	c.ServerList = append(c.ServerList, ServerEntry{net.JoinHostPort(c.Server, c.ServerPort), c.Method, c.Password})
-	c.lock = sync.Mutex{}
 
 	if err := c.Check(); err != nil {
 		return nil, err
@@ -248,10 +244,8 @@ func (c *Config) GetServer() ServerEntry {
 }
 
 func (c *Config) GetServerRoundRobin() ServerEntry {
-	defer c.lock.Unlock()
 	defer func() { roundRobinIndex++ }()
-
-	c.lock.Lock()
+	fmt.Println("DBG GET ENT RR", c.ServerList[roundRobinIndex%len(c.ServerList)].String())
 	return c.ServerList[roundRobinIndex%len(c.ServerList)]
 }
 
@@ -291,9 +285,7 @@ func (c *Config) Detect() {
 		sortedServerlist = append(sortedServerlist, *v.server)
 	}
 
-	c.lock.Lock()
 	c.ServerList = sortedServerlist
-	c.lock.Unlock()
 
 	Logger.Info("Detecting the server delay and sort the server in ascend", zap.Reflect("serverlist", c.ServerList))
 }

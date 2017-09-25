@@ -91,9 +91,9 @@ func GetRequest(ss net.Conn) (host string, err error) {
 	buf := requestBufferPool.Get().([]byte)
 	defer requestBufferPool.Put(buf)
 
-	//if n, err := io.ReadFull(ss, buf[:idType+1]); err != nil {
 	if n, err := ss.Read(buf[:idType+1]); err != nil {
 		Logger.Error("ss get the encrypted request packet error", zap.Error(err), zap.Int("n", n))
+		return "", err
 	}
 
 	// the reqStart and the reqEnd hold the start and end index about the request header
@@ -105,7 +105,6 @@ func GetRequest(ss net.Conn) (host string, err error) {
 	case typeIPv6:
 		reqStart, reqEnd = idIP0, idIP0+headerLenIPv6-1
 	case typeDm:
-		//if _, err = io.ReadFull(ss, buf[idType+1:idDmLen+1]); err != nil {
 		if _, err = ss.Read(buf[idType+1 : idDmLen+1]); err != nil {
 			return
 		}
@@ -116,7 +115,6 @@ func GetRequest(ss net.Conn) (host string, err error) {
 	}
 
 	// read the host & port
-	//if _, err = io.ReadFull(ss, buf[reqStart:reqEnd]); err != nil {
 	if _, err = ss.Read(buf[reqStart:reqEnd]); err != nil {
 		return
 	}
@@ -160,12 +158,11 @@ func GetUDPRequest(req []byte) (dst string, length int, err error) {
 		if strings.ContainsRune(host, 0x00) {
 			return "", -1, ErrInvalidHostname
 		}
-		// resolve the host for ip
-		ip, err := net.LookupIP(host)
-		if err != nil || len(ip) == 0 {
-			return "", -1, ErrInvalidHostname
-		}
-		host = ip[0].To4().String()
+		//ip, err := net.LookupIP(host)
+		//if err != nil || len(ip) == 0 {
+		//	return "", -1, ErrInvalidHostname
+		//}
+		//host = ip[0].To4().String()
 	default:
 		err = fmt.Errorf("addr type %d not supported", addrType&AddrMask)
 		return "", -1, err

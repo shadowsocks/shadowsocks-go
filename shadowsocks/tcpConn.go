@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	BufferSize      = 0x7FFF // BufferSize define pool size for buffer. By default, 32K will give for each buffer
-	writeBuffOffset = 0x7F   // make 128 for buffer read offset enhance of aead cipher decryption
+	BufferSize      = 0x1FFFF // BufferSize define pool size for buffer. By default, 32K will give for each buffer
+	writeBuffOffset = 0x7F    // make 128 for buffer read offset enhance of aead cipher decryption
 	readBufferPool  = sync.Pool{
 		New: func() interface{} {
 			return make([]byte, BufferSize, BufferSize)
@@ -131,6 +131,10 @@ func (c *SecureConn) Read(b []byte) (n int, err error) {
 errAgain:
 	if err != nil {
 		if err == encrypt.ErrAgain {
+			if nn > BufferSize {
+				Logger.Warn("aead error again require data length is larger than expect! that should not happen", zap.Int("n", nn), zap.Int("buffer", BufferSize))
+				nn = BufferSize
+			}
 			// handle the aead cipher ErrAgain, read again and decrypt
 			Logger.Debug("aead return errAgain, request more data", zap.Int("n", nn))
 			n, errR := c.Conn.Read(c.readBuf[:nn])

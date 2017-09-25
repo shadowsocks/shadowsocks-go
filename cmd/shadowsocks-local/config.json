@@ -7,7 +7,6 @@
     "method":"aes-256-gcm",
     "timeout":300,
     "multi_server_mode":"round_robin",
-    "dns_server":"114.114.114.114",
     "server_list":[
         {"address":"127.0.0.1:16886","method":"aes-256-gcm","password":"foo"},
         {"address":"127.0.0.1:16887","method":"aes-256-cfb","password":"bar"}

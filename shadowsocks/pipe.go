@@ -37,7 +37,6 @@ func PipeThenClose(src, dst NetConnection, done func()) {
 			nn, errR = dst.Write(buf[:n])
 			if errR != nil { // errR.(*net.OpError).Timeout() can not be assert
 				Logger.Error("error in copy from src to dest, write into dest", zap.String("conn info", connInfo), zap.Error(errR))
-				dst.CloseWrite()
 				return
 			}
 			Logger.Debug("write n to dest", zap.Int("n", nn), zap.String("conn info", connInfo))
@@ -53,7 +52,6 @@ func PipeThenClose(src, dst NetConnection, done func()) {
 				// tell another goroutine to write all and then close, no more data will send
 				Logger.Error("error in copy from src to dest", zap.String("conn info", connInfo), zap.Error(err))
 			}
-			dst.CloseWrite()
 			return
 		}
 	}

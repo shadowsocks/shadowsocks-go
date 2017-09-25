@@ -429,12 +429,25 @@ func handleConnection(server string, conn net.Conn, timeout int) {
 		ssconn.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
 	}
 
-	// do the pipe between clicnet & server
-	go ss.PipeThenClose(tcpConn, tcpssconn, wg.Done)
-	ss.PipeThenClose(tcpssconn, tcpConn, func() {})
+	// Doing the pipe between clicnet & server
+	// there comes 2 situations between 2 pipe:
+	// 1. one pipe exit on EOF occoured
+	// 2. one pipe exit on exception
+	// For both situations, the pipe should exit and release the resources: half close the read pipe and half close the write pipe
+	// TODO TBD But some times, if one pipe return an error unexpectly, an other pipe should also go close
+	go ss.PipeThenClose(tcpConn, tcpssconn, func() {
+		tcpssconn.CloseWrite()
+		tcpConn.CloseRead()
+		wg.Done()
+	})
+	ss.PipeThenClose(tcpssconn, tcpConn, func() {
+		tcpConn.CloseWrite()
+		tcpssconn.CloseRead()
+	})
 	wg.Wait()
 
-	ss.Logger.Debug("closed server connection", zap.String("conn info", fmt.Sprintf("incoming conn: %v <---> %v, outting conn: %v <---> %v", conn.LocalAddr().String(), conn.RemoteAddr().String(), ssconn.LocalAddr().String(), ssconn.RemoteAddr().String())))
+	ss.Logger.Debug("closed server connection", zap.String("conn info", fmt.Sprintf("incoming conn: %v <---> %v, outting conn: %v <---> %v",
+		conn.LocalAddr().String(), conn.RemoteAddr().String(), ssconn.LocalAddr().String(), ssconn.RemoteAddr().String())))
 	return
 }
 
@@ -557,14 +570,11 @@ func run(config *ss.Config) {
 	}
 	ss.Logger.Info("starting local socks5 server", zap.String("listenAddr", laddr))
 
-	// prepare connect to the server ciphers
-	cps, err := prepareToConnect(config)
+	// prepare connect to the server ciphers init the ciphers map
+	ciphers, err = prepareToConnect(config)
 	if err != nil {
 		ss.Logger.Fatal("error in shadwsocks local server prepaer the cipher", zap.Error(err))
 	}
-
-	// init the ciphers map
-	ciphers = cps
 
 	// multi server mode
 	var getServer func() ss.ServerEntry = config.GetServer
@@ -581,7 +591,7 @@ func run(config *ss.Config) {
 				time.Sleep(time.Hour * 1)
 			}
 		}()
-	case "round-robin":
+	case "round_robin":
 		if len(config.ServerList) >= 2 {
 			getServer = config.GetServerRoundRobin
 		}

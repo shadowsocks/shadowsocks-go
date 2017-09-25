@@ -200,7 +200,7 @@ func main() {
 	var err error
 	var udp, printVer bool
 	var Timeout, core, matrixport int
-	var Server, ServerPort, configFile, Password, Method, DNSServer string
+	var Server, ServerPort, TunnelAddr, TunnelPort, configFile, Password, Method, DNSServer string
 
 	var config *ss.Config
 
@@ -209,6 +209,8 @@ func main() {
 	flag.StringVar(&Password, "passwd", "", "password")
 	flag.StringVar(&Server, "address", "", "server address")
 	flag.StringVar(&ServerPort, "port", "", "server port")
+	flag.StringVar(&TunnelPort, "tunnel_port", "", "tunnel for ss-local to connect")
+	flag.StringVar(&TunnelAddr, "tunnel_address", "", "tunnel address for server to access")
 	flag.IntVar(&Timeout, "timeout", 300, "timeout in seconds")
 	flag.StringVar(&Method, "method", "aes-256-cfb", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
