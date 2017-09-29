@@ -235,16 +235,16 @@ func udpAssociate(conn net.Conn) (int, int, net.PacketConn, error) {
 	}
 
 	// check version and cmd
-	if buf[idVer]&0xff != socksVer5 {
-		err = ErrVer
-		ss.Logger.Error("[UDP] error in udp association socks version", zap.Error(err))
-		return -1, -1, nil, err
-	}
-	if buf[idCmd]&0xff != socksCmdUDPAssocation {
-		err = ErrCmd
-		ss.Logger.Error("[UDP] error in udp association association skiped", zap.Error(err))
-		return -1, -1, nil, err
-	}
+	//if buf[idVer]&0xff != socksVer5 {
+	//	err = ErrVer
+	//	ss.Logger.Error("[UDP] error in udp association socks version", zap.Error(err))
+	//	return -1, -1, nil, err
+	//}
+	//if buf[idCmd]&0xff != socksCmdUDPAssocation {
+	//	err = ErrCmd
+	//	ss.Logger.Error("[UDP] error in udp association association skiped", zap.Error(err))
+	//	return -1, -1, nil, err
+	//}
 
 	// UDP assocation only allow the ip type bind for the socks server
 	// TODO should combine the both udp and tcp handshake together
@@ -280,7 +280,7 @@ func udpAssociate(conn net.Conn) (int, int, net.PacketConn, error) {
 	}
 
 	// now we'd generate a server bind address used only communication with
-	// client bind address and replay to the client
+	// client bind address and reply to the client
 	serverBindListen, err := net.ListenPacket("udp", "")
 	if err != nil {
 		// optional reply
@@ -290,19 +290,21 @@ func udpAssociate(conn net.Conn) (int, int, net.PacketConn, error) {
 	}
 
 	serverBindAddr, err := net.ResolveUDPAddr("udp", serverBindListen.LocalAddr().String())
-	replay := []byte{0x05, 0x00, 0x00, 0x01} // header of server relpy association
+	reply := []byte{0x05, 0x00, 0x00, 0x01} // header of server relpy association
 	rawServerBindAddr := bytes.NewBuffer([]byte{0x0, 0x0, 0x0, 0x0})
 	if err = binary.Write(rawServerBindAddr, binary.BigEndian, int16(serverBindAddr.Port)); err != nil {
 		ss.Logger.Error("[UDP] error in combine address to reply", zap.Error(err))
 		return -1, -1, nil, err
 	}
-	replay = append(replay, rawServerBindAddr.Bytes()[:6]...)
-	if _, err = conn.Write(replay); err != nil {
+
+	reply = append(reply, rawServerBindAddr.Bytes()[:6]...)
+	ss.Logger.Debug("[UDP] associate bind server address", zap.Stringer("bind", serverBindListen.LocalAddr()), zap.String("raw response", string(reply)))
+	if _, err = conn.Write(reply); err != nil {
 		ss.Logger.Error("[UDP] error in reply for client association", zap.Error(err))
 		return -1, -1, nil, err
 	}
 
-	// keep the tcp connection alive until the socks5 should be closed
+	// keep the tcp connection alive until the socks5 should be closed according to protocol
 	conn.(*net.TCPConn).SetKeepAlive(true)
 
 	return int(clietnBindPort), serverBindAddr.Port, serverBindListen, nil
