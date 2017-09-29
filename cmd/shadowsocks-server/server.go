@@ -19,9 +19,9 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/arthurkiller/shadowsocks-go/encrypt"
+	ss "github.com/arthurkiller/shadowsocks-go/shadowsocks"
 	"github.com/miekg/dns"
-	"github.com/shadowsocks/shadowsocks-go/encrypt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
 const (

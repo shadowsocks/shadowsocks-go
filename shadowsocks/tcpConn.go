@@ -8,7 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/shadowsocks/shadowsocks-go/encrypt"
+	"github.com/arthurkiller/shadowsocks-go/encrypt"
 )
 
 var (

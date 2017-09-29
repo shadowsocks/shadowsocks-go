@@ -19,8 +19,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/shadowsocks/shadowsocks-go/encrypt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	"github.com/arthurkiller/shadowsocks-go/encrypt"
+	ss "github.com/arthurkiller/shadowsocks-go/shadowsocks"
 )
 
 // Error defined the common errors

@@ -6,7 +6,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/shadowsocks/shadowsocks-go/encrypt"
+	"github.com/arthurkiller/shadowsocks-go/encrypt"
 )
 
 // Dialer provides client side connection support

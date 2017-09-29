@@ -4,7 +4,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/shadowsocks/shadowsocks-go/encrypt"
+	"github.com/arthurkiller/shadowsocks-go/encrypt"
 )
 
 // SecurePacketConn is the implementation of
