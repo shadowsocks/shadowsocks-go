@@ -122,37 +122,45 @@ func (c *SecureConn) Read(b []byte) (n int, err error) {
 		return ncp, nil
 	}
 
-	n, err = c.Conn.Read(c.readBuf)
-	if err != nil {
-		return -1, err
-	}
-	nn, err := c.Cipher.Decrypt(c.readBuf[:n], c.dataCache[c.datalen:])
+	n, errR := c.Conn.Read(c.readBuf)
 
-errAgain:
-	if err != nil {
-		if err == encrypt.ErrAgain {
-			if nn > BufferSize {
-				Logger.Warn("aead error again require data length is larger than expect! that should not happen", zap.Int("n", nn), zap.Int("buffer", BufferSize))
-				nn = BufferSize
+	if n > 0 {
+		nn, err := c.Cipher.Decrypt(c.readBuf[:n], c.dataCache[c.datalen:])
+
+	errAgain:
+		if err != nil {
+			if err == encrypt.ErrAgain {
+				if nn > BufferSize {
+					Logger.Warn("aead error again require data length is larger than expect! that should not happen", zap.Int("n", nn), zap.Int("buffer", BufferSize))
+					nn = BufferSize
+				}
+				// handle the aead cipher ErrAgain, read again and decrypt
+				Logger.Debug("aead return errAgain, request more data", zap.Int("n", nn))
+				n, errR := c.Conn.Read(c.readBuf[:nn])
+				if errR != nil && errR != io.EOF {
+					return -1, errR
+				}
+				nn, err = c.Cipher.Decrypt(c.readBuf[:n], c.dataCache[c.datalen:])
+				goto errAgain
 			}
-			// handle the aead cipher ErrAgain, read again and decrypt
-			Logger.Debug("aead return errAgain, request more data", zap.Int("n", nn))
-			n, errR := c.Conn.Read(c.readBuf[:nn])
-			if errR != nil && errR != io.EOF {
-				return -1, errR
-			}
-			nn, err = c.Cipher.Decrypt(c.readBuf[:n], c.dataCache[c.datalen:])
-			goto errAgain
+			return -1, err
 		}
-		return -1, err
+
+		c.datalen += nn
+		nc := copy(b, c.dataCache[:c.datalen])
+		copy(c.dataCache, c.dataCache[nc:c.datalen])
+		c.datalen -= nc
+
+		if errR != nil {
+			return nc, errR
+		}
+		return nc, nil
 	}
 
-	c.datalen += nn
-	nc := copy(b, c.dataCache[:c.datalen])
-	copy(c.dataCache, c.dataCache[nc:c.datalen])
-	c.datalen -= nc
-
-	return nc, nil
+	if errR != nil {
+		return n, errR
+	}
+	return n, nil
 }
 
 func (c *SecureConn) Write(b []byte) (n int, err error) {

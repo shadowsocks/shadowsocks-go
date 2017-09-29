@@ -26,17 +26,17 @@ func PipeThenClose(src, dst NetConnection, done func()) {
 
 	//	connInfo := fmt.Sprintf("src conn: %v <---> %v, dst conn: %v <---> %v",
 	//		src.RemoteAddr().String(), src.LocalAddr().String(), dst.LocalAddr().String(), dst.RemoteAddr().String())
-	connInfo := fmt.Sprintf("piping between  %v <--- ss ---> %v", src.RemoteAddr().String(), dst.RemoteAddr().String())
+	connInfo := fmt.Sprintf("piping between %v <--ss--> %v", src.RemoteAddr().String(), dst.RemoteAddr().String())
 
 	var n, nn int
-	var err, errR error
+	var err, errW error
 	for {
 		n, err = src.Read(buf)
 		if n > 0 {
 			Logger.Debug("read n from src", zap.Int("n", n), zap.String("conn info", connInfo))
-			nn, errR = dst.Write(buf[:n])
-			if errR != nil { // errR.(*net.OpError).Timeout() can not be assert
-				Logger.Error("error in copy from src to dest, write into dest", zap.String("conn info", connInfo), zap.Error(errR))
+			nn, errW = dst.Write(buf[:n])
+			if errW != nil { // errR.(*net.OpError).Timeout() can not be assert
+				Logger.Error("error in copy from src to dest, write into dest", zap.String("conn info", connInfo), zap.Error(errW))
 				return
 			}
 			Logger.Debug("write n to dest", zap.Int("n", nn), zap.String("conn info", connInfo))
@@ -52,6 +52,7 @@ func PipeThenClose(src, dst NetConnection, done func()) {
 				// tell another goroutine to write all and then close, no more data will send
 				Logger.Error("error in copy from src to dest", zap.String("conn info", connInfo), zap.Error(err))
 			}
+			src.CloseRead()
 			return
 		}
 	}
