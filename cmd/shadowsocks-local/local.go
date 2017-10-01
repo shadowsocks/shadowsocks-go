@@ -283,9 +283,9 @@ func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) 
 }
 
 func handleConnection(conn net.Conn) {
-	if debug {
-		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
-	}
+
+	debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
+
 	closed := false
 	defer func() {
 		if !closed {
