@@ -283,9 +283,9 @@ func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) 
 }
 
 func handleConnection(conn net.Conn) {
-	if debug {
-		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
-	}
+
+	debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
+
 	closed := false
 	defer func() {
 		if !closed {
@@ -367,7 +367,7 @@ func main() {
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
-	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
+	flag.StringVar(&cmdConfig.Method, "m", "aes-256-cfb", "encryption method, default: aes-256-cfb")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 	flag.BoolVar(&cmdConfig.Auth, "A", false, "one time auth")
 
@@ -406,9 +406,7 @@ func main() {
 	} else {
 		ss.UpdateConfig(config, &cmdConfig)
 	}
-	if config.Method == "" {
-		config.Method = "aes-256-cfb"
-	}
+
 	if len(config.ServerPassword) == 0 {
 		if !enoughOptions(config) {
 			fmt.Fprintln(os.Stderr, "must specify server address, password and both server/local port")
