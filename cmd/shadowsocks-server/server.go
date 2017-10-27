@@ -105,9 +105,11 @@ func handleConnection(conn net.Conn, timeout int) {
 	go ss.PipeThenClose(conn.(*ss.SecureConn), tcpremote, func() {
 		//tcpremote.SetDeadline(time.Now())
 		//conn.SetDeadline(time.Now())
+		tcpremote.Close()
 		wg.Done()
 	})
 	ss.PipeThenClose(tcpremote, conn.(*ss.SecureConn), func() {
+		conn.Close()
 		//tcpremote.SetDeadline(time.Now())
 		//conn.SetDeadline(time.Now())
 	})
