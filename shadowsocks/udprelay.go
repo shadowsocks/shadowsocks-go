@@ -130,8 +130,8 @@ func parseHeaderFromAddr(addr net.Addr) ([]byte, int) {
 }
 
 func Pipeloop(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
-	buf := leakyBuf.Get()
-	defer leakyBuf.Put(buf)
+	buf := LeakyBuf.Get()
+	defer LeakyBuf.Put(buf)
 	defer readClose.Close()
 	for {
 		readClose.SetDeadline(time.Now().Add(udpTimeout))
@@ -161,7 +161,7 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 	var dstIP net.IP
 	var reqLen int
 	addrType := receive[idType]
-	defer leakyBuf.Put(receive)
+	defer LeakyBuf.Put(receive)
 
 	switch addrType & AddrMask {
 	case typeIPv4:
@@ -242,7 +242,7 @@ func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive 
 }
 
 func ReadAndHandleUDPReq(c *SecurePacketConn) error {
-	buf := leakyBuf.Get()
+	buf := LeakyBuf.Get()
 	n, src, err := c.ReadFrom(buf[0:])
 	if err != nil {
 		return err

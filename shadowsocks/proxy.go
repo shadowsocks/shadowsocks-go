@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"net"
 	"time"
+	"github.com/qunxyz/shadowsocks-go/shadowsocks/crypto"
 )
 
 type Dialer struct {
-	cipher *Cipher
+	cipher *crypto.Cipher
 	server string
 	support_udp bool
 }
@@ -26,7 +27,7 @@ type ProxyAddr struct {
 
 var ErrNilCipher = errors.New("cipher can't be nil.")
 
-func NewDialer(server string, cipher *Cipher) (dialer *Dialer, err error) {
+func NewDialer(server string, cipher *crypto.Cipher) (dialer *Dialer, err error) {
 	// Currently shadowsocks-go do not support UDP
 	if cipher == nil {
 		return nil, ErrNilCipher

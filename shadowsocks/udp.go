@@ -1,27 +1,17 @@
 package shadowsocks
 
 import (
-	"fmt"
 	"net"
 	"time"
-)
-
-const (
-	maxPacketSize = 4096 // increase it if error occurs
-)
-
-var (
-	errPacketTooSmall = fmt.Errorf("[udp]read error: cannot decrypt, received packet is smaller than ivLen")
-	errPacketTooLarge = fmt.Errorf("[udp]read error: received packet is latger than maxPacketSize(%d)", maxPacketSize)
-	errBufferTooSmall = fmt.Errorf("[udp]read error: given buffer is too small to hold data")
+	"github.com/qunxyz/shadowsocks-go/shadowsocks/crypto"
 )
 
 type SecurePacketConn struct {
 	net.PacketConn
-	*Cipher
+	*crypto.Cipher
 }
 
-func NewSecurePacketConn(c net.PacketConn, cipher *Cipher) *SecurePacketConn {
+func NewSecurePacketConn(c net.PacketConn, cipher *crypto.Cipher) *SecurePacketConn {
 	return &SecurePacketConn{
 		PacketConn: c,
 		Cipher:     cipher,
@@ -33,47 +23,11 @@ func (c *SecurePacketConn) Close() error {
 }
 
 func (c *SecurePacketConn) ReadFrom(b []byte) (n int, src net.Addr, err error) {
-	cipher := c.Copy()
-	buf := make([]byte, 4096)
-	n, src, err = c.PacketConn.ReadFrom(buf)
-	if err != nil {
-		return
-	}
-
-	if n < c.info.ivLen {
-		return 0, nil, errPacketTooSmall
-	}
-
-	if len(b) < n-c.info.ivLen {
-		err = errBufferTooSmall // just a warning
-	}
-
-	iv := make([]byte, c.info.ivLen)
-	copy(iv, buf[:c.info.ivLen])
-
-	if err = cipher.initDecrypt(iv); err != nil {
-		return
-	}
-
-	cipher.decrypt(b[0:], buf[c.info.ivLen:n])
-	n -= c.info.ivLen
-
-	return
+	return c.UnPackUDP(c.PacketConn, b)
 }
 
 func (c *SecurePacketConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
-	cipher := c.Copy()
-	iv, err := cipher.initEncrypt()
-	if err != nil {
-		return
-	}
-	packetLen := len(b) + len(iv)
-	cipherData := make([]byte, packetLen)
-	copy(cipherData, iv)
-
-	cipher.encrypt(cipherData[len(iv):], b)
-	n, err = c.PacketConn.WriteTo(cipherData, dst)
-	return
+	return c.PackUDP(c, b, dst)
 }
 
 func (c *SecurePacketConn) LocalAddr() net.Addr {
