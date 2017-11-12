@@ -5,11 +5,9 @@ import (
 	"crypto/cipher"
 	"crypto/des"
 	"crypto/md5"
-	"crypto/rand"
 	"crypto/rc4"
 	"encoding/binary"
 	"errors"
-	"io"
 
 	"golang.org/x/crypto/blowfish"
 	"golang.org/x/crypto/cast5"
@@ -246,26 +244,16 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 	return c, nil
 }
 
-func (c *Cipher) newIV() {
-	if c.iv != nil {
-		return
-	}
-
-	iv := make([]byte, c.info.ivLen)
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		Logger.Fields(LogFields{
-			"err": err,
-		}).Warn("init iv failed")
-		return
-	}
-	c.iv = iv
-}
-
 // Initializes the block cipher with CFB mode, returns IV.
-func (c *Cipher) initEncrypt() (iv []byte, err error) {
-	c.newIV()
+func (c *Cipher) initEncrypt() (err error) {
+	//c.newIV()
+	Logger.Fields(LogFields{
+		"cipher_addr": c,
+		"key": c.key,
+		"iv": c.iv,
+	}).Info("Checking cipher info for init")
 	c.enc, err = c.info.initCipher(c.key, c.iv, Encrypt)
-	return c.iv, err
+	return
 }
 
 func (c *Cipher) initDecrypt(iv []byte) (err error) {
