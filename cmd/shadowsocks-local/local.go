@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -14,10 +13,8 @@ import (
 	"strconv"
 	"time"
 
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/qunxyz/shadowsocks-go/shadowsocks"
 )
-
-var debug ss.DebugLog
 
 var (
 	errAddrType      = errors.New("socks addr type not supported")
@@ -32,6 +29,8 @@ const (
 	socksVer5       = 5
 	socksCmdConnect = 1
 )
+var leakyBuf *ss.LeakyBufType
+var Logger = ss.Logger
 
 func init() {
 	rand.Seed(time.Now().Unix())
@@ -135,7 +134,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 
 	rawaddr = buf[idType:reqLen]
 
-	if debug {
+	if ss.DebugLog {
 		switch buf[idType] {
 		case typeIPv4:
 			host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
@@ -176,7 +175,7 @@ func parseServerConfig(config *ss.Config) {
 		// only one encryption table
 		cipher, err := ss.NewCipher(method, config.Password)
 		if err != nil {
-			log.Fatal("Failed generating ciphers:", err)
+			Logger.Fatal("Failed generating ciphers:", err)
 		}
 		srvPort := strconv.Itoa(config.ServerPort)
 		srvArr := config.GetServerArray()
@@ -185,7 +184,7 @@ func parseServerConfig(config *ss.Config) {
 
 		for i, s := range srvArr {
 			if hasPort(s) {
-				log.Println("ignore server_port option for server", s)
+				Logger.Println("ignore server_port option for server", s)
 				servers.srvCipher[i] = &ServerCipher{s, cipher}
 			} else {
 				servers.srvCipher[i] = &ServerCipher{net.JoinHostPort(s, srvPort), cipher}
@@ -200,7 +199,7 @@ func parseServerConfig(config *ss.Config) {
 		i := 0
 		for _, serverInfo := range config.ServerPassword {
 			if len(serverInfo) < 2 || len(serverInfo) > 3 {
-				log.Fatalf("server %v syntax error\n", serverInfo)
+				Logger.Fatalf("server %v syntax error\n", serverInfo)
 			}
 			server := serverInfo[0]
 			passwd := serverInfo[1]
@@ -209,7 +208,7 @@ func parseServerConfig(config *ss.Config) {
 				encmethod = serverInfo[2]
 			}
 			if !hasPort(server) {
-				log.Fatalf("no port for server %s\n", server)
+				Logger.Fatalf("no port for server %s\n", server)
 			}
 			// Using "|" as delimiter is safe here, since no encryption
 			// method contains it in the name.
@@ -219,7 +218,7 @@ func parseServerConfig(config *ss.Config) {
 				var err error
 				cipher, err = ss.NewCipher(encmethod, passwd)
 				if err != nil {
-					log.Fatal("Failed generating ciphers:", err)
+					Logger.Fatal("Failed generating ciphers:", err)
 				}
 				cipherCache[cacheKey] = cipher
 			}
@@ -229,7 +228,7 @@ func parseServerConfig(config *ss.Config) {
 	}
 	servers.failCnt = make([]int, len(servers.srvCipher))
 	for _, se := range servers.srvCipher {
-		log.Println("available remote server", se.server)
+		Logger.Println("available remote server", se.server)
 	}
 	return
 }
@@ -238,14 +237,21 @@ func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn
 	se := servers.srvCipher[serverId]
 	remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
 	if err != nil {
-		log.Println("error connecting to shadowsocks server:", err)
+		Logger.Fields(ss.LogFields{
+			"rawaddr": rawaddr,
+			"server": se.server,
+			"err": err,
+		}).Error("error connecting to shadowsocks server")
 		const maxFailCnt = 30
 		if servers.failCnt[serverId] < maxFailCnt {
 			servers.failCnt[serverId]++
 		}
 		return nil, err
 	}
-	debug.Printf("connected to %s via %s\n", addr, se.server)
+	Logger.Fields(ss.LogFields{
+		"addr": addr,
+		"server": se.server,
+	}).Info("connected to server")
 	servers.failCnt[serverId] = 0
 	return
 }
@@ -280,9 +286,7 @@ func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) 
 }
 
 func handleConnection(conn net.Conn) {
-	if debug {
-		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
-	}
+	Logger.Info("socks connect from ", conn.RemoteAddr().String())
 	closed := false
 	defer func() {
 		if !closed {
@@ -292,12 +296,12 @@ func handleConnection(conn net.Conn) {
 
 	var err error = nil
 	if err = handShake(conn); err != nil {
-		log.Println("socks handshake:", err)
+		Logger.Println("socks handshake:", err)
 		return
 	}
 	rawaddr, addr, err := getRequest(conn)
 	if err != nil {
-		log.Println("error getting request:", err)
+		Logger.Println("error getting request:", err)
 		return
 	}
 	// Sending connection established message immediately to client.
@@ -305,14 +309,18 @@ func handleConnection(conn net.Conn) {
 	// But if connection failed, the client will get connection reset error.
 	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
 	if err != nil {
-		debug.Println("send connection confirmation:", err)
+		Logger.Fields(ss.LogFields{"err": err}).Error("send connection confirmation")
 		return
 	}
 
 	remote, err := createServerConn(rawaddr, addr)
 	if err != nil {
 		if len(servers.srvCipher) > 1 {
-			log.Println("Failed connect to all avaiable shadowsocks server")
+			Logger.Fields(ss.LogFields{
+				"rawaddr": rawaddr,
+				"addr": addr,
+				"err": err,
+			}).Error("Failed connect to all avaiable shadowsocks server")
 		}
 		return
 	}
@@ -325,19 +333,19 @@ func handleConnection(conn net.Conn) {
 	go ss.PipeThenClose(conn, remote)
 	ss.PipeThenClose(remote, conn)
 	closed = true
-	debug.Println("closed connection to", addr)
+	Logger.Info("closed connection to", addr)
 }
 
 func run(listenAddr string) {
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		log.Fatal(err)
+		Logger.Fatal(err)
 	}
-	log.Printf("starting local socks5 server at %v ...\n", listenAddr)
+	Logger.Fields(ss.LogFields{"listenAddr": listenAddr}).Info("starting local socks5 server ...")
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Println("accept:", err)
+			Logger.Fields(ss.LogFields{"err": err}).Warn("accept error")
 			continue
 		}
 		go handleConnection(conn)
@@ -350,7 +358,7 @@ func enoughOptions(config *ss.Config) bool {
 }
 
 func main() {
-	log.SetOutput(os.Stdout)
+	//Logger.SetOutput(os.Stdout)
 
 	var configFile, cmdServer, cmdLocal string
 	var cmdConfig ss.Config
@@ -365,7 +373,7 @@ func main() {
 	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
-	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
+	flag.BoolVar((*bool)(&ss.DebugLog), "d", false, "print debug message")
 
 	flag.Parse()
 
@@ -375,7 +383,6 @@ func main() {
 	}
 
 	cmdConfig.Server = cmdServer
-	ss.SetDebug(debug)
 
 	exists, err := ss.IsFileExists(configFile)
 	// If no config file in current directory, try search it in the binary directory
@@ -384,7 +391,7 @@ func main() {
 	if (!exists || err != nil) && binDir != "" && binDir != "." {
 		oldConfig := configFile
 		configFile = path.Join(binDir, "config.json")
-		log.Printf("%s not found, try config file %s\n", oldConfig, configFile)
+		Logger.Printf("%s not found, try config file %s\n", oldConfig, configFile)
 	}
 
 	config, err := ss.ParseConfig(configFile)

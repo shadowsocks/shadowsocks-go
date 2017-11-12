@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -16,10 +15,12 @@ import (
 	"sync"
 	"syscall"
 
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/qunxyz/shadowsocks-go/shadowsocks"
+	"log"
 )
 
 const (
+	AddrMask        byte = 0xf
 	idType  = 0 // address type index
 	idIP0   = 1 // ip addres start index
 	idDmLen = 1 // domain address length index
@@ -34,8 +35,9 @@ const (
 	lenDmBase = 2               // 1addrLen + 2port, plus addrLen
 )
 
-var debug ss.DebugLog
 var udp bool
+//var leakyBuf *ss.LeakyBufType
+var Logger = ss.Logger
 
 func getRequest(conn *ss.Conn) (host string, err error) {
 	ss.SetReadTimeout(conn)
@@ -46,12 +48,16 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 	buf := make([]byte, 269)
 	// read till we get possible domain length field
 	if _, err = io.ReadFull(conn, buf[:idType+1]); err != nil {
+		Logger.Fields(ss.LogFields{
+			"buf": string(buf),
+			"err": err,
+		}).Warn("Read buffer error")
 		return
 	}
 
 	var reqStart, reqEnd int
 	addrType := buf[idType]
-	switch addrType & ss.AddrMask {
+	switch addrType & AddrMask {
 	case typeIPv4:
 		reqStart, reqEnd = idIP0, idIP0+lenIPv4
 	case typeIPv6:
@@ -62,7 +68,11 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 		}
 		reqStart, reqEnd = idDm0, idDm0+int(buf[idDmLen])+lenDmBase
 	default:
-		err = fmt.Errorf("addr type %d not supported", addrType&ss.AddrMask)
+		Logger.Fields(ss.LogFields{
+			"addrType": addrType,
+			"AddrMask": AddrMask,
+		}).Error("addr type not supported")
+		err = fmt.Errorf("addr type %d not supported", addrType&AddrMask)
 		return
 	}
 
@@ -73,7 +83,7 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 	// Return string for typeIP is not most efficient, but browsers (Chrome,
 	// Safari, Firefox) all seems using typeDm exclusively. So this is not a
 	// big problem.
-	switch addrType & ss.AddrMask {
+	switch addrType & AddrMask {
 	case typeIPv4:
 		host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
 	case typeIPv6:
@@ -100,19 +110,19 @@ func handleConnection(conn *ss.Conn) {
 		// XXX There's no xadd in the atomic package, so it's difficult to log
 		// the message only once with low cost. Also note nextLogConnCnt maybe
 		// added twice for current peak connection number level.
-		log.Printf("Number of client connections reaches %d\n", nextLogConnCnt)
+		Logger.Info("Number of client connections reaches %d\n", nextLogConnCnt)
 		nextLogConnCnt += logCntDelta
 	}
 
 	// function arguments are always evaluated, so surround debug statement
 	// with if statement
-	if debug {
-		debug.Printf("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
+	if ss.DebugLog {
+		Logger.Info("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
 	}
 	closed := false
 	defer func() {
-		if debug {
-			debug.Printf("closed pipe %s<->%s\n", conn.RemoteAddr(), host)
+		if ss.DebugLog {
+			Logger.Info("closed pipe %s<->%s\n", conn.RemoteAddr(), host)
 		}
 		connCnt--
 		if !closed {
@@ -122,25 +132,35 @@ func handleConnection(conn *ss.Conn) {
 
 	host, err := getRequest(conn)
 	if err != nil {
-		log.Println("error getting request", conn.RemoteAddr(), conn.LocalAddr(), err)
+		Logger.Fields(ss.LogFields{
+			"RemoteAddr": conn.RemoteAddr(),
+			"LocalAddr": conn.LocalAddr(),
+			"err": err,
+		}).Error("error getting request")
 		closed = true
 		return
 	}
 	// ensure the host does not contain some illegal characters, NUL may panic on Win32
 	if strings.ContainsRune(host, 0x00) {
-		log.Println("invalid domain name.")
+		Logger.Fields(ss.LogFields{"host": host}).Warn("invalid domain name.")
 		closed = true
 		return
 	}
-	debug.Println("connecting", host)
+	Logger.Info("connecting ", host)
 	remote, err := net.Dial("tcp", host)
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
 			// EMFILE is process reaches open file limits, ENFILE is system limit
-			log.Println("dial error:", err)
+			Logger.Fields(ss.LogFields{
+				"host": host,
+				"err": err,
+			}).Error("dial error")
 		} else {
-			log.Println("error connecting to:", host, err)
+			Logger.Fields(ss.LogFields{
+				"host": host,
+				"err": err,
+			}).Error("error connecting")
 		}
 		return
 	}
@@ -149,8 +169,8 @@ func handleConnection(conn *ss.Conn) {
 			remote.Close()
 		}
 	}()
-	if debug {
-		debug.Printf("piping %s<->%s", conn.RemoteAddr(), host)
+	if ss.DebugLog {
+		Logger.Info("piping %s<->%s", conn.RemoteAddr(), host)
 	}
 	go ss.PipeThenClose(conn, remote)
 	ss.PipeThenClose(remote, conn)
@@ -228,31 +248,34 @@ func (pm *PasswdManager) del(port string) {
 func (pm *PasswdManager) updatePortPasswd(port, password string) {
 	pl, ok := pm.get(port)
 	if !ok {
-		log.Printf("new port %s added\n", port)
+		Logger.Fields(ss.LogFields{"port": port}).Warn("new port added")
 	} else {
 		if pl.password == password {
 			return
 		}
-		log.Printf("closing port %s to update password\n", port)
+		Logger.Warn("closing port %s to update password\n", port)
 		pl.listener.Close()
 	}
 	// run will add the new port listener to passwdManager.
 	// So there maybe concurrent access to passwdManager and we need lock to protect it.
 	go run(port, password)
-	if udp {
-		pl, _ := pm.getUDP(port)
-		pl.listener.Close()
-		go runUDP(port, password)
-	}
+	//if udp {
+	//	pl, _ := pm.getUDP(port)
+	//	pl.listener.Close()
+	//	go runUDP(port, password)
+	//}
 }
 
 var passwdManager = PasswdManager{portListener: map[string]*PortListener{}, udpListener: map[string]*UDPListener{}}
 
 func updatePasswd() {
-	log.Println("updating password")
+	Logger.Info("updating password")
 	newconfig, err := ss.ParseConfig(configFile)
 	if err != nil {
-		log.Printf("error parsing config file %s to update password: %v\n", configFile, err)
+		Logger.Fields(ss.LogFields{
+			"configFile": configFile,
+			"err": err,
+		}).Error("error parsing config file to update password")
 		return
 	}
 	oldconfig := config
@@ -269,10 +292,10 @@ func updatePasswd() {
 	}
 	// port password still left in the old config should be closed
 	for port := range oldconfig.PortPassword {
-		log.Printf("closing port %s as it's deleted\n", port)
+		Logger.Info("closing port %s as it's deleted\n", port)
 		passwdManager.del(port)
 	}
-	log.Println("password updated")
+	Logger.Info("password updated")
 }
 
 func waitSignal() {
@@ -283,7 +306,7 @@ func waitSignal() {
 			updatePasswd()
 		} else {
 			// is this going to happen?
-			log.Printf("caught signal %v, exit", sig)
+			Logger.Warn("caught signal %v, exit", sig)
 			os.Exit(0)
 		}
 	}
@@ -292,25 +315,31 @@ func waitSignal() {
 func run(port, password string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		log.Printf("error listening port %v: %v\n", port, err)
+		Logger.Fields(ss.LogFields{
+			"port": port,
+			"err": err,
+		}).Error("error listening port")
 		os.Exit(1)
 	}
 	passwdManager.add(port, password, ln)
 	var cipher *ss.Cipher
-	log.Printf("server listening port %v ...\n", port)
+	Logger.Fields(ss.LogFields{"port": port}).Info("server listening ...")
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			Logger.Fields(ss.LogFields{"err": err}).Error("accept error")
 			// listener maybe closed to update password
-			debug.Printf("accept error: %v\n", err)
 			return
 		}
 		// Creating cipher upon first connection.
 		if cipher == nil {
-			log.Println("creating cipher for port:", port)
+			Logger.Info("creating cipher for port:", port)
 			cipher, err = ss.NewCipher(config.Method, password)
 			if err != nil {
-				log.Printf("Error generating cipher for port: %s %v\n", port, err)
+				Logger.Fields(ss.LogFields{
+					"port": port,
+					"err": err,
+				}).Error("Error generating cipher for port")
 				conn.Close()
 				continue
 			}
@@ -319,32 +348,32 @@ func run(port, password string) {
 	}
 }
 
-func runUDP(port, password string) {
-	var cipher *ss.Cipher
-	port_i, _ := strconv.Atoi(port)
-	log.Printf("listening udp port %v\n", port)
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{
-		IP:   net.IPv6zero,
-		Port: port_i,
-	})
-	passwdManager.addUDP(port, password, conn)
-	if err != nil {
-		log.Printf("error listening udp port %v: %v\n", port, err)
-		return
-	}
-	defer conn.Close()
-	cipher, err = ss.NewCipher(config.Method, password)
-	if err != nil {
-		log.Printf("Error generating cipher for udp port: %s %v\n", port, err)
-		conn.Close()
-	}
-	SecurePacketConn := ss.NewSecurePacketConn(conn, cipher.Copy())
-	for {
-		if err := ss.ReadAndHandleUDPReq(SecurePacketConn); err != nil {
-			debug.Println(err)
-		}
-	}
-}
+//func runUDP(port, password string) {
+//	var cipher *ss.Cipher
+//	port_i, _ := strconv.Atoi(port)
+//	log.Printf("listening udp port %v\n", port)
+//	conn, err := net.ListenUDP("udp", &net.UDPAddr{
+//		IP:   net.IPv6zero,
+//		Port: port_i,
+//	})
+//	passwdManager.addUDP(port, password, conn)
+//	if err != nil {
+//		log.Printf("error listening udp port %v: %v\n", port, err)
+//		return
+//	}
+//	defer conn.Close()
+//	cipher, err = ss.NewCipher(config.Method, password)
+//	if err != nil {
+//		log.Printf("Error generating cipher for udp port: %s %v\n", port, err)
+//		conn.Close()
+//	}
+//	SecurePacketConn := ss.NewSecurePacketConn(conn, cipher.Copy())
+//	for {
+//		if err := ss.ReadAndHandleUDPReq(SecurePacketConn); err != nil {
+//			debug.Println(err)
+//		}
+//	}
+//}
 
 func enoughOptions(config *ss.Config) bool {
 	return config.ServerPort != 0 && config.Password != ""
@@ -353,14 +382,14 @@ func enoughOptions(config *ss.Config) bool {
 func unifyPortPassword(config *ss.Config) (err error) {
 	if len(config.PortPassword) == 0 { // this handles both nil PortPassword and empty one
 		if !enoughOptions(config) {
-			fmt.Fprintln(os.Stderr, "must specify both port and password")
+			log.Fatal(os.Stderr, "must specify both port and password")
 			return errors.New("not enough options")
 		}
 		port := strconv.Itoa(config.ServerPort)
 		config.PortPassword = map[string]string{port: config.Password}
 	} else {
 		if config.Password != "" || config.ServerPort != 0 {
-			fmt.Fprintln(os.Stderr, "given port_password, ignore server_port and password option")
+			log.Fatal(os.Stderr, "given port_password, ignore server_port and password option")
 		}
 	}
 	return
@@ -383,7 +412,7 @@ func main() {
 	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
-	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
+	flag.BoolVar((*bool)(&ss.DebugLog), "d", false, "print debug message")
 	flag.BoolVar(&udp, "u", false, "UDP Relay")
 	flag.Parse()
 
@@ -391,8 +420,6 @@ func main() {
 		ss.PrintVersion()
 		os.Exit(0)
 	}
-
-	ss.SetDebug(debug)
 
 	var err error
 	config, err = ss.ParseConfig(configFile)
@@ -421,9 +448,9 @@ func main() {
 	}
 	for port, password := range config.PortPassword {
 		go run(port, password)
-		if udp {
-			go runUDP(port, password)
-		}
+		//if udp {
+		//	go runUDP(port, password)
+		//}
 	}
 
 	waitSignal()
