@@ -11,11 +11,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	// "log"
 	"os"
 	"reflect"
 	"time"
 )
+
+var DebugLog = true
 
 type Config struct {
 	Server     interface{} `json:"server"`
@@ -59,37 +60,43 @@ func (config *Config) GetServerArray() []string {
 		for i, s := range arr {
 			serverArr[i], ok = s.(string)
 			if !ok {
-				goto typeError
+				Logger.Fields(LogFields{
+					"config.Server": config.Server,
+					"type": reflect.TypeOf(config.Server)}).Panic("Config.Server type error")
 			}
 		}
 		return serverArr
 	}
-typeError:
-	panic(fmt.Sprintf("Config.Server type error %v", reflect.TypeOf(config.Server)))
+	return nil
 }
 
 func ParseConfig(path string) (config *Config, err error) {
 	file, err := os.Open(path) // For read access.
 	if err != nil {
+		Logger.Fields(LogFields{"path": path}).Error(err)
 		return
 	}
 	defer file.Close()
 
 	data, err := ioutil.ReadAll(file)
 	if err != nil {
+		Logger.Fields(LogFields{
+			"path": path,
+			"err": err,
+		}).Error("ReadAll data from config file.")
 		return
 	}
 
 	config = &Config{}
 	if err = json.Unmarshal(data, config); err != nil {
+		Logger.Fields(LogFields{
+			"data": data,
+			"err": err,
+		}).Error("Unmarshal data from config file.")
 		return nil, err
 	}
 	readTimeout = time.Duration(config.Timeout) * time.Second
 	return
-}
-
-func SetDebug(d DebugLog) {
-	Debug = d
 }
 
 // Useful for command line to override options specified in config file

@@ -9,10 +9,10 @@ type AESCTR struct {
 	Stream
 }
 
-func (this *AESCTR) new(key, iv []byte, doe DecOrEnc) (cipher.Stream, cipher.AEAD, error) {
+func (this *AESCTR) new(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return cipher.NewCTR(block, iv), nil, nil
+	return cipher.NewCTR(block, iv), nil
 }

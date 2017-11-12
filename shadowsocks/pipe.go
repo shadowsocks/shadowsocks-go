@@ -14,8 +14,8 @@ func SetReadTimeout(c net.Conn) {
 // PipeThenClose copies data from src to dst, closes dst when done.
 func PipeThenClose(src, dst net.Conn) {
 	defer dst.Close()
-	buf := LeakyBuf.Get()
-	defer LeakyBuf.Put(buf)
+	buf := leakyBuf.Get()
+	defer leakyBuf.Put(buf)
 	for {
 		SetReadTimeout(src)
 		n, err := src.Read(buf)
@@ -24,11 +24,19 @@ func PipeThenClose(src, dst net.Conn) {
 		if n > 0 {
 			// Note: avoid overwrite err returned by Read.
 			if _, err := dst.Write(buf[0:n]); err != nil {
-				Debug.Println("write:", err)
+				Logger.Fields(LogFields{
+					"n": n,
+					"buf": string(buf),
+					"err": err,
+				}).Warn("write buff error")
 				break
 			}
 		}
 		if err != nil {
+			Logger.Fields(LogFields{
+				"buf": string(buf),
+				"err": err,
+			}).Warn("read buff error")
 			// Always "use of closed network connection", but no easy way to
 			// identify this specific error. So just leave the error along for now.
 			// More info here: https://code.google.com/p/go/issues/detail?id=4373

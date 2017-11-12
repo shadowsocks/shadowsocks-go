@@ -10,7 +10,7 @@ type RC4MD5 struct {
 	Stream
 }
 
-func (this *DES) new(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
+func (this *RC4MD5) new(key, iv []byte, _ DecOrEnc) (cipher.Stream, error) {
 	h := md5.New()
 	h.Write(key)
 	h.Write(iv)

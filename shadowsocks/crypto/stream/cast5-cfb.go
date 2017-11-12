@@ -9,7 +9,7 @@ type Cast5 struct {
 	Stream
 }
 
-func (this *BlowFish) new(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
+func (this *Cast5) new(key, iv []byte, doe DecOrEnc) (cipher.Stream, error) {
 	block, err := cast5.NewCipher(key)
 	return this.newStream(block, err, key, iv, doe)
 }

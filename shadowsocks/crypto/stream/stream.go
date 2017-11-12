@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"net"
 	"fmt"
+	"github.com/qunxyz/shadowsocks-go/shadowsocks/crypto"
 )
 
 type DecOrEnc int
@@ -29,6 +30,8 @@ type cipherInfo struct {
 }
 
 type Stream struct {
+	crypto.Cipher
+
 	enc  cipher.Stream
 	dec  cipher.Stream
 	key  []byte

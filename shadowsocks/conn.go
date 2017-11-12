@@ -2,46 +2,46 @@ package shadowsocks
 
 import (
 	"encoding/binary"
-	"fmt"
 	"net"
 	"strconv"
-	"github.com/qunxyz/shadowsocks-go/shadowsocks/crypto"
-)
-
-const (
-	OneTimeAuthMask byte = 0x10
-	AddrMask        byte = 0xf
 )
 
 type Conn struct {
 	net.Conn
-	*crypto.Cipher
-	readBuf  []byte
-	writeBuf []byte
+	cipher *Cipher
+	buffer *LeakyBufType
 }
 
-func NewConn(c net.Conn, cipher *crypto.Cipher) *Conn {
-	return &Conn{
+func NewConn(c net.Conn, cipher *Cipher) *Conn {
+	conn := &Conn{
 		Conn:     c,
-		Cipher:   cipher,
-		readBuf:  LeakyBuf.Get(),
-		writeBuf: LeakyBuf.Get()}
+		buffer: leakyBuf,
+		cipher: cipher,
+	}
+	return conn
 }
 
 func (c *Conn) Close() error {
-	LeakyBuf.Put(c.readBuf)
-	LeakyBuf.Put(c.writeBuf)
+	c.buffer.Put(c.buffer.Get())
 	return c.Conn.Close()
 }
 
 func RawAddr(addr string) (buf []byte, err error) {
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
-		return nil, fmt.Errorf("shadowsocks: address error %s %v", addr, err)
+		Logger.Fields(LogFields{
+			"addr": addr,
+			"err": err,
+		}).Warn("shadowsocks: address error")
+		return nil, err
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return nil, fmt.Errorf("shadowsocks: invalid port %s", addr)
+		Logger.Fields(LogFields{
+			"portStr": portStr,
+			"err": err,
+		}).Warn("shadowsocks: invalid port")
+		return nil, err
 	}
 
 	hostLen := len(host)
@@ -57,14 +57,22 @@ func RawAddr(addr string) (buf []byte, err error) {
 // This is intended for use by users implementing a local socks proxy.
 // rawaddr shoud contain part of the data in socks request, starting from the
 // ATYP field. (Refer to rfc1928 for more information.)
-func DialWithRawAddr(rawaddr []byte, server string, cipher *crypto.Cipher) (c *Conn, err error) {
+func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, err error) {
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
+		Logger.Fields(LogFields{
+			"server": server,
+			"err": err,
+		}).Warn("shadowsocks: Dialing to server")
 		return
 	}
 	c = NewConn(conn, cipher)
 
 	if _, err = c.write(rawaddr); err != nil {
+		Logger.Fields(LogFields{
+			"rawaddr": rawaddr,
+			"err": err,
+		}).Warn("shadowsocks: Writing rawaddr")
 		c.Close()
 		return nil, err
 	}
@@ -72,16 +80,21 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher *crypto.Cipher) (c *C
 }
 
 // addr should be in the form of host:port
-func Dial(addr, server string, cipher *crypto.Cipher) (c *Conn, err error) {
+func Dial(addr, server string, cipher *Cipher) (c *Conn, err error) {
 	ra, err := RawAddr(addr)
 	if err != nil {
+		Logger.Fields(LogFields{
+			"addr": addr,
+			"err": err,
+		}).Warn("shadowsocks: Parsing addr")
 		return
 	}
 	return DialWithRawAddr(ra, server, cipher)
 }
 
 func (c *Conn) Read(b []byte) (n int, err error) {
-	return c.unpack(b)
+	n, err = c.unpack(b)
+	return
 }
 
 func (c *Conn) Write(b []byte) (n int, err error) {
@@ -89,27 +102,25 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 	headerLen := len(b) - nn
 
 	n, err = c.write(b)
+	if err != nil {
+		Logger.Fields(LogFields{
+			"b": b,
+			"err": err,
+		}).Warn("shadowsocks: write data to socket error")
+	}
 	// Make sure <= 0 <= len(b), where b is the slice passed in.
 	if n >= headerLen {
 		n -= headerLen
 	}
 	return
 }
-//////////////////////////////////////////////////////////////////
+
 func (c *Conn) write(b []byte) (n int, err error) {
 	cipherData, err := c.pack(b)
-	if err != nil {
-		return
-	}
 
 	n, err = c.Conn.Write(cipherData)
+	if err != nil {
+		Logger.Fields(LogFields{"err": err}).Warn("shadowsocks: write data error")
+	}
 	return
-}
-
-func (c *Conn) pack(b []byte) (cipher_data []byte, err error)  {
-	return c.Pack(b, c.writeBuf)
-}
-
-func (c *Conn) unpack(b []byte) (n int, err error) {
-	return c.UnPack(c.Conn, b, c.readBuf)
 }

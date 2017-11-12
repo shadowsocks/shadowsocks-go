@@ -2,16 +2,15 @@ package shadowsocks
 
 import (
 	"errors"
-	"strings"
 	"fmt"
 	"net"
+	"strings"
 	"time"
-	"github.com/qunxyz/shadowsocks-go/shadowsocks/crypto"
 )
 
 type Dialer struct {
-	cipher *crypto.Cipher
-	server string
+	cipher      *Cipher
+	server      string
 	support_udp bool
 }
 
@@ -27,14 +26,17 @@ type ProxyAddr struct {
 
 var ErrNilCipher = errors.New("cipher can't be nil.")
 
-func NewDialer(server string, cipher *crypto.Cipher) (dialer *Dialer, err error) {
+func NewDialer(server string, cipher *Cipher) (dialer *Dialer, err error) {
 	// Currently shadowsocks-go do not support UDP
 	if cipher == nil {
+		Logger.Fields(LogFields{
+			"server": server,
+		}).Warn("cipher can't be nil")
 		return nil, ErrNilCipher
 	}
-	return &Dialer {
-		cipher: cipher,
-		server: server,
+	return &Dialer{
+		cipher:      cipher,
+		server:      server,
 		support_udp: false,
 	}, nil
 }
@@ -43,16 +45,24 @@ func (d *Dialer) Dial(network, addr string) (c net.Conn, err error) {
 	if strings.HasPrefix(network, "tcp") {
 		conn, err := Dial(addr, d.server, d.cipher.Copy())
 		if err != nil {
+			Logger.Fields(LogFields{
+				"addr": addr,
+				"d.server": d.server,
+				"err": err,
+			}).Warn("dial server error")
 			return nil, err
 		}
-		return &ProxyConn {
+		return &ProxyConn{
 			Conn: conn,
-			raddr: &ProxyAddr {
+			raddr: &ProxyAddr{
 				network: network,
 				address: addr,
 			},
 		}, nil
 	}
+	Logger.Fields(LogFields{
+		"network": network,
+	}).Warn("unsupported connection type")
 	return nil, fmt.Errorf("unsupported connection type: %s", network)
 }
 
