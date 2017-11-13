@@ -154,9 +154,9 @@ func (c *salsaStreamCipher) XORKeyStream(dst, src []byte) {
 	if cap(dst) >= dataSize {
 		buf = dst[:dataSize]
 	} else if leakyBufSize >= dataSize {
-		//buf = leakyBuf.Get()
-		//defer leakyBuf.Put(buf)
-		//buf = buf[:dataSize]
+		buf = leakyBuf.Get()
+		defer leakyBuf.Put(buf)
+		buf = buf[:dataSize]
 	} else {
 		buf = make([]byte, dataSize)
 	}
@@ -264,23 +264,6 @@ func (c *Cipher) initCipher(doe DecOrEnc) (err error) {
 	} else if doe == Decrypt {
 		c.dec = cipherObj
 	}
-	return
-}
-
-// Initializes the block cipher with CFB mode, returns IV.
-func (c *Cipher) initEncrypt() (err error) {
-	//c.newIV()
-	//Logger.Fields(LogFields{
-	//	"cipher_addr": c,
-	//	"key": c.key,
-	//	"iv": c.iv,
-	//}).Info("Checking cipher info for init")
-	c.enc, err = c.info.initCipher(c.key, c.iv, Encrypt)
-	return
-}
-
-func (c *Cipher) initDecrypt(iv []byte) (err error) {
-	c.dec, err = c.info.initCipher(c.key, iv, Decrypt)
 	return
 }
 
