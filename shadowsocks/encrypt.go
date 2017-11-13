@@ -58,7 +58,7 @@ func initCipher(block cipher.Block, err error, key, iv []byte,
 			"iv": iv,
 			"is_encrypt": doe,
 			"err": err,
-		}).Warn("initCipher error")
+		}).Fatal("initCipher error")
 		return nil, err
 	}
 	if doe == Encrypt {
@@ -73,6 +73,7 @@ func newAESCFBStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
 	if err != nil {
 		Logger.Fields(LogFields{
 			"key": key,
+			"iv": iv,
 			"err": err,
 		}).Warn("newAESCFBStream error")
 	}
@@ -84,6 +85,7 @@ func newAESCTRStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
 	if err != nil {
 		Logger.Fields(LogFields{
 			"key": key,
+			"iv": iv,
 			"err": err,
 		}).Warn("newAESCTRStream error")
 		return nil, err
@@ -96,6 +98,7 @@ func newDESStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
 	if err != nil {
 		Logger.Fields(LogFields{
 			"key": key,
+			"iv": iv,
 			"err": err,
 		}).Warn("newDESStream error")
 	}
@@ -107,6 +110,7 @@ func newBlowFishStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
 	if err != nil {
 		Logger.Fields(LogFields{
 			"key": key,
+			"iv": iv,
 			"err": err,
 		}).Warn("newBlowFishStream error")
 	}
@@ -118,6 +122,7 @@ func newCast5Stream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
 	if err != nil {
 		Logger.Fields(LogFields{
 			"key": key,
+			"iv": iv,
 			"err": err,
 		}).Warn("newCast5Stream error")
 	}
@@ -130,15 +135,42 @@ func newRC4MD5Stream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
 	h.Write(iv)
 	rc4key := h.Sum(nil)
 
-	return rc4.NewCipher(rc4key)
+	c, err := rc4.NewCipher(rc4key)
+	if err != nil {
+		Logger.Fields(LogFields{
+			"key": key,
+			"iv": iv,
+			"err": err,
+		}).Fatal("newRC4MD5Stream error")
+	}
+
+	return c, err
 }
 
 func newChaCha20Stream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
-	return chacha20.NewCipher(iv, key)
+	c, err := chacha20.NewCipher(key, iv)
+	if err != nil {
+		Logger.Fields(LogFields{
+			"key": key,
+			"iv": iv,
+			"err": err,
+		}).Fatal("newChaCha20Stream error")
+	}
+
+	return c, err
 }
 
 func newChaCha20IETFStream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
-	return chacha20.NewCipher(iv, key)
+	c, err := chacha20.NewCipher(key, iv)
+	if err != nil {
+		Logger.Fields(LogFields{
+			"key": key,
+			"iv": iv,
+			"err": err,
+		}).Fatal("newChaCha20IETFStream error")
+	}
+
+	return c, err
 }
 
 type salsaStreamCipher struct {
@@ -258,6 +290,7 @@ func (c *Cipher) initCipher(doe DecOrEnc) (err error) {
 		return
 	}
 	cipherObj, err := c.info.initCipher(c.key, c.iv, doe)
+
 	if doe == Encrypt {
 		c.enc = cipherObj
 		c.iv_len = len(c.iv)
