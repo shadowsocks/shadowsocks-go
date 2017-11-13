@@ -53,7 +53,12 @@ const (
 func initCipher(block cipher.Block, err error, key, iv []byte,
 	doe DecOrEnc) (interface{}, error) {
 	if err != nil {
-		Logger.Fields(LogFields{"err": err}).Warn("initCipher error")
+		Logger.Fields(LogFields{
+			"key": key,
+			"iv": iv,
+			"is_encrypt": doe,
+			"err": err,
+		}).Warn("initCipher error")
 		return nil, err
 	}
 	if doe == Encrypt {
@@ -218,6 +223,7 @@ type Cipher struct {
 	key  []byte
 	info *cipherInfo
 	iv   []byte
+	iv_len int
 }
 
 // NewCipher creates a cipher that can be used in Dial() etc.
@@ -243,15 +249,32 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 	}
 	return c, nil
 }
+// Initializes the cipher
+func (c *Cipher) initCipher(doe DecOrEnc) (err error) {
+	if (doe == Encrypt && c.enc != nil) || (doe == Decrypt && c.dec != nil) {
+		if doe == Encrypt {
+			c.iv_len = 0
+		}
+		return
+	}
+	cipherObj, err := c.info.initCipher(c.key, c.iv, doe)
+	if doe == Encrypt {
+		c.enc = cipherObj
+		c.iv_len = len(c.iv)
+	} else if doe == Decrypt {
+		c.dec = cipherObj
+	}
+	return
+}
 
 // Initializes the block cipher with CFB mode, returns IV.
 func (c *Cipher) initEncrypt() (err error) {
 	//c.newIV()
-	Logger.Fields(LogFields{
-		"cipher_addr": c,
-		"key": c.key,
-		"iv": c.iv,
-	}).Info("Checking cipher info for init")
+	//Logger.Fields(LogFields{
+	//	"cipher_addr": c,
+	//	"key": c.key,
+	//	"iv": c.iv,
+	//}).Info("Checking cipher info for init")
 	c.enc, err = c.info.initCipher(c.key, c.iv, Encrypt)
 	return
 }

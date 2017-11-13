@@ -34,8 +34,17 @@ func (lb *LeakyBufType) Get() (b []byte) {
 // size is not the same with the leaky buffer's. This is intended to expose
 // error usage of leaky buffer.
 func (lb *LeakyBufType) Put(b []byte) {
+	Logger.Fields(LogFields{
+		"b": b,
+		"b_string": string(b),
+		"b_len": len(b),
+	}).Info("checking buffer")
 	if len(b) != lb.bufSize {
-		panic("invalid buffer size that's put into leaky buffer")
+		Logger.Fields(LogFields{
+			"b": b,
+			"b_string": string(b),
+			"b_len": len(b),
+		}).Panic("invalid buffer size that's put into leaky buffer")
 	}
 	select {
 	case lb.freeList <- b:

@@ -93,7 +93,10 @@ func Dial(addr, server string, cipher *Cipher) (c *Conn, err error) {
 }
 
 func (c *Conn) Read(b []byte) (n int, err error) {
-	n, err = c.unpack(b)
+	p := newPacketStream(c, Decrypt)
+	p.initPacket(b)
+	data, err := p.getPacket()
+	n = len(data)
 	return
 }
 
@@ -116,11 +119,10 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 }
 
 func (c *Conn) write(b []byte) (n int, err error) {
-	cipherData, err := c.pack(b)
+	p := newPacketStream(c, Encrypt)
+	p.initPacket(b)
+	data, err := p.getPacket()
+	n, err = c.Conn.Write(data)
 
-	n, err = c.Conn.Write(cipherData)
-	if err != nil {
-		Logger.Fields(LogFields{"err": err}).Warn("shadowsocks: write data error")
-	}
 	return
 }

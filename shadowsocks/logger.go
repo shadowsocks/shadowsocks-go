@@ -17,6 +17,7 @@ type LogFields map[string]interface{}
 func New() (*LogType) {
 	logger := logrus.New()
 	logger.Out = os.Stdout
+	logger.Formatter = &TextFormatter{}
 	return &LogType{
 		logger,
 		nil,
@@ -32,11 +33,19 @@ func (this *LogType) Fields(fields LogFields) (*LogType) {
 }
 
 func (this *LogType) setFields() *logrus.Entry {
-	fmt.Println(this.getCaller() + ":")
+	fmt.Println(this.getCaller(5) + "=>")
+	fmt.Println("  " + this.getCaller(4) + ":")
 	return this.logger.WithFields((map[string]interface{})(this.fields))
 }
 
+func (this *LogType) setTab(args ...interface{}) []interface{} {
+	args[0] = "\t" + args[0].(string)
+
+	return args
+}
+
 func (this *LogType) Debug(args ...interface{}) (*LogType) {
+	args = this.setTab(args)
 	this.setFields().Debug(args...)
 
 	return this
@@ -90,12 +99,12 @@ func (this *LogType) Println(args ...interface{}) (*LogType) {
 	return this
 }
 
-func (this *LogType) getCaller() string {
+func (this *LogType) getCaller(skip int) string {
 	// we get the callers as uintptrs - but we just need 1
 	fpcs := make([]uintptr, 1)
 
 	// skip 3 levels to get to the caller of whoever called Caller()
-	n := runtime.Callers(4, fpcs)
+	n := runtime.Callers(skip, fpcs)
 	if n == 0 {
 		return "n/a" // proper error her would be better
 	}

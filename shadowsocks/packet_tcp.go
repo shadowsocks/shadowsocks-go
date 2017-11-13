@@ -6,19 +6,26 @@ import (
 )
 
 type Packet struct {
-	*Cipher
+	conn *Conn
+	buff []byte
+	cipher *Cipher
+	hold bool
+
+	ptype DecOrEnc
 	payload []byte
 	payload_len int
+
+	packet []byte // [IV][encrypted payload]
 }
 
 /*
  * [IV][encrypted payload]
  */
 type PacketStream struct {
-	*Packet
+	Packet
 
-	iv []byte
-	iv_len int
+	//iv []byte
+	//iv_len int
 }
 
 /*
@@ -31,112 +38,136 @@ type PacketAead struct {
 	tag_len int
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
+func newPacketStream(conn *Conn, ptype DecOrEnc) *PacketStream {
+	packetObj := &PacketStream{}
 
-func (c *Conn) initIV(is_gen bool) (err error) {
-	iv := make([]byte, c.cipher.info.ivLen)
-	if is_gen && c.cipher.iv == nil {
-		if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-			Logger.Fields(LogFields{
-				"c.cipher.info": c.cipher.info,
-				"err": err,
-			}).Warn("new iv failed")
-			return err
+	packetObj.hold = false
+	packetObj.ptype = ptype
+	packetObj.conn = conn
+	packetObj.cipher = conn.cipher
+	packetObj.packet = nil
+	packetObj.buff = conn.buffer.Get()
+
+	return packetObj
+}
+func (this *PacketStream) initPacket(data []byte) *PacketStream {
+	if this.setIV() != nil {
+		this.hold = true
+	}
+
+	this.setPacket(data)
+
+	return this
+}
+
+func (this *PacketStream) initIV() (err error) {
+	iv := make([]byte, this.cipher.info.ivLen)
+	if this.ptype == Encrypt && this.cipher.enc == nil  {
+		if this.cipher.iv == nil {
+			if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+				Logger.Fields(LogFields{
+					"c.cipher.info": this.cipher.info,
+					"err": err,
+				}).Warn("new iv failed")
+				return err
+			}
+			this.cipher.iv = iv
 		}
-		c.cipher.iv = iv
-		return
-	} else if !is_gen{
-		if _, err := io.ReadFull(c.Conn, iv); err != nil {
+	} else if this.ptype == Decrypt && this.cipher.dec == nil {
+		if _, err := io.ReadFull(this.conn.Conn, iv); err != nil {
 			Logger.Fields(LogFields{
 				"iv": iv,
 				"err": err,
 			}).Warn("shadowsocks: read iv from connect error")
 			return err
 		}
-		if len(c.cipher.iv) != 0 {
+		if len(this.cipher.iv) != 0 {
 			Logger.Fields(LogFields{
-				"c.cipher.iv": c.cipher.iv,
+				"c.cipher.iv": this.cipher.iv,
 			}).Warn("shadowsocks: no need to update iv")
-			return
+			return nil
 		}
-		c.cipher.iv = iv
+		this.cipher.iv = iv
 	}
 
 	return nil
 }
 
-func (c *Conn) pack(b []byte) ([]byte, error) {
-	iv_len := 0
-	if c.cipher.enc == nil {
-		if err := c.initIV(true); err != nil {
-			return nil, err
-		}
-		Logger.Fields(LogFields{
-			"cipher_addr": c.cipher,
-			"key": c.cipher.key,
-			"iv": c.cipher.iv,
-		}).Info("Checking cipher info for init")
-		err := c.cipher.initEncrypt()
-		if err != nil {
-			Logger.Fields(LogFields{"err": err}).Warn("shadowsocks: initEncrypt error")
-			return nil, err
-		}
-		iv_len = len(c.cipher.iv)
+func (this *PacketStream) setIV() error {
+	if err := this.initIV(); err != nil {// generating a new iv
+		return err
 	}
 
-	cipherData := c.buffer.Get()
-	dataSize := len(b) + iv_len
-	if dataSize > len(cipherData) {
-		cipherData = make([]byte, dataSize)
-	} else {
-		cipherData = cipherData[:dataSize]
+	err := this.cipher.initCipher(this.ptype) // init encrypt with iv generated previous
+	if err != nil {
+		return err
 	}
 
-	if c.cipher.iv != nil {
-		// Put initialization vector in buffer, do a single write to send both
-		// iv and data.
-		copy(cipherData, c.cipher.iv)
-	}
-	c.cipher.encrypt(cipherData[iv_len:], b)
-
-	return cipherData, nil
+	return nil
 }
 
-func (c *Conn) unpack(b []byte) (int, error) {
-	n := 0
-	if c.cipher.dec == nil {
-		if err := c.initIV(false); err != nil {
-			return n, err
-		}
-		if err := c.cipher.initDecrypt(c.cipher.iv); err != nil {
-			Logger.Fields(LogFields{
-				"iv": c.cipher.iv,
-				"err":   err,
-			}).Warn("shadowsocks: initDecrypt error")
-			return n, err
-		}
+func (this *PacketStream) setPacket(data []byte) error {
+	if this.hold {
+		this.packet = nil
+		return nil
 	}
-	cipherData := c.buffer.Get()
 
-	if len(b) > len(cipherData) {
-		cipherData = make([]byte, len(b))
-	} else {
-		cipherData = cipherData[:len(b)]
+	if this.ptype == Encrypt {
+		this.encrypt(data)
+	} else if this.ptype == Decrypt {
+		this.decrypt(data)
 	}
-	n, err := c.Conn.Read(cipherData)
+
+	return nil
+}
+
+func (this *PacketStream) getPacket() ([]byte, error) {
+	return this.packet, nil
+}
+
+func (this *PacketStream) encrypt(payload []byte) {
+	iv_len := this.cipher.iv_len
+	// assign packet size
+	packet_data := this.buff
+	dataSize := len(payload) + iv_len
+	if dataSize > len(packet_data) {
+		packet_data = make([]byte, dataSize)
+	} else {
+		packet_data = packet_data[:dataSize]
+	}
+
+	// Put initialization vector in buffer, do a single write to send both
+	// iv and data.
+	copy(packet_data, this.cipher.iv) // write iv to packet header
+
+	this.cipher.encrypt(packet_data[iv_len:], payload) // encrypt true data and write encrypted data to rest of space in packet
+	this.packet = packet_data
+}
+
+func (this *PacketStream) decrypt(data []byte) error {
+	packet_data := this.buff // get packet data from buffer first
+
+	// assign packet size
+	if len(data) > len(packet_data) { // if connect got new data
+		packet_data = make([]byte, len(data))
+	} else {
+		packet_data = packet_data[:len(data)]
+	}
+	n, err := this.conn.Conn.Read(packet_data) // read data from connect
 	if err != nil {
 		Logger.Fields(LogFields{
 			"n": n,
-			"cipherData": cipherData,
+			"packet_data": packet_data,
 			"err": err,
-		}).Warn("shadowsocks: read cipherData error")
-		return n, err
+		}).Warn("shadowsocks: read packet data error")
+		return err
 	}
 
-	if n > 0 {
-		c.cipher.decrypt(b[0:n], cipherData[0:n])
+	if n > 0 { // if got any data from connect
+		this.cipher.decrypt(data[0:n], packet_data[0:n]) // decrypt packet data
 	}
-	return n, err
+
+	this.packet = data[0:n]
+	return nil
 }
-////////////////////////////////////////////////////////////////
