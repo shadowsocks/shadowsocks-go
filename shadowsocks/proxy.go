@@ -9,7 +9,7 @@ import (
 )
 
 type Dialer struct {
-	cipher      *Cipher
+	cipher      interface{}
 	server      string
 	support_udp bool
 }
@@ -43,7 +43,7 @@ func NewDialer(server string, cipher *Cipher) (dialer *Dialer, err error) {
 
 func (d *Dialer) Dial(network, addr string) (c net.Conn, err error) {
 	if strings.HasPrefix(network, "tcp") {
-		conn, err := Dial(addr, d.server, d.cipher.Copy())
+		conn, err := Dial(addr, d.server, CopyCipher(d.cipher))
 		if err != nil {
 			Logger.Fields(LogFields{
 				"addr": addr,

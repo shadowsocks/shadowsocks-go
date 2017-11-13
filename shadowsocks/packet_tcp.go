@@ -8,7 +8,6 @@ import (
 type Packet struct {
 	conn *Conn
 	buff []byte
-	cipher *Cipher
 	hold bool
 
 	ptype DecOrEnc
@@ -23,6 +22,7 @@ type Packet struct {
  */
 type PacketStream struct {
 	Packet
+	cipher *CipherStream
 
 	//iv []byte
 	//iv_len int
@@ -45,7 +45,7 @@ func newPacketStream(conn *Conn, ptype DecOrEnc) *PacketStream {
 	packetObj.hold = false
 	packetObj.ptype = ptype
 	packetObj.conn = conn
-	packetObj.cipher = conn.cipher
+	packetObj.cipher = conn.cipher.(*CipherStream)
 	packetObj.packet = nil
 	packetObj.buff = conn.buffer.Get()
 
@@ -99,7 +99,7 @@ func (this *PacketStream) setIV() error {
 		return err
 	}
 
-	err := this.cipher.initCipher(this.ptype) // init encrypt with iv generated previous
+	err := this.cipher.init(this.ptype) // init encrypt with iv generated previous
 	if err != nil {
 		return err
 	}

@@ -8,11 +8,11 @@ import (
 
 type Conn struct {
 	net.Conn
-	cipher *Cipher
+	cipher interface{}
 	buffer *LeakyBufType
 }
 
-func NewConn(c net.Conn, cipher *Cipher) *Conn {
+func NewConn(c net.Conn, cipher interface{}) *Conn {
 	conn := &Conn{
 		Conn:     c,
 		buffer: leakyBuf,
@@ -57,7 +57,7 @@ func RawAddr(addr string) (buf []byte, err error) {
 // This is intended for use by users implementing a local socks proxy.
 // rawaddr shoud contain part of the data in socks request, starting from the
 // ATYP field. (Refer to rfc1928 for more information.)
-func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, err error) {
+func DialWithRawAddr(rawaddr []byte, server string, cipher interface{}) (c *Conn, err error) {
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
 		Logger.Fields(LogFields{
@@ -80,7 +80,7 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, er
 }
 
 // addr should be in the form of host:port
-func Dial(addr, server string, cipher *Cipher) (c *Conn, err error) {
+func Dial(addr, server string, cipher interface{}) (c *Conn, err error) {
 	ra, err := RawAddr(addr)
 	if err != nil {
 		Logger.Fields(LogFields{

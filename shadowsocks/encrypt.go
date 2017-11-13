@@ -13,9 +13,73 @@ import (
 	"golang.org/x/crypto/cast5"
 	"golang.org/x/crypto/salsa20/salsa"
 	"github.com/Yawning/chacha20"
+	"github.com/codahale/chacha20poly1305"
 )
 
 var errEmptyPassword = errors.New("empty key")
+
+type CipherStream struct {
+	Cipher
+
+	key []byte
+	iv   []byte
+	iv_len int
+}
+
+func (c *CipherStream)init(doe DecOrEnc) (err error) {
+	if (doe == Encrypt && c.enc != nil) || (doe == Decrypt && c.dec != nil) {
+		if doe == Encrypt {
+			c.iv_len = 0
+		}
+		return
+	}
+	cipherObj, err := c.info.initCipher(c.key, c.iv, doe)
+
+	if doe == Encrypt {
+		c.enc = cipherObj
+		c.iv_len = len(c.iv)
+	} else if doe == Decrypt {
+		c.dec = cipherObj
+	}
+	return
+}
+
+func (c *CipherStream) encrypt(dst, src []byte) {
+	enc := (c.enc).(cipher.Stream)
+	enc.XORKeyStream(dst, src)
+}
+
+func (c *CipherStream) decrypt(dst, src []byte) {
+	dec := (c.dec).(cipher.Stream)
+	dec.XORKeyStream(dst, src)
+}
+
+func newStream(password string, mi *cipherInfo) (*CipherStream) {
+	key := evpBytesToKey(password, mi.keyLen)
+
+	c_stream := &CipherStream{key: key}
+	c_stream.info = mi
+
+	return c_stream
+}
+
+func initStream(block cipher.Block, err error, key, iv []byte,
+	doe DecOrEnc) (interface{}, error) {
+	if err != nil {
+		Logger.Fields(LogFields{
+			"key": key,
+			"iv": iv,
+			"is_encrypt": doe,
+			"err": err,
+		}).Fatal("initCipher error")
+		return nil, err
+	}
+	if doe == Encrypt {
+		return cipher.NewCFBEncrypter(block, iv), nil
+	} else {
+		return cipher.NewCFBDecrypter(block, iv), nil
+	}
+}
 
 func md5sum(d []byte) []byte {
 	h := md5.New()
@@ -43,31 +107,6 @@ func evpBytesToKey(password string, keyLen int) (key []byte) {
 	return m[:keyLen]
 }
 
-type DecOrEnc int
-
-const (
-	Decrypt DecOrEnc = iota
-	Encrypt
-)
-
-func initCipher(block cipher.Block, err error, key, iv []byte,
-	doe DecOrEnc) (interface{}, error) {
-	if err != nil {
-		Logger.Fields(LogFields{
-			"key": key,
-			"iv": iv,
-			"is_encrypt": doe,
-			"err": err,
-		}).Fatal("initCipher error")
-		return nil, err
-	}
-	if doe == Encrypt {
-		return cipher.NewCFBEncrypter(block, iv), nil
-	} else {
-		return cipher.NewCFBDecrypter(block, iv), nil
-	}
-}
-
 func newAESCFBStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -77,7 +116,7 @@ func newAESCFBStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
 			"err": err,
 		}).Warn("newAESCFBStream error")
 	}
-	return initCipher(block, err, key, iv, doe)
+	return initStream(block, err, key, iv, doe)
 }
 
 func newAESCTRStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
@@ -102,7 +141,7 @@ func newDESStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
 			"err": err,
 		}).Warn("newDESStream error")
 	}
-	return initCipher(block, err, key, iv, doe)
+	return initStream(block, err, key, iv, doe)
 }
 
 func newBlowFishStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
@@ -114,7 +153,7 @@ func newBlowFishStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
 			"err": err,
 		}).Warn("newBlowFishStream error")
 	}
-	return initCipher(block, err, key, iv, doe)
+	return initStream(block, err, key, iv, doe)
 }
 
 func newCast5Stream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
@@ -126,7 +165,7 @@ func newCast5Stream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
 			"err": err,
 		}).Warn("newCast5Stream error")
 	}
-	return initCipher(block, err, key, iv, doe)
+	return initStream(block, err, key, iv, doe)
 }
 
 func newRC4MD5Stream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
@@ -173,6 +212,19 @@ func newChaCha20IETFStream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
 	return c, err
 }
 
+func newChaCha20IETFPoly1305Aead(key, iv[]byte, _ DecOrEnc) (interface{}, error) {
+	c, err := chacha20poly1305.New(key)
+	if err != nil {
+		Logger.Fields(LogFields{
+			"key": key,
+			"iv": iv,
+			"err": err,
+		}).Fatal("newChaCha20IETFPoly1305Aead error")
+	}
+
+	return c, err
+}
+
 type salsaStreamCipher struct {
 	nonce   [8]byte
 	key     [32]byte
@@ -211,126 +263,4 @@ func newSalsa20Stream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
 	copy(c.nonce[:], iv[:8])
 	copy(c.key[:], key[:32])
 	return &c, nil
-}
-
-type cipherInfo struct {
-	method string
-	ctype string
-	keyLen    int
-	ivLen     int
-	initCipher func(key, iv []byte, doe DecOrEnc) (interface{}, error)
-}
-
-var cipherMethod = map[string]*cipherInfo{
-	"aes-128-cfb":   {"aes-128-cfb", "stream",16, 16, newAESCFBStream},
-	"aes-192-cfb":   {"aes-192-cfb", "stream",24, 16, newAESCFBStream},
-	"aes-256-cfb":   {"aes-256-cfb", "stream",32, 16, newAESCFBStream},
-	"aes-128-ctr":   {"aes-128-ctr", "stream",16, 16, newAESCTRStream},
-	"aes-192-ctr":   {"aes-192-ctr", "stream",24, 16, newAESCTRStream},
-	"aes-256-ctr":   {"aes-256-ctr", "stream",32, 16, newAESCTRStream},
-	"des-cfb":       {"des-cfb", "stream",8, 8, newDESStream},
-	"bf-cfb":        {"bf-cfb", "stream",16, 8, newBlowFishStream},
-	"cast5-cfb":     {"cast5-cfb", "stream",16, 8, newCast5Stream},
-	"rc4-md5":       {"rc4-md5", "stream",16, 16, newRC4MD5Stream},
-	"chacha20":      {"chacha20", "stream",32, 8, newChaCha20Stream},
-	"chacha20-ietf": {"chacha20-ietf", "stream",32, 12, newChaCha20IETFStream},
-	"salsa20":       {"salsa20", "stream",32, 8, newSalsa20Stream},
-}
-
-func CheckCipherMethod(method string) error {
-	if method == "" {
-		method = "aes-256-cfb"
-	}
-	_, ok := cipherMethod[method]
-	if !ok {
-		Logger.Fields(LogFields{"method": method}).Error("Unsupported encryption method")
-		return errors.New("Unsupported encryption method: " + method)
-	}
-	return nil
-}
-
-type Cipher struct {
-	enc  interface{}
-	dec  interface{}
-	key  []byte
-	info *cipherInfo
-	iv   []byte
-	iv_len int
-}
-
-// NewCipher creates a cipher that can be used in Dial() etc.
-// Use cipher.Copy() to create a new cipher with the same method and password
-// to avoid the cost of repeated cipher initialization.
-func NewCipher(method, password string) (c *Cipher, err error) {
-	if password == "" {
-		Logger.Fields(LogFields{"password": password}).Error("empty password")
-		return nil, errEmptyPassword
-	}
-	mi, ok := cipherMethod[method]
-	if !ok {
-		Logger.Fields(LogFields{"method": method}).Error("Unsupported encryption method")
-		return nil, errors.New("Unsupported encryption method: " + method)
-	}
-
-	key := evpBytesToKey(password, mi.keyLen)
-
-	c = &Cipher{key: key, info: mi}
-
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
-}
-// Initializes the cipher
-func (c *Cipher) initCipher(doe DecOrEnc) (err error) {
-	if (doe == Encrypt && c.enc != nil) || (doe == Decrypt && c.dec != nil) {
-		if doe == Encrypt {
-			c.iv_len = 0
-		}
-		return
-	}
-	cipherObj, err := c.info.initCipher(c.key, c.iv, doe)
-
-	if doe == Encrypt {
-		c.enc = cipherObj
-		c.iv_len = len(c.iv)
-	} else if doe == Decrypt {
-		c.dec = cipherObj
-	}
-	return
-}
-
-func (c *Cipher) encrypt(dst, src []byte) {
-	if c.info.ctype == "stream" {
-		enc := (c.enc).(cipher.Stream)
-		enc.XORKeyStream(dst, src)
-	}
-}
-
-func (c *Cipher) decrypt(dst, src []byte) {
-	if c.info.ctype == "stream" {
-		dec := (c.dec).(cipher.Stream)
-		dec.XORKeyStream(dst, src)
-	}
-}
-
-// Copy creates a new cipher at it's initial state.
-func (c *Cipher) Copy() *Cipher {
-	// This optimization maybe not necessary. But without this function, we
-	// need to maintain a table cache for newTableCipher and use lock to
-	// protect concurrent access to that cache.
-
-	// AES and DES ciphers does not return specific types, so it's difficult
-	// to create copy. But their initizliation time is less than 4000ns on my
-	// 2.26 GHz Intel Core 2 Duo processor. So no need to worry.
-
-	// Currently, blow-fish and cast5 initialization cost is an order of
-	// maganitude slower than other ciphers. (I'm not sure whether this is
-	// because the current implementation is not highly optimized, or this is
-	// the nature of the algorithm.)
-
-	nc := *c
-	nc.enc = nil
-	nc.dec = nil
-	return &nc
 }
