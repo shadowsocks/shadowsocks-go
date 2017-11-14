@@ -26,19 +26,19 @@ type CipherStream struct {
 	iv_len int
 }
 
-func (c *CipherStream)init(doe DecOrEnc) (err error) {
-	if (doe == Encrypt && c.enc != nil) || (doe == Decrypt && c.dec != nil) {
-		if doe == Encrypt {
+func (c *CipherStream)init() (err error) {
+	if (c.doe == Encrypt && c.enc != nil) || (c.doe == Decrypt && c.dec != nil) {
+		if c.doe == Encrypt {
 			c.iv_len = 0
 		}
 		return
 	}
-	cipherObj, err := c.info.initCipher(c.key, c.iv, doe)
+	cipherObj, err := c.info.initCipher(c.key, c.iv, c.doe)
 
-	if doe == Encrypt {
+	if c.doe == Encrypt {
 		c.enc = cipherObj
 		c.iv_len = len(c.iv)
-	} else if doe == Decrypt {
+	} else if c.doe == Decrypt {
 		c.dec = cipherObj
 	}
 	return
@@ -47,11 +47,13 @@ func (c *CipherStream)init(doe DecOrEnc) (err error) {
 func (c *CipherStream) encrypt(dst, src []byte) {
 	enc := (c.enc).(cipher.Stream)
 	enc.XORKeyStream(dst, src)
+	c.doe = Decrypt
 }
 
 func (c *CipherStream) decrypt(dst, src []byte) {
 	dec := (c.dec).(cipher.Stream)
 	dec.XORKeyStream(dst, src)
+	c.doe = Encrypt
 }
 
 func newStream(password string, mi *cipherInfo) (*CipherStream) {

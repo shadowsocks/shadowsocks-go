@@ -2,7 +2,6 @@ package shadowsocks
 
 import (
 	"errors"
-	"crypto/cipher"
 	"reflect"
 )
 
@@ -22,6 +21,7 @@ type cipherInfo struct {
 }
 
 type Cipher struct {
+	doe DecOrEnc
 	enc  interface{}
 	dec  interface{}
 	key  []byte
@@ -118,40 +118,20 @@ func CopyCipher(c interface{}) interface{} {
 }
 ///////////////////////////////////////////////////////////////////////////////////
 // Initializes the cipher
-func (c *Cipher) init(doe DecOrEnc) (err error) {
-	if (doe == Encrypt && c.enc != nil) || (doe == Decrypt && c.dec != nil) {
-		if doe == Encrypt {
-			c.iv_len = 0
-		}
-		return
-	}
-	cipherObj, err := c.info.initCipher(c.key, c.iv, doe)
-
-	if doe == Encrypt {
-		c.enc = cipherObj
-		c.iv_len = len(c.iv)
-	} else if doe == Decrypt {
-		c.dec = cipherObj
-	}
-	return
-}
-
-func (c *Cipher) encrypt(dst, src []byte) {
-	if c.info.ctype == "stream" {
-		enc := (c.enc).(cipher.Stream)
-		enc.XORKeyStream(dst, src)
-	} else if c.info.ctype == "aead" {
-		//enc := (c.enc).(cipher.AEAD)
-		//enc.XORKeyStream(dst, src)
-	}
-}
-
-func (c *Cipher) decrypt(dst, src []byte) {
-	if c.info.ctype == "stream" {
-		dec := (c.dec).(cipher.Stream)
-		dec.XORKeyStream(dst, src)
-	} else if c.info.ctype == "aead" {
-		//dec := (c.dec).(cipher.AEAD)
-		//dec.XORKeyStream(dst, src)
-	}
-}
+//func (c *Cipher) init() (err error) {
+//	if (c.doe == Encrypt && c.enc != nil) || (c.doe == Decrypt && c.dec != nil) {
+//		if c.doe == Encrypt {
+//			c.iv_len = 0
+//		}
+//		return
+//	}
+//	cipherObj, err := c.info.initCipher(c.key, c.iv, c.doe)
+//
+//	if c.doe == Encrypt {
+//		c.enc = cipherObj
+//		c.iv_len = len(c.iv)
+//	} else if c.doe == Decrypt {
+//		c.dec = cipherObj
+//	}
+//	return
+//}

@@ -10,7 +10,6 @@ type Packet struct {
 	buff []byte
 	hold bool
 
-	ptype DecOrEnc
 	payload []byte
 	payload_len int
 
@@ -39,13 +38,13 @@ type PacketAead struct {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-func newPacketStream(conn *Conn, ptype DecOrEnc) *PacketStream {
+func newPacketStream(conn *Conn, doe DecOrEnc) *PacketStream {
 	packetObj := &PacketStream{}
 
 	packetObj.hold = false
-	packetObj.ptype = ptype
 	packetObj.conn = conn
 	packetObj.cipher = conn.cipher.(*CipherStream)
+	packetObj.cipher.doe = doe
 	packetObj.packet = nil
 	packetObj.buff = conn.buffer.Get()
 
@@ -63,7 +62,7 @@ func (this *PacketStream) initPacket(data []byte) *PacketStream {
 
 func (this *PacketStream) initIV() (err error) {
 	iv := make([]byte, this.cipher.info.ivLen)
-	if this.ptype == Encrypt && this.cipher.enc == nil  {
+	if this.cipher.doe == Encrypt && this.cipher.enc == nil  {
 		if this.cipher.iv == nil {
 			if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 				Logger.Fields(LogFields{
@@ -74,7 +73,7 @@ func (this *PacketStream) initIV() (err error) {
 			}
 			this.cipher.iv = iv
 		}
-	} else if this.ptype == Decrypt && this.cipher.dec == nil {
+	} else if this.cipher.doe == Decrypt && this.cipher.dec == nil {
 		if _, err := io.ReadFull(this.conn.Conn, iv); err != nil {
 			Logger.Fields(LogFields{
 				"iv": iv,
@@ -99,7 +98,7 @@ func (this *PacketStream) setIV() error {
 		return err
 	}
 
-	err := this.cipher.init(this.ptype) // init encrypt with iv generated previous
+	err := this.cipher.init() // init encrypt with iv generated previous
 	if err != nil {
 		return err
 	}
@@ -113,9 +112,9 @@ func (this *PacketStream) setPacket(data []byte) error {
 		return nil
 	}
 
-	if this.ptype == Encrypt {
+	if this.cipher.doe == Encrypt {
 		this.encrypt(data)
-	} else if this.ptype == Decrypt {
+	} else if this.cipher.doe == Decrypt {
 		this.decrypt(data)
 	}
 
