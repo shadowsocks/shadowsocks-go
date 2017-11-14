@@ -38,14 +38,7 @@ func (this *LogType) setFields() *logrus.Entry {
 	return this.logger.WithFields((map[string]interface{})(this.fields))
 }
 
-func (this *LogType) setTab(args ...interface{}) []interface{} {
-	args[0] = "\t" + args[0].(string)
-
-	return args
-}
-
 func (this *LogType) Debug(args ...interface{}) (*LogType) {
-	args = this.setTab(args)
 	this.setFields().Debug(args...)
 
 	return this
