@@ -22,9 +22,6 @@ type Packet struct {
 type PacketStream struct {
 	Packet
 	cipher *CipherStream
-
-	//iv []byte
-	//iv_len int
 }
 
 /*

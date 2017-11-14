@@ -17,17 +17,14 @@ type cipherInfo struct {
 	ctype string
 	keyLen    int
 	ivLen     int
-	initCipher func(key, iv []byte, doe DecOrEnc) (interface{}, error)
+	initCipher func(cipherItem interface{}) (interface{}, error)
 }
 
 type Cipher struct {
 	doe DecOrEnc
 	enc  interface{}
 	dec  interface{}
-	key  []byte
 	info *cipherInfo
-	iv   []byte
-	iv_len int
 }
 
 var cipherMethod = map[string]*cipherInfo{
@@ -112,26 +109,13 @@ func CopyCipher(c interface{}) interface{} {
 		nc.enc = nil
 		nc.dec = nil
 		return &nc
+	} else if reflect.TypeOf(c).String() == "*shadowsocks.CipherAead" {
+		c := c.(*CipherAead)
+		nc := *c
+		nc.enc = nil
+		nc.dec = nil
+		return &nc
 	}
 
 	return nil
 }
-///////////////////////////////////////////////////////////////////////////////////
-// Initializes the cipher
-//func (c *Cipher) init() (err error) {
-//	if (c.doe == Encrypt && c.enc != nil) || (c.doe == Decrypt && c.dec != nil) {
-//		if c.doe == Encrypt {
-//			c.iv_len = 0
-//		}
-//		return
-//	}
-//	cipherObj, err := c.info.initCipher(c.key, c.iv, c.doe)
-//
-//	if c.doe == Encrypt {
-//		c.enc = cipherObj
-//		c.iv_len = len(c.iv)
-//	} else if c.doe == Decrypt {
-//		c.dec = cipherObj
-//	}
-//	return
-//}

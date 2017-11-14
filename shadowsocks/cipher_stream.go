@@ -33,7 +33,7 @@ func (c *CipherStream)init() (err error) {
 		}
 		return
 	}
-	cipherObj, err := c.info.initCipher(c.key, c.iv, c.doe)
+	cipherObj, err := c.info.initCipher(c)
 
 	if c.doe == Encrypt {
 		c.enc = cipherObj
@@ -109,78 +109,84 @@ func evpBytesToKey(password string, keyLen int) (key []byte) {
 	return m[:keyLen]
 }
 
-func newAESCFBStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
-	block, err := aes.NewCipher(key)
+func newAESCFBStream(cipher_item interface{}) (interface{}, error) {
+	item := cipher_item.(*CipherStream)
+	block, err := aes.NewCipher(item.key)
 	if err != nil {
 		Logger.Fields(LogFields{
-			"key": key,
-			"iv": iv,
+			"key": item.key,
+			"iv": item.iv,
 			"err": err,
 		}).Warn("newAESCFBStream error")
 	}
-	return initStream(block, err, key, iv, doe)
+	return initStream(block, err, item.key, item.iv, item.doe)
 }
 
-func newAESCTRStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
-	block, err := aes.NewCipher(key)
+func newAESCTRStream(cipher_item interface{}) (interface{}, error) {
+	item := cipher_item.(*CipherStream)
+	block, err := aes.NewCipher(item.key)
 	if err != nil {
 		Logger.Fields(LogFields{
-			"key": key,
-			"iv": iv,
+			"key": item.key,
+			"iv": item.iv,
 			"err": err,
 		}).Warn("newAESCTRStream error")
 		return nil, err
 	}
-	return cipher.NewCTR(block, iv), nil
+	return cipher.NewCTR(block, item.iv), nil
 }
 
-func newDESStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
-	block, err := des.NewCipher(key)
+func newDESStream(cipher_item interface{}) (interface{}, error) {
+	item := cipher_item.(*CipherStream)
+	block, err := des.NewCipher(item.key)
 	if err != nil {
 		Logger.Fields(LogFields{
-			"key": key,
-			"iv": iv,
+			"key": item.key,
+			"iv": item.iv,
 			"err": err,
 		}).Warn("newDESStream error")
 	}
-	return initStream(block, err, key, iv, doe)
+	return initStream(block, err, item.key, item.iv, item.doe)
 }
 
-func newBlowFishStream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
-	block, err := blowfish.NewCipher(key)
+func newBlowFishStream(cipher_item interface{}) (interface{}, error) {
+	item := cipher_item.(*CipherStream)
+	block, err := blowfish.NewCipher(item.key)
 	if err != nil {
 		Logger.Fields(LogFields{
-			"key": key,
-			"iv": iv,
+			"key": item.key,
+			"iv": item.iv,
 			"err": err,
 		}).Warn("newBlowFishStream error")
 	}
-	return initStream(block, err, key, iv, doe)
+	return initStream(block, err, item.key, item.iv, item.doe)
 }
 
-func newCast5Stream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
-	block, err := cast5.NewCipher(key)
+func newCast5Stream(cipher_item interface{}) (interface{}, error) {
+	item := cipher_item.(*CipherStream)
+	block, err := cast5.NewCipher(item.key)
 	if err != nil {
 		Logger.Fields(LogFields{
-			"key": key,
-			"iv": iv,
+			"key": item.key,
+			"iv": item.iv,
 			"err": err,
 		}).Warn("newCast5Stream error")
 	}
-	return initStream(block, err, key, iv, doe)
+	return initStream(block, err, item.key, item.iv, item.doe)
 }
 
-func newRC4MD5Stream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
+func newRC4MD5Stream(cipher_item interface{}) (interface{}, error) {
+	item := cipher_item.(*CipherStream)
 	h := md5.New()
-	h.Write(key)
-	h.Write(iv)
+	h.Write(item.key)
+	h.Write(item.iv)
 	rc4key := h.Sum(nil)
 
 	c, err := rc4.NewCipher(rc4key)
 	if err != nil {
 		Logger.Fields(LogFields{
-			"key": key,
-			"iv": iv,
+			"key": item.key,
+			"iv": item.iv,
 			"err": err,
 		}).Fatal("newRC4MD5Stream error")
 	}
@@ -188,12 +194,13 @@ func newRC4MD5Stream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
 	return c, err
 }
 
-func newChaCha20Stream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
-	c, err := chacha20.NewCipher(key, iv)
+func newChaCha20Stream(cipher_item interface{}) (interface{}, error) {
+	item := cipher_item.(*CipherStream)
+	c, err := chacha20.NewCipher(item.key, item.iv)
 	if err != nil {
 		Logger.Fields(LogFields{
-			"key": key,
-			"iv": iv,
+			"key": item.key,
+			"iv": item.iv,
 			"err": err,
 		}).Fatal("newChaCha20Stream error")
 	}
@@ -201,12 +208,13 @@ func newChaCha20Stream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
 	return c, err
 }
 
-func newChaCha20IETFStream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
-	c, err := chacha20.NewCipher(key, iv)
+func newChaCha20IETFStream(cipher_item interface{}) (interface{}, error) {
+	item := cipher_item.(*CipherStream)
+	c, err := chacha20.NewCipher(item.key, item.iv)
 	if err != nil {
 		Logger.Fields(LogFields{
-			"key": key,
-			"iv": iv,
+			"key": item.key,
+			"iv": item.iv,
 			"err": err,
 		}).Fatal("newChaCha20IETFStream error")
 	}
@@ -214,12 +222,13 @@ func newChaCha20IETFStream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
 	return c, err
 }
 
-func newChaCha20IETFPoly1305Aead(key, iv[]byte, _ DecOrEnc) (interface{}, error) {
-	c, err := chacha20poly1305.New(key)
+func newChaCha20IETFPoly1305Aead(cipher_item interface{}) (interface{}, error) {
+	item := cipher_item.(*CipherStream)
+	c, err := chacha20poly1305.New(item.key)
 	if err != nil {
 		Logger.Fields(LogFields{
-			"key": key,
-			"iv": iv,
+			"key": item.key,
+			"iv": item.iv,
 			"err": err,
 		}).Fatal("newChaCha20IETFPoly1305Aead error")
 	}
@@ -260,9 +269,10 @@ func (c *salsaStreamCipher) XORKeyStream(dst, src []byte) {
 	c.counter += len(src)
 }
 
-func newSalsa20Stream(key, iv []byte, _ DecOrEnc) (interface{}, error) {
+func newSalsa20Stream(cipher_item interface{}) (interface{}, error) {
+	item := cipher_item.(*CipherStream)
 	var c salsaStreamCipher
-	copy(c.nonce[:], iv[:8])
-	copy(c.key[:], key[:32])
+	copy(c.nonce[:], item.iv[:8])
+	copy(c.key[:], item.key[:32])
 	return &c, nil
 }
