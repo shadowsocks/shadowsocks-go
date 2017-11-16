@@ -64,19 +64,31 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 		reqStart, reqEnd = idIP0, idIP0+lenIPv6
 	case typeDm:
 		if _, err = io.ReadFull(conn, buf[idType+1:idDmLen+1]); err != nil {
+			Logger.Fields(ss.LogFields{
+				"typeDm": typeDm,
+				"buf": buf,
+				"err": err,
+			}).Warn("read domain from connect error")
 			return
 		}
 		reqStart, reqEnd = idDm0, idDm0+int(buf[idDmLen])+lenDmBase
 	default:
 		Logger.Fields(ss.LogFields{
+			"buf": buf,
 			"addrType": addrType,
 			"AddrMask": AddrMask,
-		}).Error("addr type not supported")
+			"addrType&AddrMask": addrType&AddrMask,
+		}).Warn("addr type not supported")
 		err = fmt.Errorf("addr type %d not supported", addrType&AddrMask)
 		return
 	}
 
 	if _, err = io.ReadFull(conn, buf[reqStart:reqEnd]); err != nil {
+		Logger.Fields(ss.LogFields{
+			"buf": buf,
+			"reqStart": reqStart,
+			"reqEnd&AddrMask": reqEnd,
+		}).Warn("read buffer error")
 		return
 	}
 
@@ -110,20 +122,16 @@ func handleConnection(conn *ss.Conn) {
 		// XXX There's no xadd in the atomic package, so it's difficult to log
 		// the message only once with low cost. Also note nextLogConnCnt maybe
 		// added twice for current peak connection number level.
-		Logger.Info("Number of client connections reaches %d\n", nextLogConnCnt)
+		Logger.Infof("Number of client connections reaches %d\n", nextLogConnCnt)
 		nextLogConnCnt += logCntDelta
 	}
 
 	// function arguments are always evaluated, so surround debug statement
 	// with if statement
-	if ss.DebugLog {
-		Logger.Info("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
-	}
+	Logger.Infof("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
 	closed := false
 	defer func() {
-		if ss.DebugLog {
-			Logger.Info("closed pipe %s<->%s\n", conn.RemoteAddr(), host)
-		}
+		Logger.Infof("closed pipe %s<->%s\n", conn.RemoteAddr(), host)
 		connCnt--
 		if !closed {
 			conn.Close()
@@ -136,7 +144,7 @@ func handleConnection(conn *ss.Conn) {
 			"RemoteAddr": conn.RemoteAddr(),
 			"LocalAddr": conn.LocalAddr(),
 			"err": err,
-		}).Error("error getting request")
+		}).Warn("error getting request")
 		closed = true
 		return
 	}
@@ -169,11 +177,9 @@ func handleConnection(conn *ss.Conn) {
 			remote.Close()
 		}
 	}()
-	if ss.DebugLog {
-		Logger.Info("piping %s<->%s", conn.RemoteAddr(), host)
-	}
-	go ss.PipeThenClose(conn, remote)
-	ss.PipeThenClose(remote, conn)
+	Logger.Infof("piping %s<->%s", conn.RemoteAddr(), host)
+	go ss.PipeThenClose(conn, remote, conn.Cipher, "decrypt")
+	ss.PipeThenClose(remote, conn,  conn.Cipher, "encrypt")
 	closed = true
 	return
 }
@@ -253,7 +259,7 @@ func (pm *PasswdManager) updatePortPasswd(port, password string) {
 		if pl.password == password {
 			return
 		}
-		Logger.Warn("closing port %s to update password\n", port)
+		Logger.Warnf("closing port %s to update password\n", port)
 		pl.listener.Close()
 	}
 	// run will add the new port listener to passwdManager.
@@ -292,7 +298,7 @@ func updatePasswd() {
 	}
 	// port password still left in the old config should be closed
 	for port := range oldconfig.PortPassword {
-		Logger.Info("closing port %s as it's deleted\n", port)
+		Logger.Infof("closing port %s as it's deleted\n", port)
 		passwdManager.del(port)
 	}
 	Logger.Info("password updated")
@@ -306,7 +312,7 @@ func waitSignal() {
 			updatePasswd()
 		} else {
 			// is this going to happen?
-			Logger.Warn("caught signal %v, exit", sig)
+			Logger.Warnf("caught signal %v, exit", sig)
 			os.Exit(0)
 		}
 	}
@@ -322,7 +328,7 @@ func run(port, password string) {
 		os.Exit(1)
 	}
 	passwdManager.add(port, password, ln)
-	var cipher *ss.Cipher
+	var cipher interface{}
 	Logger.Fields(ss.LogFields{"port": port}).Info("server listening ...")
 	for {
 		conn, err := ln.Accept()
@@ -344,7 +350,7 @@ func run(port, password string) {
 				continue
 			}
 		}
-		go handleConnection(ss.NewConn(conn, cipher.Copy()))
+		go handleConnection(ss.NewConn(conn, ss.CopyCipher(cipher)))
 	}
 }
 
@@ -382,14 +388,14 @@ func enoughOptions(config *ss.Config) bool {
 func unifyPortPassword(config *ss.Config) (err error) {
 	if len(config.PortPassword) == 0 { // this handles both nil PortPassword and empty one
 		if !enoughOptions(config) {
-			log.Fatal(os.Stderr, "must specify both port and password")
+			ss.Logger.Fatal("must specify both port and password")
 			return errors.New("not enough options")
 		}
 		port := strconv.Itoa(config.ServerPort)
 		config.PortPassword = map[string]string{port: config.Password}
 	} else {
 		if config.Password != "" || config.ServerPort != 0 {
-			log.Fatal(os.Stderr, "given port_password, ignore server_port and password option")
+			ss.Logger.Fatal("given port_password, ignore server_port and password option")
 		}
 	}
 	return
@@ -424,10 +430,7 @@ func main() {
 	var err error
 	config, err = ss.ParseConfig(configFile)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "error reading %s: %v\n", configFile, err)
-			os.Exit(1)
-		}
+		ss.Logger.Errorf("error reading %s: %v\n", configFile, err)
 		config = &cmdConfig
 		ss.UpdateConfig(config, config)
 	} else {
@@ -435,9 +438,14 @@ func main() {
 	}
 	if config.Method == "" {
 		config.Method = "aes-256-cfb"
+		ss.Logger.Warn("use aes-256-cfb method, cause not specify method")
 	}
 	if err = ss.CheckCipherMethod(config.Method); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		ss.Logger.Fields(ss.LogFields{
+			"method": config.Method,
+			"err": err,
+		}).Error("check cipher method error")
 		os.Exit(1)
 	}
 	if err = unifyPortPassword(config); err != nil {

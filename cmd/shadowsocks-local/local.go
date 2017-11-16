@@ -152,7 +152,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 
 type ServerCipher struct {
 	server string
-	cipher *ss.Cipher
+	cipher interface{}
 }
 
 var servers struct {
@@ -195,7 +195,7 @@ func parseServerConfig(config *ss.Config) {
 		n := len(config.ServerPassword)
 		servers.srvCipher = make([]*ServerCipher, n)
 
-		cipherCache := make(map[string]*ss.Cipher)
+		cipherCache := make(map[string]interface{})
 		i := 0
 		for _, serverInfo := range config.ServerPassword {
 			if len(serverInfo) < 2 || len(serverInfo) > 3 {
@@ -235,7 +235,7 @@ func parseServerConfig(config *ss.Config) {
 
 func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn, err error) {
 	se := servers.srvCipher[serverId]
-	remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher.Copy())
+	remote, err = ss.DialWithRawAddr(rawaddr, se.server, ss.CopyCipher(se.cipher))
 	if err != nil {
 		Logger.Fields(ss.LogFields{
 			"rawaddr": rawaddr,
@@ -299,7 +299,7 @@ func handleConnection(conn net.Conn) {
 		Logger.Println("socks handshake:", err)
 		return
 	}
-	rawaddr, addr, err := getRequest(conn)
+	rawaddr, addr, err := getRequest(conn) // get request from local, parse request to raw and host that will be provided to ss server
 	if err != nil {
 		Logger.Println("error getting request:", err)
 		return
@@ -313,7 +313,7 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	remote, err := createServerConn(rawaddr, addr)
+	remote, err := createServerConn(rawaddr, addr) // connect to ss server and send request from local
 	if err != nil {
 		if len(servers.srvCipher) > 1 {
 			Logger.Fields(ss.LogFields{
@@ -330,13 +330,14 @@ func handleConnection(conn net.Conn) {
 		}
 	}()
 
-	go ss.PipeThenClose(conn, remote)
-	ss.PipeThenClose(remote, conn)
+	// pipe between local and ss server
+	go ss.PipeThenClose(conn, remote, remote.Cipher, "encrypt") // encrypt request from local to ss server
+	ss.PipeThenClose(remote, conn, remote.Cipher, "decrypt") // decrypt request result back from ss server to local
 	closed = true
 	Logger.Info("closed connection to", addr)
 }
 
-func run(listenAddr string) {
+func run(listenAddr string) { // listening from local request
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		Logger.Fatal(err)
