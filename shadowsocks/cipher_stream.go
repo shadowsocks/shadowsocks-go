@@ -13,7 +13,6 @@ import (
 	"golang.org/x/crypto/cast5"
 	"golang.org/x/crypto/salsa20/salsa"
 	"github.com/Yawning/chacha20"
-	"github.com/codahale/chacha20poly1305"
 )
 
 var errEmptyPassword = errors.New("empty key")
@@ -21,48 +20,78 @@ var errEmptyPassword = errors.New("empty key")
 type CipherStream struct {
 	Cipher
 
+	Doe DecOrEnc
+	Enc  cipher.Stream
+	Dec  cipher.Stream
+	Info *cipherInfo
+
 	key []byte
 	iv   []byte
-	iv_len int
 }
 
-func (c *CipherStream)init() (err error) {
-	if (c.doe == Encrypt && c.enc != nil) || (c.doe == Decrypt && c.dec != nil) {
-		if c.doe == Encrypt {
-			c.iv_len = 0
-		}
+func (c *CipherStream) Init() (err error) {
+	if (c.Doe == Encrypt && c.Enc != nil) || (c.Doe == Decrypt && c.Dec != nil) {
 		return
 	}
-	cipherObj, err := c.info.initCipher(c)
 
-	if c.doe == Encrypt {
-		c.enc = cipherObj
-		c.iv_len = len(c.iv)
-	} else if c.doe == Decrypt {
-		c.dec = cipherObj
+	c_new, err := c.Info.makeCipher(c)
+
+	if c.Doe == Encrypt {
+		c.Enc = c_new.(cipher.Stream)
+	} else if c.Doe == Decrypt {
+		c.Dec = c_new.(cipher.Stream)
 	}
 	return
 }
 
-func (c *CipherStream) encrypt(dst, src []byte) {
-	enc := (c.enc).(cipher.Stream)
-	enc.XORKeyStream(dst, src)
-	c.doe = Decrypt
+func (c *CipherStream) Pack(b []byte) (data []byte, err error) {
+	p := newPacketStream(c, Encrypt)
+	err = p.initPacket(b)
+	if err != nil {
+		return
+	}
+
+	return p.getPacket(), nil
 }
 
-func (c *CipherStream) decrypt(dst, src []byte) {
-	dec := (c.dec).(cipher.Stream)
-	dec.XORKeyStream(dst, src)
-	c.doe = Encrypt
+func (c *CipherStream) UnPack(b []byte) (data []byte, err error) {
+	p := newPacketStream(c, Decrypt)
+	err = p.initPacket(b)
+	if err != nil {
+		return
+	}
+
+	return p.getPacket(), nil
+}
+
+func (c *CipherStream) Encrypt(dst, src []byte) (error) {
+	c.Enc.XORKeyStream(dst, src)
+	c.Doe = Decrypt
+
+	return nil
+}
+
+func (c *CipherStream) Decrypt(dst, src []byte) (error) {
+	c.Dec.XORKeyStream(dst, src)
+	c.Doe = Encrypt
+
+	return nil
+}
+
+func (c *CipherStream) Copy() (*CipherStream) {
+	nc := *c
+	nc.Enc = nil
+	nc.Dec = nil
+	return &nc
 }
 
 func newStream(password string, mi *cipherInfo) (*CipherStream) {
 	key := evpBytesToKey(password, mi.keyLen)
 
-	c_stream := &CipherStream{key: key}
-	c_stream.info = mi
+	c := &CipherStream{key: key}
+	c.Info = mi
 
-	return c_stream
+	return c
 }
 
 func initStream(block cipher.Block, err error, key, iv []byte,
@@ -119,7 +148,7 @@ func newAESCFBStream(cipher_item interface{}) (interface{}, error) {
 			"err": err,
 		}).Warn("newAESCFBStream error")
 	}
-	return initStream(block, err, item.key, item.iv, item.doe)
+	return initStream(block, err, item.key, item.iv, item.Doe)
 }
 
 func newAESCTRStream(cipher_item interface{}) (interface{}, error) {
@@ -146,7 +175,7 @@ func newDESStream(cipher_item interface{}) (interface{}, error) {
 			"err": err,
 		}).Warn("newDESStream error")
 	}
-	return initStream(block, err, item.key, item.iv, item.doe)
+	return initStream(block, err, item.key, item.iv, item.Doe)
 }
 
 func newBlowFishStream(cipher_item interface{}) (interface{}, error) {
@@ -159,7 +188,7 @@ func newBlowFishStream(cipher_item interface{}) (interface{}, error) {
 			"err": err,
 		}).Warn("newBlowFishStream error")
 	}
-	return initStream(block, err, item.key, item.iv, item.doe)
+	return initStream(block, err, item.key, item.iv, item.Doe)
 }
 
 func newCast5Stream(cipher_item interface{}) (interface{}, error) {
@@ -172,7 +201,7 @@ func newCast5Stream(cipher_item interface{}) (interface{}, error) {
 			"err": err,
 		}).Warn("newCast5Stream error")
 	}
-	return initStream(block, err, item.key, item.iv, item.doe)
+	return initStream(block, err, item.key, item.iv, item.Doe)
 }
 
 func newRC4MD5Stream(cipher_item interface{}) (interface{}, error) {
@@ -217,20 +246,6 @@ func newChaCha20IETFStream(cipher_item interface{}) (interface{}, error) {
 			"iv": item.iv,
 			"err": err,
 		}).Fatal("newChaCha20IETFStream error")
-	}
-
-	return c, err
-}
-
-func newChaCha20IETFPoly1305Aead(cipher_item interface{}) (interface{}, error) {
-	item := cipher_item.(*CipherStream)
-	c, err := chacha20poly1305.New(item.key)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"key": item.key,
-			"iv": item.iv,
-			"err": err,
-		}).Fatal("newChaCha20IETFPoly1305Aead error")
 	}
 
 	return c, err

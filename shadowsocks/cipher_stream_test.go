@@ -9,13 +9,18 @@ import (
 
 const text = "Don't tell me the moon is shining; show me the glint of light on broken glass."
 
-func testCiphter(t *testing.T, c *Cipher, msg string) {
+func testCiphter(t *testing.T, c interface{}, msg string) {
 	n := len(text)
 	cipherBuf := make([]byte, n)
 	originTxt := make([]byte, n)
 
-	c.encrypt(cipherBuf, []byte(text))
-	c.decrypt(originTxt, cipherBuf)
+	if reflect.TypeOf(c).String() == "*shadowsocks.CipherStream" {
+		c.(*CipherStream).encrypt(cipherBuf, []byte(text))
+		c.(*CipherStream).decrypt(originTxt, cipherBuf)
+	} else if reflect.TypeOf(c).String() == "*shadowsocks.CipherAead" {
+		c.(*CipherAead).encrypt(cipherBuf, []byte(text))
+		c.(*CipherAead).decrypt(originTxt, cipherBuf)
+	}
 
 	if string(originTxt) != text {
 		t.Error(msg, "encrypt then decrytp does not get original text")
@@ -35,32 +40,96 @@ func TestEvpBytesToKey(t *testing.T) {
 	// }
 }
 
-func testBlockCipher(t *testing.T, method string) {
-	var cipher *Cipher
-	var err error
+func newIV(iv_len int) (iv []byte, err error) {
+	iv = make([]byte, iv_len)
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		Logger.Fields(LogFields{
+			"err": err,
+		}).Warn("new iv failed")
+		return
+	}
 
-	cipher, err = NewCipher(method, "foobar")
+	return
+}
+
+func newSalt(salt_len int) (salt []byte, err error) {
+	salt = make([]byte, salt_len)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		Logger.Fields(LogFields{
+			"err": err,
+		}).Warn("new salt failed")
+		return
+	}
+
+	return
+}
+
+func testBlockCipher(t *testing.T, method string) {
+	//var cipher interface{}
+	//var err error
+
+	cipher, err := NewCipher(method, "foobar")
 	if err != nil {
 		t.Fatal(method, "NewCipher:", err)
 	}
-	cipherCopy := cipher.Copy()
-	iv, err := cipher.initEncrypt()
-	if err != nil {
-		t.Error(method, "initEncrypt:", err)
-	}
-	if err = cipher.initDecrypt(iv); err != nil {
-		t.Error(method, "initDecrypt:", err)
-	}
-	testCiphter(t, cipher, method)
+	cipherCopy := CopyCipher(cipher)
+	if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
+		cipher.(*CipherStream).doe = Encrypt
+		cipher.(*CipherStream).iv, err = newIV(cipher.(*CipherStream).info.ivLen)
+		if err != nil {
+			t.Error(method, "newIV:", err)
+		}
+		cipher.(*CipherStream).init()
+		if err != nil {
+			t.Error(method, "init for encrypt:", err)
+		}
 
-	iv, err = cipherCopy.initEncrypt()
-	if err != nil {
-		t.Error(method, "copy initEncrypt:", err)
+		cipher.(*CipherStream).doe = Decrypt
+		if err = cipher.(*CipherStream).init(); err != nil {
+			t.Error(method, "init for decrypt:", err)
+		}
+		testCiphter(t, cipher, method)
+
+		cipherCopy.(*CipherStream).doe = Encrypt
+		cipherCopy.(*CipherStream).iv, err = newIV(cipher.(*CipherStream).info.ivLen)
+		err = cipherCopy.(*CipherStream).init()
+		if err != nil {
+			t.Error(method, "copy init for encrypt:", err)
+		}
+		cipherCopy.(*CipherStream).doe = Decrypt
+		if err = cipherCopy.(*CipherStream).init(); err != nil {
+			t.Error(method, "copy init for decrypt:", err)
+		}
+		testCiphter(t, cipherCopy, method+" copy")
+	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
+		cipher.(*CipherAead).doe = Encrypt
+		cipher.(*CipherAead).salt, err = newIV(cipher.(*CipherStream).info.ivLen)
+		if err != nil {
+			t.Error(method, "newIV:", err)
+		}
+		cipher.(*CipherAead).init()
+		if err != nil {
+			t.Error(method, "init for encrypt:", err)
+		}
+
+		cipher.(*CipherAead).doe = Decrypt
+		if err = cipher.(*CipherStream).init(); err != nil {
+			t.Error(method, "init for decrypt:", err)
+		}
+		testCiphter(t, cipher, method)
+
+		cipherCopy.(*CipherAead).doe = Encrypt
+		cipherCopy.(*CipherAead).salt, err = newIV(cipher.(*CipherStream).info.ivLen)
+		err = cipherCopy.(*CipherAead).init()
+		if err != nil {
+			t.Error(method, "copy init for encrypt:", err)
+		}
+		cipherCopy.(*CipherAead).doe = Decrypt
+		if err = cipherCopy.(*CipherAead).init(); err != nil {
+			t.Error(method, "copy init for decrypt:", err)
+		}
+		testCiphter(t, cipherCopy, method+" copy")
 	}
-	if err = cipherCopy.initDecrypt(iv); err != nil {
-		t.Error(method, "copy initDecrypt:", err)
-	}
-	testCiphter(t, cipherCopy, method+" copy")
 }
 
 func TestAES128CFB(t *testing.T) {
@@ -117,10 +186,20 @@ func init() {
 
 func benchmarkCipherInit(b *testing.B, method string) {
 	ci := cipherMethod[method]
-	key := cipherKey[:ci.keyLen]
-	buf := make([]byte, ci.ivLen)
-	for i := 0; i < b.N; i++ {
-		ci.newStream(key, buf, Encrypt)
+
+	if reflect.TypeOf(ci).String() == "*shadowsocks.CipherStream" {
+		key := cipherKey[:ci.keyLen]
+		buf := make([]byte, ci.ivLen)
+		for i := 0; i < b.N; i++ {
+			ci.(*CipherStream).(key, buf, Encrypt)
+		}
+	} else if reflect.TypeOf(ci).String() == "*shadowsocks.CipherAead" {
+
+		key := cipherKey[:ci.keyLen]
+		buf := make([]byte, ci.ivLen)
+		for i := 0; i < b.N; i++ {
+			ci.(*CipherStream).newStream(key, buf, Encrypt)
+		}
 	}
 }
 

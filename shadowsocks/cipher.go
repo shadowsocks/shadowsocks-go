@@ -17,14 +17,20 @@ type cipherInfo struct {
 	ctype string
 	keyLen    int
 	ivLen     int
-	initCipher func(cipherItem interface{}) (interface{}, error)
+	makeCipher func(info interface{}) (interface{}, error)
 }
 
-type Cipher struct {
-	doe DecOrEnc
-	enc  interface{}
-	dec  interface{}
-	info *cipherInfo
+//type Cipher struct {
+//	Doe DecOrEnc
+//	Enc  interface{}
+//	Dec  interface{}
+//	Info *cipherInfo
+//}
+type Cipher interface {
+	Encrypt(dst, src []byte) (error)
+	Decrypt(dst, src []byte) (error)
+	Copy() (error)
+	Init(info *cipherInfo) (error)
 }
 
 var cipherMethod = map[string]*cipherInfo{
@@ -40,7 +46,7 @@ var cipherMethod = map[string]*cipherInfo{
 	"rc4-md5":       {"rc4-md5", "stream",16, 16, newRC4MD5Stream},
 	"chacha20":      {"chacha20", "stream",32, 8, newChaCha20Stream},
 	"chacha20-ietf": {"chacha20-ietf", "stream",32, 12, newChaCha20IETFStream},
-	"chacha20-ietf-poly1305": {"chacha20-ietf-poly1305", "aead",32, 12, newChaCha20IETFPoly1305Aead},
+	"chacha20-ietf-poly1305": {"chacha20-ietf-poly1305", "aead",32, 32, newChaCha20IETFPoly1305Aead},
 	"salsa20":       {"salsa20", "stream",32, 8, newSalsa20Stream},
 }
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -78,13 +84,13 @@ func NewCipher(method, password string) (c interface{}, err error) {
 	if mi.ctype == "stream" {
 		c = newStream(password, mi)
 	} else if mi.ctype == "aead" {
-
+		c = newAead(password, mi)
 	}
 
 	return c, nil
 }
 
-// Copy creates a new cipher at it's initial state.
+//// Copy creates a new cipher at it's initial state.
 func CopyCipher(c interface{}) interface{} {
 
 	// This optimization maybe not necessary. But without this function, we
@@ -100,20 +106,17 @@ func CopyCipher(c interface{}) interface{} {
 	// because the current implementation is not highly optimized, or this is
 	// the nature of the algorithm.)
 
-	Logger.Fields(LogFields{
-		"type": reflect.TypeOf(c).String(),
-	}).Info("Checking cipher type")
 	if reflect.TypeOf(c).String() == "*shadowsocks.CipherStream" {
 		c := c.(*CipherStream)
 		nc := *c
-		nc.enc = nil
-		nc.dec = nil
+		nc.Enc = nil
+		nc.Dec = nil
 		return &nc
 	} else if reflect.TypeOf(c).String() == "*shadowsocks.CipherAead" {
 		c := c.(*CipherAead)
 		nc := *c
-		nc.enc = nil
-		nc.dec = nil
+		nc.Enc = nil
+		nc.Dec = nil
 		return &nc
 	}
 

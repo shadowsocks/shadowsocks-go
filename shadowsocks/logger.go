@@ -40,54 +40,98 @@ func (this *LogType) setFields() *logrus.Entry {
 
 func (this *LogType) Debug(args ...interface{}) (*LogType) {
 	this.setFields().Debug(args...)
+	this.fields = nil
+
+	return this
+}
+
+func (this *LogType) Debugf(format string, args ...interface{}) (*LogType) {
+	this.setFields().Debugf(format, args...)
+	this.fields = nil
 
 	return this
 }
 
 func (this *LogType) Info(args ...interface{}) (*LogType) {
 	this.setFields().Info(args...)
+	this.fields = nil
+
+	return this
+}
+
+func (this *LogType) Infof(format string, args ...interface{}) (*LogType) {
+	this.setFields().Infof(format, args...)
+	this.fields = nil
 
 	return this
 }
 
 func (this *LogType) Warn(args ...interface{}) (*LogType) {
 	this.setFields().Warn(args...)
+	this.fields = nil
+
+	return this
+}
+
+func (this *LogType) Warnf(format string, args ...interface{}) (*LogType) {
+	this.setFields().Warnf(format, args...)
+	this.fields = nil
 
 	return this
 }
 
 func (this *LogType) Error(args ...interface{}) (*LogType) {
 	this.setFields().Error(args...)
+	this.fields = nil
+
+	return this
+}
+
+func (this *LogType) Errorf(format string, args ...interface{}) (*LogType) {
+	this.setFields().Errorf(format, args...)
+	this.fields = nil
 
 	return this
 }
 
 func (this *LogType) Fatal(args ...interface{}) (*LogType) {
 	this.setFields().Fatal(args...)
+	this.fields = nil
 
 	return this
 }
 
 func (this *LogType) Fatalf(format string, args ...interface{}) (*LogType) {
 	this.setFields().Fatalf(format, args...)
+	this.fields = nil
 
 	return this
 }
 
 func (this *LogType) Panic(args ...interface{}) (*LogType) {
 	this.setFields().Panic(args...)
+	this.fields = nil
+
+	return this
+}
+
+func (this *LogType) Panicf(format string, args ...interface{}) (*LogType) {
+	this.setFields().Panicf(format, args...)
+	this.fields = nil
 
 	return this
 }
 
 func (this *LogType) Printf(format string, args ...interface{}) (*LogType) {
 	this.setFields().Printf(format, args...)
+	this.fields = nil
 
 	return this
 }
 
 func (this *LogType) Println(args ...interface{}) (*LogType) {
 	this.setFields().Println(args...)
+	this.fields = nil
 
 	return this
 }

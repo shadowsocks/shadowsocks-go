@@ -8,7 +8,7 @@ import (
 
 type Conn struct {
 	net.Conn
-	cipher interface{}
+	Cipher interface{}
 	buffer *LeakyBufType
 }
 
@@ -16,7 +16,7 @@ func NewConn(c net.Conn, cipher interface{}) *Conn {
 	conn := &Conn{
 		Conn:     c,
 		buffer: leakyBuf,
-		cipher: cipher,
+		Cipher: cipher,
 	}
 	return conn
 }
@@ -68,7 +68,7 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher interface{}) (c *Conn
 	}
 	c = NewConn(conn, cipher)
 
-	if _, err = c.write(rawaddr); err != nil {
+	if _, err = c.Write(rawaddr); err != nil {
 		Logger.Fields(LogFields{
 			"rawaddr": rawaddr,
 			"err": err,
@@ -90,39 +90,4 @@ func Dial(addr, server string, cipher interface{}) (c *Conn, err error) {
 		return
 	}
 	return DialWithRawAddr(ra, server, cipher)
-}
-
-func (c *Conn) Read(b []byte) (n int, err error) {
-	p := newPacketStream(c, Decrypt)
-	p.initPacket(b)
-	data, err := p.getPacket()
-	n = len(data)
-	return
-}
-
-func (c *Conn) Write(b []byte) (n int, err error) {
-	nn := len(b)
-	headerLen := len(b) - nn
-
-	n, err = c.write(b)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"b": b,
-			"err": err,
-		}).Warn("shadowsocks: write data to socket error")
-	}
-	// Make sure <= 0 <= len(b), where b is the slice passed in.
-	if n >= headerLen {
-		n -= headerLen
-	}
-	return
-}
-
-func (c *Conn) write(b []byte) (n int, err error) {
-	p := newPacketStream(c, Encrypt)
-	p.initPacket(b)
-	data, err := p.getPacket()
-	n, err = c.Conn.Write(data)
-
-	return
 }
