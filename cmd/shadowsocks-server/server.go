@@ -17,6 +17,8 @@ import (
 
 	ss "github.com/qunxyz/shadowsocks-go/shadowsocks"
 	"log"
+	"reflect"
+	"bytes"
 )
 
 const (
@@ -45,9 +47,11 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 	// buf size should at least have the same size with the largest possible
 	// request size (when addrType is 3, domain name has at most 256 bytes)
 	// 1(addrType) + 1(lenByte) + 255(max length address) + 2(port) + 10(hmac-sha1)
-	buf := make([]byte, 269)
+	var n int
+	var data []byte
+	buf := make([]byte, 2048)
 	// read till we get possible domain length field
-	if _, err = io.ReadFull(conn, buf[:idType+1]); err != nil {
+	if n, err = conn.Read(buf); err != nil {
 		Logger.Fields(ss.LogFields{
 			"buf": string(buf),
 			"err": err,
@@ -55,26 +59,33 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 		return
 	}
 
-	var reqStart, reqEnd int
-	addrType := buf[idType]
+	cipher := conn.Cipher
+
+	if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
+		data, err = cipher.(*ss.CipherStream).UnPack(buf[0:n])
+	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
+		data, err = cipher.(*ss.CipherAead).UnPack(buf[0:n])
+	}
+	if _, err = io.ReadFull(bytes.NewReader(data), data[:idType+1]); err != nil {
+		Logger.Fields(ss.LogFields{
+			"data": string(data),
+			"err": err,
+		}).Warn("Read data error")
+		return
+	}
+
+	var reqEnd int
+	addrType := data[idType]
 	switch addrType & AddrMask {
 	case typeIPv4:
-		reqStart, reqEnd = idIP0, idIP0+lenIPv4
+		reqEnd = idIP0+lenIPv4
 	case typeIPv6:
-		reqStart, reqEnd = idIP0, idIP0+lenIPv6
+		reqEnd = idIP0+lenIPv6
 	case typeDm:
-		if _, err = io.ReadFull(conn, buf[idType+1:idDmLen+1]); err != nil {
-			Logger.Fields(ss.LogFields{
-				"typeDm": typeDm,
-				"buf": buf,
-				"err": err,
-			}).Warn("read domain from connect error")
-			return
-		}
-		reqStart, reqEnd = idDm0, idDm0+int(buf[idDmLen])+lenDmBase
+		reqEnd = idDm0+int(data[idDmLen])+lenDmBase
 	default:
 		Logger.Fields(ss.LogFields{
-			"buf": buf,
+			"data": data,
 			"addrType": addrType,
 			"AddrMask": AddrMask,
 			"addrType&AddrMask": addrType&AddrMask,
@@ -83,28 +94,19 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 		return
 	}
 
-	if _, err = io.ReadFull(conn, buf[reqStart:reqEnd]); err != nil {
-		Logger.Fields(ss.LogFields{
-			"buf": buf,
-			"reqStart": reqStart,
-			"reqEnd&AddrMask": reqEnd,
-		}).Warn("read buffer error")
-		return
-	}
-
 	// Return string for typeIP is not most efficient, but browsers (Chrome,
 	// Safari, Firefox) all seems using typeDm exclusively. So this is not a
 	// big problem.
 	switch addrType & AddrMask {
 	case typeIPv4:
-		host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
+		host = net.IP(data[idIP0 : idIP0+net.IPv4len]).String()
 	case typeIPv6:
-		host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
+		host = net.IP(data[idIP0 : idIP0+net.IPv6len]).String()
 	case typeDm:
-		host = string(buf[idDm0 : idDm0+int(buf[idDmLen])])
+		host = string(data[idDm0 : idDm0+int(data[idDmLen])])
 	}
 	// parse port
-	port := binary.BigEndian.Uint16(buf[reqEnd-2 : reqEnd])
+	port := binary.BigEndian.Uint16(data[reqEnd-2 : reqEnd])
 	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 	return
 }
