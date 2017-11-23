@@ -21,6 +21,9 @@ type Packet struct {
 type PacketStream struct {
 	Packet
 	cipher *CipherStream
+
+	enc_iv []byte
+	dec_iv []byte
 }
 
 /*
@@ -62,7 +65,7 @@ func (this *PacketStream) initPacket(data []byte) (err error) {
 func (this *PacketStream) initIV() (err error) {
 	iv := make([]byte, this.cipher.Info.ivLen)
 	if this.cipher.Doe == Encrypt && this.cipher.Enc == nil  {
-		if this.cipher.iv == nil {
+		if this.enc_iv == nil {
 			if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 				Logger.Fields(LogFields{
 					"c.cipher.info": this.cipher.Info,
@@ -70,7 +73,7 @@ func (this *PacketStream) initIV() (err error) {
 				}).Warn("new iv failed")
 				return err
 			}
-			this.cipher.iv = iv
+			this.enc_iv = iv
 		}
 	} else if this.cipher.Doe == Decrypt && this.cipher.Dec == nil {
 		if _, err := io.ReadFull(bytes.NewReader(this.data), iv); err != nil {
@@ -80,13 +83,13 @@ func (this *PacketStream) initIV() (err error) {
 			}).Warn("shadowsocks: read iv from connect error")
 			return err
 		}
-		if len(this.cipher.iv) != 0 {
+		if len(this.dec_iv) != 0 {
 			Logger.Fields(LogFields{
-				"c.cipher.iv": this.cipher.iv,
+				"c.cipher.iv": this.dec_iv,
 			}).Warn("shadowsocks: no need to update iv")
 			return nil
 		}
-		this.cipher.iv = iv
+		this.dec_iv = iv
 	}
 
 	return nil
@@ -95,6 +98,12 @@ func (this *PacketStream) initIV() (err error) {
 func (this *PacketStream) setIV() error {
 	if err := this.initIV(); err != nil {// generating a new iv
 		return err
+	}
+
+	if this.cipher.Doe == Encrypt {
+		this.cipher.iv = this.enc_iv
+	} else if this.cipher.Doe == Decrypt {
+		this.cipher.iv = this.dec_iv
 	}
 
 	err := this.cipher.Init() // init encrypt with iv generated previous

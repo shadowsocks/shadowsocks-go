@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"net"
 	"strconv"
+	"reflect"
 )
 
 type Conn struct {
@@ -18,6 +19,7 @@ func NewConn(c net.Conn, cipher interface{}) *Conn {
 		buffer: leakyBuf,
 		Cipher: cipher,
 	}
+
 	return conn
 }
 
@@ -68,9 +70,18 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher interface{}) (c *Conn
 	}
 	c = NewConn(conn, cipher)
 
-	if _, err = c.Write(rawaddr); err != nil {
+	var data []byte
+
+	if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
+		data, err = cipher.(*CipherStream).Pack(rawaddr)
+	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
+		data, err = cipher.(*CipherAead).Pack(rawaddr)
+	}
+
+	if _, err = c.Write(data); err != nil {
 		Logger.Fields(LogFields{
-			"rawaddr": rawaddr,
+			"data": data,
+			"data_str": string(data),
 			"err": err,
 		}).Warn("shadowsocks: Writing rawaddr")
 		c.Close()
