@@ -13,6 +13,8 @@ import (
 	"golang.org/x/crypto/cast5"
 	"golang.org/x/crypto/salsa20/salsa"
 	"github.com/Yawning/chacha20"
+	"io"
+	"crypto/rand"
 )
 
 var errEmptyPassword = errors.New("empty key")
@@ -29,12 +31,44 @@ type CipherStream struct {
 	iv   []byte
 }
 
-func (c *CipherStream) Init() (err error) {
-	if (c.Doe == Encrypt && c.Enc != nil) || (c.Doe == Decrypt && c.Dec != nil) {
+func (c *CipherStream) newIV() (err error) {
+	iv := make([]byte, c.Info.ivLen)
+	if _, err = io.ReadFull(rand.Reader, iv); err != nil {
+		Logger.Fields(LogFields{
+			"err": err,
+		}).Warn("new iv failed")
 		return
 	}
+	c.iv = iv
+	return
+}
+
+func (c *CipherStream) Init(iv []byte, doe DecOrEnc) (err error) {
+	c.Doe = doe
+
+	if iv != nil {
+		c.iv = iv
+	} else if c.iv == nil {
+		err = c.newIV()
+		if err != nil {
+			return err
+		}
+	}
+
+	var info [2]string
+	info[Decrypt] = "Decrypt"
+	info[Encrypt] = "Encrypt"
+
+	Logger.Fields(LogFields{
+		"iv": iv,
+		"c.iv": c.iv,
+		"doe": info[c.Doe],
+	}).Info("Checking iv info")
 
 	c_new, err := c.Info.makeCipher(c)
+	if err != nil {
+		return err
+	}
 
 	if c.Doe == Encrypt {
 		c.Enc = c_new.(cipher.Stream)
@@ -44,24 +78,12 @@ func (c *CipherStream) Init() (err error) {
 	return
 }
 
-func (c *CipherStream) Pack(b []byte) (data []byte, err error) {
-	p := newPacketStream(c, Encrypt)
-	err = p.initPacket(b)
-	if err != nil {
-		return
-	}
-
-	return p.getPacket(), nil
+func (c *CipherStream) IV() []byte {
+	return c.iv
 }
 
-func (c *CipherStream) UnPack(b []byte) (data []byte, err error) {
-	p := newPacketStream(c, Decrypt)
-	err = p.initPacket(b)
-	if err != nil {
-		return
-	}
-
-	return p.getPacket(), nil
+func (c *CipherStream) IVSize() int {
+	return c.Info.ivLen
 }
 
 func (c *CipherStream) Encrypt(dst, src []byte) (error) {
@@ -88,8 +110,10 @@ func (c *CipherStream) Copy() (*CipherStream) {
 func newStream(password string, mi *cipherInfo) (*CipherStream) {
 	key := evpBytesToKey(password, mi.keyLen)
 
-	c := &CipherStream{key: key}
+	c := new(CipherStream)
+	c.key = key
 	c.Info = mi
+	c.newIV()
 
 	return c
 }

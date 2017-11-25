@@ -2,14 +2,14 @@ package shadowsocks
 
 import (
 	"net"
-	"reflect"
 )
 
 type PipeAead struct {
 	Pipe
+	cipher *CipherAead
 }
 
-func (p *PipeAead) Pack(src, dst net.Conn, cipher interface{}) {
+func (p *PipeAead) Pack(src, dst net.Conn) {
 	defer dst.Close()
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
@@ -28,11 +28,7 @@ func (p *PipeAead) Pack(src, dst net.Conn, cipher interface{}) {
 				"buf": buf[0:n],
 			}).Info("prepare sending request to ss server")
 
-			if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
-				data, err = cipher.(*CipherStream).Pack(buf[0:n])
-			} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
-				data, err = cipher.(*CipherAead).Pack(buf[0:n])
-			}
+			data, err = p.cipher.Pack(buf[0:n])
 
 			if err != nil {
 				Logger.Fields(LogFields{
@@ -82,7 +78,7 @@ func (p *PipeAead) Pack(src, dst net.Conn, cipher interface{}) {
 	}
 }
 
-func (p *PipeAead) UnPack(src, dst net.Conn, cipher interface{}) {
+func (p *PipeAead) UnPack(src, dst net.Conn) {
 	defer dst.Close()
 	buf := leakyBuf.Get()
 	defer leakyBuf.Put(buf)
@@ -101,11 +97,8 @@ func (p *PipeAead) UnPack(src, dst net.Conn, cipher interface{}) {
 				"buf": buf[0:n],
 			}).Info("prepare sending request result to local")
 
-			if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
-				data, err = cipher.(*CipherStream).UnPack(buf[0:n])
-			} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
-				data, err = cipher.(*CipherAead).UnPack(buf[0:n])
-			}
+			data, err = p.cipher.UnPack(buf[0:n])
+
 			if err != nil {
 				Logger.Fields(LogFields{
 					"data_len": len(data),

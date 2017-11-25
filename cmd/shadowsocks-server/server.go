@@ -62,7 +62,35 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 	cipher := conn.Cipher
 
 	if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
-		data, err = cipher.(*ss.CipherStream).UnPack(buf[0:n])
+		crypto := cipher.(*ss.CipherStream)
+		iv_len := crypto.IVSize()
+		iv := make([]byte, iv_len)
+		if _, err = io.ReadFull(bytes.NewReader(buf[0:n]), iv); err != nil {
+			Logger.Fields(ss.LogFields{
+				"iv": iv,
+				"err": err,
+			}).Warn("read iv from connect error")
+			return
+		}
+
+		err = crypto.Init(iv, ss.Decrypt)
+		if err != nil {
+			Logger.Fields(ss.LogFields{
+				"err": err,
+			}).Warn("decrypt init error")
+			return
+		}
+
+		data = make([]byte, n)
+		copy(data, iv)
+		err = crypto.Decrypt(data, buf[iv_len:n])
+		if err != nil {
+			Logger.Fields(ss.LogFields{
+				"data": buf[iv_len:n],
+				"err": err,
+			}).Warn("decrypt addr error")
+			return
+		}
 	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
 		data, err = cipher.(*ss.CipherAead).UnPack(buf[0:n])
 	}
@@ -181,7 +209,17 @@ func handleConnection(conn *ss.Conn) {
 	}()
 	Logger.Infof("piping %s<->%s", conn.RemoteAddr(), host)
 
-	ss.PipeHandling(remote, conn, conn.Cipher)
+	if reflect.TypeOf(conn.Cipher).String() == "*shadowsocks.CipherStream" {
+		p := &ss.PipeStream{Cipher: conn.Cipher.(*ss.CipherStream)}
+		go p.Pack(remote, conn)
+		p.UnPack(conn, remote)
+	} else if reflect.TypeOf(conn.Cipher).String() == "*shadowsocks.CipherAead" {
+		//p := new(PipeAead)
+		//p.cipher = cipher.(*CipherAead)
+		//go p.Pack(local, remote)
+		//p.UnPack(remote, local)
+	}
+	//ss.PipeHandling(remote, conn, conn.Cipher)
 	//if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
 	//	pipe :=
 	//	go ss.PipeDecryptStream(conn, remote, conn.Cipher)

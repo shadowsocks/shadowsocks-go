@@ -75,11 +75,6 @@ func NewCipher(method, password string) (c interface{}, err error) {
 		Logger.Fields(LogFields{"method": method}).Error("Unsupported encryption method")
 		return nil, errors.New("Unsupported encryption method: " + method)
 	}
-	Logger.Fields(LogFields{
-		"method": method,
-		"mi": mi,
-		"ok": ok,
-	}).Info("Checking cipher info")
 
 	if mi.ctype == "stream" {
 		c = newStream(password, mi)
