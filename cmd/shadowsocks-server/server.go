@@ -180,8 +180,8 @@ func handleConnection(conn *ss.Conn) {
 		}
 	}()
 	Logger.Infof("piping %s<->%s", conn.RemoteAddr(), host)
-	go ss.PipeThenClose(conn, remote, conn.Cipher, "decrypt")
-	ss.PipeThenClose(remote, conn,  conn.Cipher, "encrypt")
+	go ss.PipeDecrypt(conn, remote, conn.Cipher)
+	ss.PipeEncrypt(remote, conn,  conn.Cipher)
 	closed = true
 	return
 }
