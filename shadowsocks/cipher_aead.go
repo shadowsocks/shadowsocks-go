@@ -8,6 +8,7 @@ import (
 	"io"
 	"crypto/md5"
 	"errors"
+	"crypto/rand"
 )
 
 type CipherAead struct {
@@ -18,11 +19,24 @@ type CipherAead struct {
 	Dec  cipher.AEAD
 	Info *cipherInfo
 
+	iv []byte
 	key []byte
 	subkey []byte
 	salt   []byte
 	salt_len int
 	Payload []byte
+}
+
+func (c *CipherAead) newIV() (err error) {
+	iv := make([]byte, c.Info.ivLen)
+	if _, err = io.ReadFull(rand.Reader, iv); err != nil {
+		Logger.Fields(LogFields{
+			"err": err,
+		}).Warn("new iv failed")
+		return
+	}
+	c.iv = iv
+	return
 }
 
 func hkdfSHA1(secret, salt, info, outkey []byte) {
@@ -61,13 +75,16 @@ func newAead(password string, mi *cipherInfo) (*CipherAead) {
 }
 ////////////////////////////////////////////////////////////////////////////
 
-func (c *CipherAead) Init() (err error) {
-	if (c.Doe == Encrypt && c.Enc != nil) || (c.Doe == Decrypt && c.Dec != nil) {
-		c.salt_len = len(c.salt)
-		if c.Doe == Encrypt {
-			c.salt_len = 0
+func (c *CipherAead) Init(iv []byte, doe DecOrEnc) (err error) {
+	c.Doe = doe
+
+	if iv != nil {
+		c.iv = iv
+	} else if c.iv == nil {
+		err = c.newIV()
+		if err != nil {
+			return err
 		}
-		return
 	}
 
 	subkey := make([]byte, len(c.key))
@@ -83,34 +100,6 @@ func (c *CipherAead) Init() (err error) {
 		c.Dec = *c_new.(*cipher.AEAD)
 	}
 	return
-}
-
-func (c *CipherAead) Pack(b []byte) (data []byte, err error) {
-	p := newPacketAead(c, Encrypt)
-	err = p.initPacket(b)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"b": b,
-			"err": err,
-		}).Warn("encrypt error")
-		return
-	}
-
-	return p.getPacket(), nil
-}
-
-func (c *CipherAead) UnPack(b []byte) (data []byte, err error) {
-	p := newPacketAead(c, Decrypt)
-	err = p.initPacket(b)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"b": b,
-			"err": err,
-		}).Warn("decrypt error")
-		return
-	}
-
-	return p.getPacket(), nil
 }
 
 func (c *CipherAead) Encrypt(dst, src []byte) error {

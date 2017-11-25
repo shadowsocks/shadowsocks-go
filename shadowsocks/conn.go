@@ -76,7 +76,10 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher interface{}) (c *Conn
 		p.Init(c, rawaddr, Encrypt)
 		p.Pack()
 	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
-		//data, err := cipher.(*CipherAead).Pack(rawaddr)
+		p := new(PacketAead)
+		p.Cipher = cipher.(*CipherAead)
+		p.Init(c, rawaddr, Encrypt)
+		p.Pack()
 	}
 
 	return

@@ -69,7 +69,12 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 		p.UnPack()
 		data = b.Bytes()
 	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
-		data, err = cipher.(*ss.CipherAead).UnPack(buf[0:n])
+		b := bytes.NewBuffer(nil)
+		p := new(ss.PacketAead)
+		p.Cipher = cipher.(*ss.CipherAead)
+		p.Init(b, buf[0:n], ss.Decrypt)
+		p.UnPack()
+		data = b.Bytes()
 	}
 	if _, err = io.ReadFull(bytes.NewReader(data), data[:idType+1]); err != nil {
 		Logger.Fields(ss.LogFields{

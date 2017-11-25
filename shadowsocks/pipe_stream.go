@@ -2,8 +2,6 @@ package shadowsocks
 
 import (
 	"net"
-	"io"
-	"bytes"
 	"errors"
 )
 
@@ -27,19 +25,6 @@ func (this *PipeStream) Init(c net.Conn, buf []byte) (err error) {
 	}
 
 	err = errors.New("no data from connection")
-
-	return
-}
-
-func (this *PipeStream) getIV() (iv []byte, err error) {
-	iv = make([]byte, this.Cipher.Info.ivLen)
-	if _, err = io.ReadFull(bytes.NewReader(this.data), iv); err != nil {
-		Logger.Fields(LogFields{
-			"iv": iv,
-			"err": err,
-		}).Warn("shadowsocks: read iv from connect error")
-		return
-	}
 
 	return
 }

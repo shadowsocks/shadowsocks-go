@@ -339,10 +339,9 @@ func handleConnection(conn net.Conn) {
 		go p.Pack(conn, remote)
 		p.UnPack(remote, conn)
 	} else if reflect.TypeOf(remote.Cipher).String() == "*shadowsocks.CipherAead" {
-		//p := new(PipeAead)
-		//p.cipher = cipher.(*CipherAead)
-		//go p.Pack(local, remote)
-		//p.UnPack(remote, local)
+		p := &ss.PipeAead{Cipher: remote.Cipher.(*ss.CipherAead)}
+		go p.Pack(conn, remote)
+		p.UnPack(remote, conn)
 	}
 	//ss.PipeHandling(conn, remote, remote.Cipher)
 	//go ss.PipeEncrypt(conn, remote, remote.Cipher) // encrypt request from local to ss server
