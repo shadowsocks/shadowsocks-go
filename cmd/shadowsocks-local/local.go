@@ -331,8 +331,10 @@ func handleConnection(conn net.Conn) {
 	}()
 
 	// pipe between local and ss server
-	go ss.PipeEncrypt(conn, remote, remote.Cipher) // encrypt request from local to ss server
-	ss.PipeDecrypt(remote, conn, remote.Cipher) // decrypt request result back from ss server to local
+
+	ss.PipeHandling(conn, remote, remote.Cipher)
+	//go ss.PipeEncrypt(conn, remote, remote.Cipher) // encrypt request from local to ss server
+	//ss.PipeDecrypt(remote, conn, remote.Cipher) // decrypt request result back from ss server to local
 	closed = true
 	Logger.Info("closed connection to", addr)
 }

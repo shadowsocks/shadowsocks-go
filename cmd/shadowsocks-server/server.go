@@ -180,8 +180,16 @@ func handleConnection(conn *ss.Conn) {
 		}
 	}()
 	Logger.Infof("piping %s<->%s", conn.RemoteAddr(), host)
-	go ss.PipeDecrypt(conn, remote, conn.Cipher)
-	ss.PipeEncrypt(remote, conn,  conn.Cipher)
+
+	ss.PipeHandling(remote, conn, conn.Cipher)
+	//if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
+	//	pipe :=
+	//	go ss.PipeDecryptStream(conn, remote, conn.Cipher)
+	//	ss.PipeEncryptStream(remote, conn,  conn.Cipher)
+	//} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
+	//	go ss.PipeDecryptAead(conn, remote, conn.Cipher)
+	//	ss.PipeEncryptAead(remote, conn,  conn.Cipher)
+	//}
 	closed = true
 	return
 }

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"net"
+	"time"
 )
 
 func PrintVersion() {
@@ -35,4 +37,19 @@ func (flag *ClosedFlag) SetClosed() {
 
 func (flag *ClosedFlag) IsClosed() bool {
 	return flag.flag
+}
+
+func RemoveEOF(data []byte) (int, []byte) {
+	n := len(data) - 1
+	for n > 0 && int64(data[n]) == 0 {
+		n--
+	}
+
+	return n+1, data[:n+1]
+}
+
+func SetReadTimeout(c net.Conn) {
+	if readTimeout != 0 {
+		c.SetReadDeadline(time.Now().Add(readTimeout))
+	}
 }
