@@ -70,41 +70,15 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher interface{}) (c *Conn
 	}
 	c = NewConn(conn, cipher)
 
-	var data []byte
-
 	if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
-		crypto := cipher.(*CipherStream)
-		err = crypto.Init(nil, Encrypt)
-		if err != nil {
-			Logger.Fields(LogFields{
-				"err": err,
-			}).Warn("encrypt init error")
-			return
-		}
-		data = make([]byte, len(rawaddr) + crypto.Info.ivLen)
-		iv := crypto.IV()
-		copy(data, iv)
-		err = crypto.Encrypt(data[len(iv):], rawaddr)
-		if err != nil {
-			Logger.Fields(LogFields{
-				"rawaddr": rawaddr,
-				"err": err,
-			}).Warn("encrypt rawaddr error")
-			return
-		}
+		p := new(PacketStream)
+		p.Cipher = cipher.(*CipherStream)
+		p.Init(c, rawaddr, Encrypt)
+		p.Pack()
 	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
-		data, err = cipher.(*CipherAead).Pack(rawaddr)
+		//data, err := cipher.(*CipherAead).Pack(rawaddr)
 	}
 
-	if _, err = c.Write(data); err != nil {
-		Logger.Fields(LogFields{
-			"data": data,
-			"data_str": string(data),
-			"err": err,
-		}).Warn("shadowsocks: Writing rawaddr")
-		c.Close()
-		return nil, err
-	}
 	return
 }
 

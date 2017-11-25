@@ -62,35 +62,12 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 	cipher := conn.Cipher
 
 	if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
-		crypto := cipher.(*ss.CipherStream)
-		iv_len := crypto.IVSize()
-		iv := make([]byte, iv_len)
-		if _, err = io.ReadFull(bytes.NewReader(buf[0:n]), iv); err != nil {
-			Logger.Fields(ss.LogFields{
-				"iv": iv,
-				"err": err,
-			}).Warn("read iv from connect error")
-			return
-		}
-
-		err = crypto.Init(iv, ss.Decrypt)
-		if err != nil {
-			Logger.Fields(ss.LogFields{
-				"err": err,
-			}).Warn("decrypt init error")
-			return
-		}
-
-		data = make([]byte, n)
-		copy(data, iv)
-		err = crypto.Decrypt(data, buf[iv_len:n])
-		if err != nil {
-			Logger.Fields(ss.LogFields{
-				"data": buf[iv_len:n],
-				"err": err,
-			}).Warn("decrypt addr error")
-			return
-		}
+		b := bytes.NewBuffer(nil)
+		p := new(ss.PacketStream)
+		p.Cipher = cipher.(*ss.CipherStream)
+		p.Init(b, buf[0:n], ss.Decrypt)
+		p.UnPack()
+		data = b.Bytes()
 	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
 		data, err = cipher.(*ss.CipherAead).UnPack(buf[0:n])
 	}

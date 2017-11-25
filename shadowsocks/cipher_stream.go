@@ -88,14 +88,12 @@ func (c *CipherStream) IVSize() int {
 
 func (c *CipherStream) Encrypt(dst, src []byte) (error) {
 	c.Enc.XORKeyStream(dst, src)
-	c.Doe = Decrypt
 
 	return nil
 }
 
 func (c *CipherStream) Decrypt(dst, src []byte) (error) {
 	c.Dec.XORKeyStream(dst, src)
-	c.Doe = Encrypt
 
 	return nil
 }
