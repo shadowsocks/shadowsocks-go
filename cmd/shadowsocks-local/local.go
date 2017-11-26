@@ -14,7 +14,6 @@ import (
 	"time"
 
 	ss "github.com/qunxyz/shadowsocks-go/shadowsocks"
-	"reflect"
 )
 
 var (
@@ -332,20 +331,7 @@ func handleConnection(conn net.Conn) {
 	}()
 
 	// pipe between local and ss server
-
-
-	if reflect.TypeOf(remote.Cipher).String() == "*shadowsocks.CipherStream" {
-		p := &ss.PipeStream{Cipher: remote.Cipher.(*ss.CipherStream)}
-		go p.Pack(conn, remote)
-		p.UnPack(remote, conn)
-	} else if reflect.TypeOf(remote.Cipher).String() == "*shadowsocks.CipherAead" {
-		p := &ss.PipeAead{Cipher: remote.Cipher.(*ss.CipherAead)}
-		go p.Pack(conn, remote)
-		p.UnPack(remote, conn)
-	}
-	//ss.PipeHandling(conn, remote, remote.Cipher)
-	//go ss.PipeEncrypt(conn, remote, remote.Cipher) // encrypt request from local to ss server
-	//ss.PipeDecrypt(remote, conn, remote.Cipher) // decrypt request result back from ss server to local
+	ss.Piping(conn, remote, remote.Cipher)
 	closed = true
 	Logger.Info("closed connection to", addr)
 }
