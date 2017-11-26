@@ -15,32 +15,68 @@ type PacketStream struct {
 	packet []byte // [IV][encrypted payload]
 	data []byte
 	writer io.Writer
+	reader io.Reader
 }
 
-func (this *PacketStream) Init(w io.Writer, data []byte, doe DecOrEnc) {
+func (this *PacketStream) Init(w io.Writer, r io.Reader, doe DecOrEnc) (err error) {
+	var n int
+	buf := leakyBuf.Get()
+	n, err = r.Read(buf)
+	if err != nil {
+		Logger.Fields(LogFields{
+			"err": err,
+		}).Warn("read data error")
+		return
+	}
+	if n <=0 {
+		Logger.Warn("no data to handling")
+		return
+	}
 	this.writer = w
-	this.data = data
+	this.data = buf[:n]
 	if doe == Encrypt {
 		this.packet = make([]byte, len(this.data) + this.Cipher.Info.ivLen)
-		this.initEncrypt()
+		err  = this.initEncrypt()
+		if err != nil {
+			return
+		}
 	} else if doe == Decrypt {
-		this.initDecrypt()
+		err  = this.initDecrypt()
+		if err != nil {
+			return
+		}
 	}
+	return
 }
+//func (this *PacketStream) Init(w io.Writer, data []byte, doe DecOrEnc) {
+//	this.writer = w
+//	this.data = data
+//	if doe == Encrypt {
+//		this.packet = make([]byte, len(this.data) + this.Cipher.Info.ivLen)
+//		this.initEncrypt()
+//	} else if doe == Decrypt {
+//		this.initDecrypt()
+//	}
+//}
 
-func (this *PacketStream) initEncrypt() {
+func (this *PacketStream) initEncrypt() (err error) {
 	if this.Cipher.Enc == nil {
-		this.Cipher.Init(nil, Encrypt)
+		err = this.Cipher.Init(nil, Encrypt)
+		if err != nil {
+			return
+		}
 		this.iv_offset = this.Cipher.Info.ivLen
 		copy(this.packet, this.Cipher.iv) // write iv to packet header
 	} else {
 		this.iv_offset = 0
 	}
+	return
 }
 
-func (this *PacketStream) initDecrypt() {
+func (this *PacketStream) initDecrypt() (err error) {
 	if this.Cipher.Dec == nil {
-		iv, err := this.getIV()
+		var iv []byte
+		iv, err = this.getIV()
 		if err != nil {
 			Logger.Fields(LogFields{
 				"err": err,
@@ -61,6 +97,7 @@ func (this *PacketStream) initDecrypt() {
 	} else {
 		this.iv_offset = 0
 	}
+	return
 }
 
 func (this *PacketStream) getIV() (iv []byte, err error) {
@@ -76,8 +113,8 @@ func (this *PacketStream) getIV() (iv []byte, err error) {
 	return
 }
 
-func (this *PacketStream) Pack() {
-	err := this.Cipher.Encrypt(this.packet[this.iv_offset:], this.data) // encrypt true data and write encrypted data to rest of space in packet
+func (this *PacketStream) Pack() (err error) {
+	err = this.Cipher.Encrypt(this.packet[this.iv_offset:], this.data) // encrypt true data and write encrypted data to rest of space in packet
 	if err != nil {
 		Logger.Fields(LogFields{
 			"data": this.packet,
@@ -105,9 +142,10 @@ func (this *PacketStream) Pack() {
 		}).Warn("write data to connection error")
 		return
 	}
+	return
 }
 
-func (this *PacketStream) UnPack() {
+func (this *PacketStream) UnPack() (err error) {
 	payload := this.data[this.iv_offset:]
 	data := make([]byte, leakyBufSize) // get packet data from buffer first
 	// assign packet size
@@ -117,7 +155,7 @@ func (this *PacketStream) UnPack() {
 		data = data[:len(payload)]
 	}
 
-	err := this.Cipher.Decrypt(data, payload) // decrypt packet data
+	err = this.Cipher.Decrypt(data, payload) // decrypt packet data
 	if err != nil {
 		Logger.Fields(LogFields{
 			"payload": payload,
@@ -140,4 +178,5 @@ func (this *PacketStream) UnPack() {
 		}).Warn("write data to connection error")
 		return
 	}
+	return
 }

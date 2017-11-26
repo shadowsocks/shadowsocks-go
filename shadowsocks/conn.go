@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"reflect"
+	"bytes"
 )
 
 type Conn struct {
@@ -73,12 +74,12 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher interface{}) (c *Conn
 	if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
 		p := new(PacketStream)
 		p.Cipher = cipher.(*CipherStream)
-		p.Init(c, rawaddr, Encrypt)
+		p.Init(c, bytes.NewReader(rawaddr), Encrypt)
 		p.Pack()
 	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
 		p := new(PacketAead)
 		p.Cipher = cipher.(*CipherAead)
-		p.Init(c, rawaddr, Encrypt)
+		p.Init(c, bytes.NewReader(rawaddr), Encrypt)
 		p.Pack()
 	}
 

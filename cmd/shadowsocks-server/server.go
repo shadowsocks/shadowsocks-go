@@ -42,22 +42,22 @@ var udp bool
 var Logger = ss.Logger
 
 func getRequest(conn *ss.Conn) (host string, err error) {
-	ss.SetReadTimeout(conn)
+	//ss.SetReadTimeout(conn)
 
 	// buf size should at least have the same size with the largest possible
 	// request size (when addrType is 3, domain name has at most 256 bytes)
 	// 1(addrType) + 1(lenByte) + 255(max length address) + 2(port) + 10(hmac-sha1)
-	var n int
+	//var n int
 	var data []byte
-	buf := make([]byte, 2048)
+	//buf := make([]byte, 2048)
 	// read till we get possible domain length field
-	if n, err = conn.Read(buf); err != nil {
-		Logger.Fields(ss.LogFields{
-			"buf": string(buf),
-			"err": err,
-		}).Warn("Read buffer error")
-		return
-	}
+	//if n, err = conn.Read(buf); err != nil {
+	//	Logger.Fields(ss.LogFields{
+	//		"buf": string(buf),
+	//		"err": err,
+	//	}).Warn("Read buffer error")
+	//	return
+	//}
 
 	cipher := conn.Cipher
 
@@ -65,26 +65,41 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 		b := bytes.NewBuffer(nil)
 		p := new(ss.PacketStream)
 		p.Cipher = cipher.(*ss.CipherStream)
-		p.Init(b, buf[0:n], ss.Decrypt)
-		p.UnPack()
+		err = p.Init(b, conn, ss.Decrypt)
+		if err != nil {
+			return
+		}
+		err = p.UnPack()
+		if err != nil {
+			return
+		}
 		data = b.Bytes()
 	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
 		b := bytes.NewBuffer(nil)
 		p := new(ss.PacketAead)
 		p.Cipher = cipher.(*ss.CipherAead)
-		p.Init(b, buf[0:n], ss.Decrypt)
-		p.UnPack()
-
-		if n, err = conn.Read(buf); err != nil {
-			Logger.Fields(ss.LogFields{
-				"buf": string(buf),
-				"err": err,
-			}).Warn("Read buffer error")
+		err = p.Init(b, conn, ss.Decrypt)
+		if err != nil {
 			return
 		}
-		p.Init(b, buf[0:n], ss.Decrypt)
-		p.UnPack()
+		err = p.UnPack()
+		if err != nil {
+			return
+		}
+		//
+		//if n, err = conn.Read(buf); err != nil {
+		//	Logger.Fields(ss.LogFields{
+		//		"buf": string(buf),
+		//		"err": err,
+		//	}).Warn("Read buffer error")
+		//	return
+		//}
+		//p.Init(b, buf[0:n], ss.Decrypt)
+		//p.UnPack()
 		data = b.Bytes()
+		if data == nil {
+			return "", errors.New("no request received")
+		}
 	}
 	if _, err = io.ReadFull(bytes.NewReader(data), data[:idType+1]); err != nil {
 		Logger.Fields(ss.LogFields{
@@ -130,6 +145,96 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
 	return
 }
+
+//func getRequest(conn *ss.Conn) (host string, err error) {
+//	ss.SetReadTimeout(conn)
+//
+//	// buf size should at least have the same size with the largest possible
+//	// request size (when addrType is 3, domain name has at most 256 bytes)
+//	// 1(addrType) + 1(lenByte) + 255(max length address) + 2(port) + 10(hmac-sha1)
+//	var n int
+//	var data []byte
+//	buf := make([]byte, 2048)
+//	// read till we get possible domain length field
+//	if n, err = conn.Read(buf); err != nil {
+//		Logger.Fields(ss.LogFields{
+//			"buf": string(buf),
+//			"err": err,
+//		}).Warn("Read buffer error")
+//		return
+//	}
+//
+//	cipher := conn.Cipher
+//
+//	if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
+//		b := bytes.NewBuffer(nil)
+//		p := new(ss.PacketStream)
+//		p.Cipher = cipher.(*ss.CipherStream)
+//		p.Init(b, buf[0:n], ss.Decrypt)
+//		p.UnPack()
+//		data = b.Bytes()
+//	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
+//		b := bytes.NewBuffer(nil)
+//		p := new(ss.PacketAead)
+//		p.Cipher = cipher.(*ss.CipherAead)
+//		p.Init(b, buf[0:n], ss.Decrypt)
+//		p.UnPack()
+//
+//		if n, err = conn.Read(buf); err != nil {
+//			Logger.Fields(ss.LogFields{
+//				"buf": string(buf),
+//				"err": err,
+//			}).Warn("Read buffer error")
+//			return
+//		}
+//		p.Init(b, buf[0:n], ss.Decrypt)
+//		p.UnPack()
+//		data = b.Bytes()
+//	}
+//	if _, err = io.ReadFull(bytes.NewReader(data), data[:idType+1]); err != nil {
+//		Logger.Fields(ss.LogFields{
+//			"data": string(data),
+//			"err": err,
+//		}).Warn("Read data error")
+//		return
+//	}
+//
+//	var reqEnd int
+//	addrType := data[idType]
+//	switch addrType & AddrMask {
+//	case typeIPv4:
+//		reqEnd = idIP0+lenIPv4
+//	case typeIPv6:
+//		reqEnd = idIP0+lenIPv6
+//	case typeDm:
+//		reqEnd = idDm0+int(data[idDmLen])+lenDmBase
+//	default:
+//		Logger.Fields(ss.LogFields{
+//			"data": data,
+//			"addrType": addrType,
+//			"AddrMask": AddrMask,
+//			"addrType&AddrMask": addrType&AddrMask,
+//		}).Warn("addr type not supported")
+//		err = fmt.Errorf("addr type %d not supported", addrType&AddrMask)
+//		return
+//	}
+//
+//	// Return string for typeIP is not most efficient, but browsers (Chrome,
+//	// Safari, Firefox) all seems using typeDm exclusively. So this is not a
+//	// big problem.
+//	switch addrType & AddrMask {
+//	case typeIPv4:
+//		host = net.IP(data[idIP0 : idIP0+net.IPv4len]).String()
+//	case typeIPv6:
+//		host = net.IP(data[idIP0 : idIP0+net.IPv6len]).String()
+//	case typeDm:
+//		host = string(data[idDm0 : idDm0+int(data[idDmLen])])
+//	}
+//	// parse port
+//	port := binary.BigEndian.Uint16(data[reqEnd-2 : reqEnd])
+//	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
+//	return
+//}
 
 const logCntDelta = 100
 
