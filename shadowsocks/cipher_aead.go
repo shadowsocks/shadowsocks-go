@@ -103,18 +103,6 @@ func (c *CipherAead) Init(iv []byte, doe DecOrEnc) (err error) {
 
 func (c *CipherAead) Encrypt(dst, src []byte) error {
 	c.Enc.Seal(dst[:0], c.Nonce(), src, nil)
-	//copy(dst, data)
-	//Logger.Fields(LogFields{
-	//	"key": c.key,
-	//	"dst": dst,
-	//	"dst_len": len(dst),
-	//	"iv": c.iv,
-	//	"iv_len": c.Info.ivLen,
-	//}).Info("checking cipher info")
-
-	//c.Payload = make([]byte, 2+len(data)+len(c.iv))
-	//copy(c.Payload[2:], c.iv)
-	//copy(c.Payload[len(c.iv)+2:], data)
 
 	return nil
 }
@@ -130,20 +118,7 @@ func (c *CipherAead) Decrypt(dst, src []byte) error {
 		c.Payload = src
 		return errors.New("no need to decrypt unpacked data")
 	}
-	//offset := 2
-	//if len(src) > len(c.iv) {
-	//	offset = len(c.iv)+2
-	//}
-	//Logger.Fields(LogFields{
-	//	"src_len": len(src),
-	//	"iv": c.iv,
-	//	"iv_len": c.Info.ivLen,
-	//	"src": src,
-	//	"src_string": string(src),
-	//}).Info("check before decrypt")
-	//c.Doe = Encrypt
-	//nonce := make([]byte, c.Dec.NonceSize())
-	//data, err := c.Dec.Open(nil, nonce, src[offset:], nil)
+
 	_, err := c.Dec.Open(dst[:0], c.Nonce(), src, nil)
 	if err != nil {
 		Logger.Fields(LogFields{
@@ -155,7 +130,7 @@ func (c *CipherAead) Decrypt(dst, src []byte) error {
 		}).Warn("decrypt error")
 		return err
 	}
-	//c.Payload = data
+
 	return nil
 }
 

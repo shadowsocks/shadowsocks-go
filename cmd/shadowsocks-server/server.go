@@ -85,10 +85,6 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 		p.Init(b, buf[0:n], ss.Decrypt)
 		p.UnPack()
 		data = b.Bytes()
-		Logger.Fields(ss.LogFields{
-			"data_str": string(data),
-			"data": data,
-		}).Warn("check addr data")
 	}
 	if _, err = io.ReadFull(bytes.NewReader(data), data[:idType+1]); err != nil {
 		Logger.Fields(ss.LogFields{
@@ -213,10 +209,6 @@ func handleConnection(conn *ss.Conn) {
 		p := &ss.PipeAead{Cipher: conn.Cipher.(*ss.CipherAead)}
 		go p.Pack(remote, conn)
 		p.UnPack(conn, remote)
-		//p := new(PipeAead)
-		//p.cipher = cipher.(*CipherAead)
-		//go p.Pack(local, remote)
-		//p.UnPack(remote, local)
 	}
 	//ss.PipeHandling(remote, conn, conn.Cipher)
 	//if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
