@@ -3,8 +3,10 @@ package shadowsocks
 import (
 	"io"
 	"bytes"
+	"math"
 )
 
+const payloadSizeMask = 0x3FFF // 16*1024 - 1
 
 /*
  * [encrypted payload length][length tag][encrypted payload][payload tag]
@@ -27,7 +29,6 @@ func (this *PacketAead) Init(w io.Writer, data []byte, doe DecOrEnc) {
 	this.writer = w
 	this.data = data
 	if doe == Encrypt {
-		this.packet = make([]byte, len(this.data) + this.Cipher.Info.ivLen)
 		this.initEncrypt()
 	} else if doe == Decrypt {
 		this.initDecrypt()
@@ -37,10 +38,18 @@ func (this *PacketAead) Init(w io.Writer, data []byte, doe DecOrEnc) {
 func (this *PacketAead) initEncrypt() {
 	if this.Cipher.Enc == nil {
 		this.Cipher.Init(nil, Encrypt)
-		this.iv_offset = this.Cipher.Info.ivLen
-		copy(this.packet, this.Cipher.iv) // write iv to packet header
+		this.iv_offset = 2 + this.Cipher.Enc.Overhead()
+		//copy(this.packet, this.Cipher.iv) // write iv to packet header
+		_, err := this.writer.Write(this.Cipher.iv)
+		if err != nil {
+			Logger.Fields(LogFields{
+				"data": this.packet,
+				"err": err,
+			}).Warn("write iv to connection error")
+			return
+		}
 	} else {
-		this.iv_offset = 0
+		this.iv_offset = 2
 	}
 }
 
@@ -70,7 +79,7 @@ func (this *PacketAead) initDecrypt() {
 }
 
 func (this *PacketAead) getIV() (iv []byte, err error) {
-	iv = make([]byte, this.Cipher.Info.ivLen)
+	iv = make([]byte, this.Cipher.IVSize())
 	if _, err = io.ReadFull(bytes.NewReader(this.data), iv); err != nil {
 		Logger.Fields(LogFields{
 			"iv": iv,
@@ -83,27 +92,69 @@ func (this *PacketAead) getIV() (iv []byte, err error) {
 }
 
 func (this *PacketAead) Pack() {
-	err := this.Cipher.Encrypt(this.packet[this.iv_offset:], this.data) // encrypt true data and write encrypted data to rest of space in packet
-	if err != nil {
-		Logger.Fields(LogFields{
-			"data": this.packet,
-			"cipher.iv": this.Cipher.iv,
-			"err": err,
-		}).Warn("encrypt error")
-		return
+
+	data_len := len(this.data)
+	chunk_num := math.Ceil(float64(data_len)/payloadSizeMask)
+
+	for chunk_counter := chunk_num; chunk_counter > 0; chunk_counter-- {
+		if data_len > payloadSizeMask {
+			data_len = payloadSizeMask
+		}
+		data := this.data[:data_len]
+		//if chunk_counter < chunk_num {
+		//	this.Cipher.SetNonce(true)
+		//}
+		this.PackChunk(data)
+		this.data = this.data[data_len:]
+		data_len = len(this.data)
 	}
+}
+
+func (this *PacketAead) PackChunk(data []byte) {
+	this.packet = make([]byte, 2+this.Cipher.Enc.Overhead()+payloadSizeMask+this.Cipher.Enc.Overhead())
+	header := make([]byte, 2+this.Cipher.Enc.Overhead())
+	payload := this.packet[2+this.Cipher.Enc.Overhead():]
+	payload_len := len(data)
+
+	this.packet[0], this.packet[1] = byte(payload_len>>8), byte(payload_len)
+	this.Cipher.Encrypt(header, this.packet[:2])
+	this.Cipher.SetNonce(true)
+	Logger.Fields(LogFields{
+		"header_src": this.packet[:2],
+		"header": header,
+	}).Info("check header after encrypt")
+	copy(this.packet[:2+this.Cipher.Enc.Overhead()], header)
+
+	this.Cipher.Encrypt(payload, data)
+	this.Cipher.SetNonce(true)
+	Logger.Fields(LogFields{
+		"payload_src": string(data),
+		"payload": payload,
+		"iv": this.Cipher.iv,
+	}).Info("check payload after encrypt")
+	//_, payload = RemoveEOF(payload)
+	//Logger.Fields(LogFields{
+	//	"payload_len": payload_len,
+	//	"packet": this.packet,
+	//	"payload": payload,
+	//	"iv": this.Cipher.iv,
+	//}).Info("check size")
+
+
+	copy(this.packet[2+this.Cipher.Enc.Overhead():], payload)
+	//copy(this.packet[2:], this.Cipher.iv)
+	//copy(this.packet[len(this.Cipher.iv)+2:], payload)
 
 	_, this.packet = RemoveEOF(this.packet)
-	Logger.Fields(LogFields{
-		"data": this.packet,
-		"cipher.iv": this.Cipher.iv,
-	}).Info("check after encrypt")
-
 	if this.packet == nil {
+		Logger.Warn("no data to write to connection")
 		return
 	}
-
-	_, err = this.writer.Write(this.packet)
+	Logger.Fields(LogFields{
+		"this.packet": this.packet,
+		"iv": this.Cipher.iv,
+	}).Info("check final packet data")
+	_, err := this.writer.Write(this.packet)
 	if err != nil {
 		Logger.Fields(LogFields{
 			"data": this.packet,
@@ -113,23 +164,138 @@ func (this *PacketAead) Pack() {
 	}
 }
 
+//func (this *PacketAead) Pack() {
+//	this.packet = make([]byte, 2+this.Cipher.Enc.Overhead()+payloadSizeMask+this.Cipher.Enc.Overhead())
+//	payload := this.packet[2+this.Cipher.Enc.Overhead() : 2+this.Cipher.Enc.Overhead()+payloadSizeMask]
+//
+//	//nonce := make([]byte, this.Cipher.Enc.NonceSize())
+//	//payload := this.Cipher.Enc.Seal(nil, nonce, this.data, nil)
+//	this.Cipher.Encrypt(payload, this.data)
+//	payload_len, payload := RemoveEOF(payload)
+//
+//	this.packet[0], this.packet[1] = byte(payload_len>>8), byte(payload_len)
+//
+//	copy(this.packet[2:], this.Cipher.iv)
+//	copy(this.packet[len(this.Cipher.iv)+2:], payload)
+//
+//	_, err := this.writer.Write(this.packet)
+//	if err != nil {
+//		Logger.Fields(LogFields{
+//			"data": this.packet,
+//			"err": err,
+//		}).Warn("write data to connection error")
+//		return
+//	}
+//
+//	//Logger.Fields(LogFields{
+//	//	"data": this.packet,
+//	//	"cipher.iv": this.Cipher.iv,
+//	//}).Info("check info")
+//	//c.Payload = make([]byte, 2+len(data)+len(c.iv))
+//	//copy(c.Payload[2:], c.iv)
+//	//copy(c.Payload[len(c.iv)+2:], data)
+//	///////////////////////////////////////////////////////////////
+//	//err := this.Cipher.Encrypt(this.packet[this.iv_offset:], this.data) // encrypt true data and write encrypted data to rest of space in packet
+//	//if err != nil {
+//	//	Logger.Fields(LogFields{
+//	//		"data": this.packet,
+//	//		"cipher.iv": this.Cipher.iv,
+//	//		"err": err,
+//	//	}).Warn("encrypt error")
+//	//	return
+//	//}
+//	//Logger.Fields(LogFields{
+//	//	"data": this.packet,
+//	//	"cipher.iv": this.Cipher.iv,
+//	//}).Info("check after encrypt")
+//	//
+//	//_, this.packet = RemoveEOF(this.packet)
+//	//Logger.Fields(LogFields{
+//	//	"data": this.packet,
+//	//	"cipher.iv": this.Cipher.iv,
+//	//}).Info("check after encrypt")
+//	//
+//	//if this.packet == nil {
+//	//	return
+//	//}
+//	//
+//	//_, err = this.writer.Write(this.packet)
+//	//if err != nil {
+//	//	Logger.Fields(LogFields{
+//	//		"data": this.packet,
+//	//		"err": err,
+//	//	}).Warn("write data to connection error")
+//	//	return
+//	//}
+//	//////////////////////////////////////////////////////////////
+//}
+
 func (this *PacketAead) UnPack() {
-	payload := this.data[this.iv_offset:]
-	data := make([]byte, leakyBufSize) // get packet data from buffer first
-	// assign packet size
-	if len(payload) > len(data) { // if connect got new data
-		data = make([]byte, len(payload))
-	} else {
-		data = data[:len(payload)]
+	Logger.Fields(LogFields{
+		"data": this.data,
+	}).Info("check data before unpack")
+	if len(this.data) <= this.iv_offset {
+		Logger.Fields(LogFields{
+			"data": this.data,
+			"this.cipher.iv": this.Cipher.iv,
+		}).Warn("no data to unpack")
+		return
 	}
 
-	err := this.Cipher.Decrypt(data, payload) // decrypt packet data
+	this.packet = make([]byte, 2+payloadSizeMask+this.Cipher.Dec.Overhead())
+	//header := this.data[:2+this.Cipher.Dec.Overhead()]
+	header_buf := make([]byte, 2+this.Cipher.Dec.Overhead())
+	header := this.data[this.iv_offset:this.iv_offset+2+this.Cipher.Dec.Overhead()] // for testing
+
+	Logger.Fields(LogFields{
+		"iv_offset": this.iv_offset,
+		"data_len": len(this.data),
+		"data": this.data,
+		"header": header,
+	}).Info("check header data before decrypt")
+	err := this.Cipher.Decrypt(header_buf, header) // decrypt packet data
+	this.Cipher.SetNonce(true)
 	if err != nil {
 		Logger.Fields(LogFields{
+			"header": header,
+			"this.cipher.iv": this.Cipher.iv,
+			"err": err,
+		}).Warn("decrypt header error")
+		return
+	}
+	Logger.Fields(LogFields{
+		"header_buf": header_buf,
+		"data": this.data,
+	}).Info("check header data after decrypt")
+
+	//payload_size := int(this.data[0])<<8 + int(this.data[1])
+	payload_size := int(header[0])<<8 + int(header[1]) & payloadSizeMask // for testing
+	Logger.Fields(LogFields{
+		"payload_size": payload_size,
+		//"payload": payload,
+		//"payload_len": len(payload),
+	}).Info("check size")
+	//payload := this.data[2+this.Cipher.Dec.Overhead():]
+	payload := this.data[this.iv_offset+2+this.Cipher.Dec.Overhead():] // for testing
+
+	//data := make([]byte, leakyBufSize) // get packet data from buffer first
+	//// assign packet size
+	//if len(payload) > len(data) { // if connect got new data
+	//	data = make([]byte, len(payload))
+	//} else {
+	//	data = data[:len(payload)]
+	//}
+
+	data := make([]byte, payload_size)
+	err = this.Cipher.Decrypt(data, payload) // decrypt packet data
+	this.Cipher.SetNonce(true)
+	if err != nil {
+		Logger.Fields(LogFields{
+			"data": this.data,
 			"payload": payload,
 			"this.cipher.iv": this.Cipher.iv,
 			"err": err,
-		}).Warn("encrypt error")
+		}).Warn("decrypt payload error")
 		return
 	}
 	_, data = RemoveEOF(data)

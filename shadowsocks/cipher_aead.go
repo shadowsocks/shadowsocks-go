@@ -19,11 +19,10 @@ type CipherAead struct {
 	Dec  cipher.AEAD
 	Info *cipherInfo
 
+	nonce []byte
 	iv []byte
 	key []byte
 	subkey []byte
-	salt   []byte
-	salt_len int
 	Payload []byte
 }
 
@@ -39,12 +38,12 @@ func (c *CipherAead) newIV() (err error) {
 	return
 }
 
-func hkdfSHA1(secret, salt, info, outkey []byte) {
-	r := hkdf.New(sha1.New, secret, salt, info)
+func hkdfSHA1(secret, iv, info, outkey []byte) {
+	r := hkdf.New(sha1.New, secret, iv, info)
 	if _, err := io.ReadFull(r, outkey); err != nil {
 		Logger.Fields(LogFields{
 			"secret": secret,
-			"salt": salt,
+			"iv": iv,
 			"info": info,
 			"err": err,
 		}).Panic("generate key error")
@@ -77,6 +76,7 @@ func newAead(password string, mi *cipherInfo) (*CipherAead) {
 
 func (c *CipherAead) Init(iv []byte, doe DecOrEnc) (err error) {
 	c.Doe = doe
+	c.nonce = nil
 
 	if iv != nil {
 		c.iv = iv
@@ -87,15 +87,14 @@ func (c *CipherAead) Init(iv []byte, doe DecOrEnc) (err error) {
 		}
 	}
 
-	subkey := make([]byte, len(c.key))
-	hkdfSHA1(c.key, c.salt, []byte("ss-subkey"), subkey)
+	subkey := make([]byte, c.KeySize())
+	hkdfSHA1(c.key, c.iv, []byte("ss-subkey"), subkey)
 	c.subkey = subkey
 
 	c_new, err := c.Info.makeCipher(c)
 
 	if c.Doe == Encrypt {
 		c.Enc = *c_new.(*cipher.AEAD)
-		//c.salt_len = len(c.salt)
 	} else if c.Doe == Decrypt {
 		c.Dec = *c_new.(*cipher.AEAD)
 	}
@@ -103,20 +102,19 @@ func (c *CipherAead) Init(iv []byte, doe DecOrEnc) (err error) {
 }
 
 func (c *CipherAead) Encrypt(dst, src []byte) error {
-	c.Doe = Decrypt
-	Logger.Fields(LogFields{
-		"key": c.key,
-		"salt": c.salt,
-		"salt_len": c.salt_len,
-	}).Info("checking cipher info")
-	//enc := (c.Enc).(cipher.AEAD)
-	nonce := make([]byte, c.Enc.NonceSize())
-	data := c.Enc.Seal(nil, nonce, src, nil)
+	c.Enc.Seal(dst[:0], c.Nonce(), src, nil)
+	//copy(dst, data)
+	//Logger.Fields(LogFields{
+	//	"key": c.key,
+	//	"dst": dst,
+	//	"dst_len": len(dst),
+	//	"iv": c.iv,
+	//	"iv_len": c.Info.ivLen,
+	//}).Info("checking cipher info")
 
-	c.Payload = make([]byte, 2+len(data)+len(c.salt))
-	copy(c.Payload[2:], c.salt)
-	copy(c.Payload[len(c.salt)+2:], data)
-	//c.Payload = dst[:len(c.salt)+len(data)]
+	//c.Payload = make([]byte, 2+len(data)+len(c.iv))
+	//copy(c.Payload[2:], c.iv)
+	//copy(c.Payload[len(c.iv)+2:], data)
 
 	return nil
 }
@@ -132,40 +130,75 @@ func (c *CipherAead) Decrypt(dst, src []byte) error {
 		c.Payload = src
 		return errors.New("no need to decrypt unpacked data")
 	}
-	offset := 2
-	if len(src) > len(c.salt) {
-		offset = len(c.salt)+2
-	}
-	Logger.Fields(LogFields{
-		//"offset": offset,
-		"src_len": len(src),
-		"salt_len": c.salt_len,
-		"src": src,
-		"src_string": string(src),
-	}).Info("check decrypt")
-	c.Doe = Encrypt
-	nonce := make([]byte, c.Dec.NonceSize())
-	data, err := c.Dec.Open(nil, nonce, src[offset:], nil)
+	//offset := 2
+	//if len(src) > len(c.iv) {
+	//	offset = len(c.iv)+2
+	//}
+	//Logger.Fields(LogFields{
+	//	"src_len": len(src),
+	//	"iv": c.iv,
+	//	"iv_len": c.Info.ivLen,
+	//	"src": src,
+	//	"src_string": string(src),
+	//}).Info("check before decrypt")
+	//c.Doe = Encrypt
+	//nonce := make([]byte, c.Dec.NonceSize())
+	//data, err := c.Dec.Open(nil, nonce, src[offset:], nil)
+	_, err := c.Dec.Open(dst[:0], c.Nonce(), src, nil)
 	if err != nil {
 		Logger.Fields(LogFields{
 			"key": c.key,
-			"salt": c.salt,
-			"salt_len": c.salt_len,
-			"nonce": nonce,
+			"iv": c.iv,
+			"iv_len": c.Info.ivLen,
+			"nonce": c.Nonce(),
 			"err": err,
 		}).Warn("decrypt error")
 		return err
 	}
-	c.Payload = data
+	//c.Payload = data
 	return nil
 }
 
-func (c *CipherAead) SetSalt(salt []byte) {
-	c.salt = salt
+func (c *CipherAead) Nonce() []byte {
+	if c.nonce == nil {
+		c.SetNonce(false)
+	}
+	return c.nonce
 }
 
-func (c *CipherAead) GetSalt() []byte {
-	return c.salt
+func (c *CipherAead) SetNonce(increment bool) {
+	if increment {
+		for i := range c.nonce {
+			c.nonce[i]++
+			if c.nonce[i] != 0 {
+				return
+			}
+		}
+		return
+	}
+
+	crypto := c.Enc
+	if c.Doe == Decrypt {
+		crypto = c.Dec
+	}
+
+	c.nonce = make([]byte, crypto.NonceSize())
+}
+
+func (c *CipherAead) IV() []byte {
+	return c.iv
+}
+
+func (c *CipherAead) IVSize() int {
+	if ks := c.KeySize(); ks > c.Info.ivLen {
+		return ks
+	}
+
+	return c.Info.ivLen
+}
+
+func (c *CipherAead) KeySize() int {
+	return len(c.key)
 }
 
 func (c *CipherAead) Copy() (*CipherAead) {
@@ -177,12 +210,6 @@ func (c *CipherAead) Copy() (*CipherAead) {
 
 func newChaCha20IETFPoly1305Aead(cipher_item interface{}) (interface{}, error) {
 	item := cipher_item.(*CipherAead)
-	Logger.Fields(LogFields{
-		"key": item.key,
-		"key_len": len(item.key),
-		"subkey": item.subkey,
-		"subkey_len": len(item.subkey),
-	}).Info("check newChaCha20IETFPoly1305Aead info")
 	c, err := chacha20poly1305.New(item.subkey)
 	if err != nil {
 		Logger.Fields(LogFields{

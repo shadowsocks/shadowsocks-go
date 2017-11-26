@@ -35,7 +35,9 @@ func (this *LogType) Fields(fields LogFields) (*LogType) {
 func (this *LogType) setFields() *logrus.Entry {
 	fmt.Println(this.getCaller(5) + "=>")
 	fmt.Println("  " + this.getCaller(4) + ":")
-	return this.logger.WithFields((map[string]interface{})(this.fields))
+	fields := this.fields
+	this.fields = nil
+	return this.logger.WithFields((map[string]interface{})(fields))
 }
 
 func (this *LogType) Debug(args ...interface{}) (*LogType) {
