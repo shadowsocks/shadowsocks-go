@@ -41,7 +41,7 @@ func (flag *ClosedFlag) IsClosed() bool {
 
 func RemoveEOF(data []byte) (int, []byte) {
 	n := len(data) - 1
-	for n > 0 && int64(data[n]) == 0 {
+	for n >= 0 && int64(data[n]) == 0 {
 		n--
 	}
 

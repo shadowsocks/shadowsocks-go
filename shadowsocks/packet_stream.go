@@ -19,21 +19,12 @@ type PacketStream struct {
 }
 
 func (this *PacketStream) Init(w io.Writer, r io.Reader, doe DecOrEnc) (err error) {
-	var n int
-	buf := leakyBuf.Get()
-	n, err = r.Read(buf)
+	this.data, err = this.getData(r)
 	if err != nil {
-		Logger.Fields(LogFields{
-			"err": err,
-		}).Warn("read data error")
 		return
 	}
-	if n <=0 {
-		Logger.Warn("no data to handling")
-		return
-	}
+
 	this.writer = w
-	this.data = buf[:n]
 	if doe == Encrypt {
 		this.packet = make([]byte, len(this.data) + this.Cipher.Info.ivLen)
 		err  = this.initEncrypt()
@@ -48,16 +39,6 @@ func (this *PacketStream) Init(w io.Writer, r io.Reader, doe DecOrEnc) (err erro
 	}
 	return
 }
-//func (this *PacketStream) Init(w io.Writer, data []byte, doe DecOrEnc) {
-//	this.writer = w
-//	this.data = data
-//	if doe == Encrypt {
-//		this.packet = make([]byte, len(this.data) + this.Cipher.Info.ivLen)
-//		this.initEncrypt()
-//	} else if doe == Decrypt {
-//		this.initDecrypt()
-//	}
-//}
 
 func (this *PacketStream) initEncrypt() (err error) {
 	if this.Cipher.Enc == nil {
