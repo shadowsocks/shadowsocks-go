@@ -11,11 +11,6 @@ import (
 type PacketStream struct {
 	Packet
 	Cipher *CipherStream
-	iv_offset int
-	packet []byte // [IV][encrypted payload]
-	data []byte
-	writer io.Writer
-	reader io.Reader
 }
 
 func (this *PacketStream) Init(w io.Writer, r io.Reader, doe DecOrEnc) (err error) {

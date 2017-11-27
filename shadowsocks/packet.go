@@ -3,8 +3,14 @@ package shadowsocks
 import "io"
 
 type Packet struct {
+	Info *cipherInfo
+
+	reader io.Reader
 	writer io.Writer
+
 	data []byte
+
+	iv_offset int
 
 	payload []byte
 	payload_len int

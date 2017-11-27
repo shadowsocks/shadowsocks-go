@@ -14,15 +14,6 @@ const payloadSizeMask = 0x3FFF // 16*1024 - 1
 type PacketAead struct {
 	Packet
 	Cipher *CipherAead
-	Info *cipherInfo
-
-	tag []byte
-	tag_len int
-
-	iv_offset int
-	packet []byte // [IV][encrypted payload]
-	data []byte
-	writer io.Writer
 }
 
 func (this *PacketAead) Init(w io.Writer, r io.Reader, doe DecOrEnc) (err error) {
