@@ -22,11 +22,6 @@ type Conn struct {
 
 	buffer [2]io.Writer
 
-	r_len int
-	w_len int
-
-	data [2][]byte
-
 	iv_offset [2]int
 
 	payload []byte
@@ -48,13 +43,15 @@ func NewConn(c net.Conn, cipher *Cipher) *Conn {
 }
 
 func (c *Conn) Read(b []byte) (n int, err error) {
-	err = c.SetData(b, Decrypt)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"err": err,
-		}).Warn("setdata error")
-		return
-	}
+	c.doe = Decrypt
+	c.buffer[c.doe] = bytes.NewBuffer(nil)
+	//err = c.SetData(b, Decrypt)
+	//if err != nil {
+	//	Logger.Fields(LogFields{
+	//		"err": err,
+	//	}).Warn("setdata error")
+	//	return
+	//}
 	if c.CipherInst == nil || c.CipherInst.Dec == nil {
 		c.initDecrypt()
 	} else {
@@ -100,14 +97,16 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 }
 
 func (c *Conn) Write(b []byte) (n int, err error) {
-	c.SetData(b, Encrypt)
+	c.doe = Encrypt
+	c.buffer[c.doe] = bytes.NewBuffer(nil)
+	//c.SetData(b, Encrypt)
 	if c.CipherInst == nil || c.CipherInst.Enc == nil {
 		c.initEncrypt()
 	} else {
 		c.iv_offset[c.doe] = 2
 	}
 
-	err = c.Pack()
+	err = c.Pack(b)
 	if err != nil {
 		Logger.Fields(LogFields{
 			"err": err,

@@ -40,13 +40,13 @@ func (flag *ClosedFlag) IsClosed() bool {
 }
 
 func RemoveEOF(data []byte) (int, []byte) {
-	//return len(data), data
-	n := len(data) - 1
-	for n >= 0 && int64(data[n]) == 0 {
-		n--
-	}
-
-	return n+1, data[:n+1]
+	return len(data), data
+	//n := len(data) - 1
+	//for n >= 0 && int64(data[n]) == 0 {
+	//	n--
+	//}
+	//
+	//return n+1, data[:n+1]
 }
 
 func SetReadTimeout(c net.Conn) {
