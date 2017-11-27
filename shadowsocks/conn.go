@@ -45,13 +45,7 @@ func NewConn(c net.Conn, cipher *Cipher) *Conn {
 func (c *Conn) Read(b []byte) (n int, err error) {
 	c.doe = Decrypt
 	c.buffer[c.doe] = bytes.NewBuffer(nil)
-	//err = c.SetData(b, Decrypt)
-	//if err != nil {
-	//	Logger.Fields(LogFields{
-	//		"err": err,
-	//	}).Warn("setdata error")
-	//	return
-	//}
+
 	if c.CipherInst == nil || c.CipherInst.Dec == nil {
 		err = c.initDecrypt()
 		if err != nil {
@@ -68,33 +62,11 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 		}).Warn("unpack error")
 		return
 	}
-	//if c.r_len > 0 {
-	//	n = c.r_len
-	//	return
-	//}
 
-	//n, err = c.buffer[c.doe].(*bytes.Buffer).Read(b)
-	//if err != nil {
-	//	Logger.Fields(LogFields{
-	//		"b": b,
-	//		"n": n,
-	//		"err": err,
-	//	}).Warn("read data error")
-	//	return
-	//}
 	data := c.buffer[c.doe].(*bytes.Buffer).Bytes()
 	n = len(data)
-	//b = make([]byte, len(data))
-	//buf := c.readBuf
 	copy(b, data)
-	//b = b[:n]
 	n, b = RemoveEOF(b)
-	//Logger.Fields(LogFields{
-	//	"data_len": len(data),
-	//	"b_len": len(b),
-	//	"data": string(b),
-	//	"iv": c.CipherInst.iv,
-	//}).Info("check all data after unpack")
 
 	return
 }
@@ -102,7 +74,7 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 func (c *Conn) Write(b []byte) (n int, err error) {
 	c.doe = Encrypt
 	c.buffer[c.doe] = bytes.NewBuffer(nil)
-	//c.SetData(b, Encrypt)
+
 	if c.CipherInst == nil || c.CipherInst.Enc == nil {
 		err = c.initEncrypt()
 		if err != nil {
@@ -120,18 +92,6 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 		return
 	}
 
-	//b = c.writer.(*bytes.Buffer).Bytes()
-	//_, b = RemoveEOF(b)
-	////n = len(b)
-	//Logger.Fields(LogFields{
-	//	"data": b,
-	//	"iv": c.CipherInst.iv,
-	//}).Info("check all data after pack")
-	//if c.w_len > 0 {
-	//	n = c.w_len
-	//	return
-	//}
-
 	var buffer_len int64
 	buffer_len, err = c.buffer[c.doe].(*bytes.Buffer).WriteTo(c.Conn)
 	if err != nil {
@@ -140,7 +100,6 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 		}).Warn("write data error")
 	}
 	n = int(buffer_len)
-	//n, err = c.Conn.Write(b)
 
 	return
 }
@@ -179,35 +138,6 @@ func RawAddr(addr string) (buf []byte, err error) {
 	return
 }
 
-// This is intended for use by users implementing a local socks proxy.
-// rawaddr shoud contain part of the data in socks request, starting from the
-// ATYP field. (Refer to rfc1928 for more information.)
-//func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, err error) {
-//	conn, err := net.Dial("tcp", server)
-//	if err != nil {
-//		Logger.Fields(LogFields{
-//			"server": server,
-//			"err": err,
-//		}).Warn("shadowsocks: Dialing to server")
-//		return
-//	}
-//	c = NewConn(conn, cipher)
-//
-//	if cipher.CType == C_STREAM {
-//		p := new(PacketStream)
-//		p.Cipher = cipher.Inst.(*CipherStream)
-//		p.Init(c, bytes.NewReader(rawaddr), Encrypt)
-//		p.Pack()
-//	} else if cipher.CType == C_AEAD {
-//		p := new(PacketAead)
-//		p.Cipher = cipher.Inst.(*CipherAead)
-//		p.Init(c, bytes.NewReader(rawaddr), Encrypt)
-//		p.Pack()
-//	}
-//
-//	return
-//}
-
 func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, err error) {
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
@@ -223,19 +153,6 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, er
 		c.Close()
 		return
 	}
-	//c.Init(rawaddr)
-	//
-	//if cipher.CType == C_STREAM {
-	//	p := new(PacketStream)
-	//	p.Cipher = cipher.Inst.(*CipherStream)
-	//	p.Init(c, bytes.NewReader(rawaddr), Encrypt)
-	//	p.Pack()
-	//} else if cipher.CType == C_AEAD {
-	//	p := new(PacketAead)
-	//	p.Cipher = cipher.Inst.(*CipherAead)
-	//	p.Init(c, bytes.NewReader(rawaddr), Encrypt)
-	//	p.Pack()
-	//}
 
 	return
 }
