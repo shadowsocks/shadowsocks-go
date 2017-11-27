@@ -20,8 +20,6 @@ import (
 var errEmptyPassword = errors.New("empty key")
 
 type CipherStream struct {
-	Cipher
-
 	Doe DecOrEnc
 	Enc  cipher.Stream
 	Dec  cipher.Stream

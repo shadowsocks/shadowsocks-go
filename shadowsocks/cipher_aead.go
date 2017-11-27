@@ -12,8 +12,6 @@ import (
 )
 
 type CipherAead struct {
-	Cipher
-
 	Doe DecOrEnc
 	Enc  cipher.AEAD
 	Dec  cipher.AEAD

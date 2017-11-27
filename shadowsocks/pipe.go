@@ -2,7 +2,6 @@ package shadowsocks
 
 import (
 	"net"
-	"reflect"
 )
 
 type Pipe interface {
@@ -10,13 +9,13 @@ type Pipe interface {
 	UnPack(src, dst net.Conn)
 }
 
-func Piping(local, remote net.Conn, cipher interface{}) {
-	if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
-		p := &PipeStream{Cipher: cipher.(*CipherStream)}
+func Piping(local, remote net.Conn, cipher *Cipher) {
+	if cipher.CType == C_STREAM {
+		p := &PipeStream{Cipher: cipher.Inst.(*CipherStream)}
 		go p.Pack(local, remote)
 		p.UnPack(remote, local)
-	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
-		p := &PipeAead{Cipher: cipher.(*CipherAead)}
+	} else if cipher.CType == C_AEAD {
+		p := &PipeAead{Cipher: cipher.Inst.(*CipherAead)}
 		go p.Pack(local, remote)
 		p.UnPack(remote, local)
 	}

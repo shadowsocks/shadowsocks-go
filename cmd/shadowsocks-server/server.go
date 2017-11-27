@@ -17,7 +17,6 @@ import (
 
 	ss "github.com/qunxyz/shadowsocks-go/shadowsocks"
 	"log"
-	"reflect"
 	"bytes"
 )
 
@@ -48,10 +47,10 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 
 	cipher := conn.Cipher
 
-	if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherStream" {
+	if cipher.CType == ss.C_STREAM {
 		b := bytes.NewBuffer(nil)
 		p := new(ss.PacketStream)
-		p.Cipher = cipher.(*ss.CipherStream)
+		p.Cipher = cipher.Inst.(*ss.CipherStream)
 		err = p.Init(b, conn, ss.Decrypt)
 		if err != nil {
 			return
@@ -61,10 +60,10 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 			return
 		}
 		data = b.Bytes()
-	} else if reflect.TypeOf(cipher).String() == "*shadowsocks.CipherAead" {
+	} else if cipher.CType == ss.C_AEAD {
 		b := bytes.NewBuffer(nil)
 		p := new(ss.PacketAead)
-		p.Cipher = cipher.(*ss.CipherAead)
+		p.Cipher = cipher.Inst.(*ss.CipherAead)
 		err = p.Init(b, conn, ss.Decrypt)
 		if err != nil {
 			return
@@ -342,7 +341,7 @@ func run(port, password string) {
 		os.Exit(1)
 	}
 	passwdManager.add(port, password, ln)
-	var cipher interface{}
+	var cipher *ss.Cipher
 	Logger.Fields(ss.LogFields{"port": port}).Info("server listening ...")
 	for {
 		conn, err := ln.Accept()
