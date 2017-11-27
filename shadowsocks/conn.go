@@ -53,7 +53,10 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 	//	return
 	//}
 	if c.CipherInst == nil || c.CipherInst.Dec == nil {
-		c.initDecrypt()
+		err = c.initDecrypt()
+		if err != nil {
+			return
+		}
 	} else {
 		c.iv_offset[c.doe] = 0
 	}
@@ -101,7 +104,10 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 	c.buffer[c.doe] = bytes.NewBuffer(nil)
 	//c.SetData(b, Encrypt)
 	if c.CipherInst == nil || c.CipherInst.Enc == nil {
-		c.initEncrypt()
+		err = c.initEncrypt()
+		if err != nil {
+			return
+		}
 	} else {
 		c.iv_offset[c.doe] = 2
 	}

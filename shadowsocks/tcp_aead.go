@@ -316,63 +316,76 @@ func (this *Conn) Pack(packet_data []byte) (err error) {
 //	return
 //}
 
-func (this *Conn) PackChunk(data []byte) (err error) {
-	packet_data := make([]byte, 2+this.CipherInst.Enc.Overhead()+payloadSizeMask+this.CipherInst.Enc.Overhead())
-	header := make([]byte, 2+this.CipherInst.Enc.Overhead())
-	payload := packet_data[2+this.CipherInst.Enc.Overhead():]
-	payload_len := len(data)
-
-	packet_data[0], packet_data[1] = byte(payload_len>>8), byte(payload_len)
-	err = this.CipherInst.Encrypt(header, packet_data[:2])
-	if err != nil {
-		return
-	}
-	Logger.Fields(LogFields{
-		"header": header,
-		"iv": this.CipherInst.iv,
-	}).Info("check header after Encrypt")
-	this.CipherInst.SetNonce(true)
-	copy(packet_data[:2+this.CipherInst.Enc.Overhead()], header)
-
-	err = this.CipherInst.Encrypt(payload, data)
-	if err != nil {
-		return
-	}
-	//Logger.Fields(LogFields{
-	//	"payload": payload,
-	//	"iv": this.CipherInst.iv,
-	//}).Info("check payload after Encrypt")
-	this.CipherInst.SetNonce(true)
-
-	copy(packet_data[2+this.CipherInst.Enc.Overhead():], payload)
-
-	_, packet_data = RemoveEOF(packet_data)
-	if packet_data == nil {
-		Logger.Warn("no data to write to connection")
-		return
-	}
-
-	_, err = this.buffer[this.doe].Write(packet_data)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"data": packet_data,
-			"err": err,
-		}).Warn("write data to connection error")
-		return
-	}
-
-	return
-}
+//func (this *Conn) PackChunk(data []byte) (err error) {
+//	packet_data := make([]byte, 2+this.CipherInst.Enc.Overhead()+payloadSizeMask+this.CipherInst.Enc.Overhead())
+//	header := make([]byte, 2+this.CipherInst.Enc.Overhead())
+//	payload := packet_data[2+this.CipherInst.Enc.Overhead():]
+//	payload_len := len(data)
+//
+//	packet_data[0], packet_data[1] = byte(payload_len>>8), byte(payload_len)
+//	err = this.CipherInst.Encrypt(header, packet_data[:2])
+//	if err != nil {
+//		return
+//	}
+//	Logger.Fields(LogFields{
+//		"header": header,
+//		"iv": this.CipherInst.iv,
+//	}).Info("check header after Encrypt")
+//	this.CipherInst.SetNonce(true)
+//	copy(packet_data[:2+this.CipherInst.Enc.Overhead()], header)
+//
+//	err = this.CipherInst.Encrypt(payload, data)
+//	if err != nil {
+//		return
+//	}
+//	//Logger.Fields(LogFields{
+//	//	"payload": payload,
+//	//	"iv": this.CipherInst.iv,
+//	//}).Info("check payload after Encrypt")
+//	this.CipherInst.SetNonce(true)
+//
+//	copy(packet_data[2+this.CipherInst.Enc.Overhead():], payload)
+//
+//	_, packet_data = RemoveEOF(packet_data)
+//	if packet_data == nil {
+//		Logger.Warn("no data to write to connection")
+//		return
+//	}
+//
+//	_, err = this.buffer[this.doe].Write(packet_data)
+//	if err != nil {
+//		Logger.Fields(LogFields{
+//			"data": packet_data,
+//			"err": err,
+//		}).Warn("write data to connection error")
+//		return
+//	}
+//
+//	return
+//}
 
 func (this *Conn) UnPack() (err error) {
 	var n int
 	/// read header
 	header := make([]byte, 2+this.CipherInst.Dec.Overhead())
+
+	Logger.Info("begin reading header")
 	n, err = this.Conn.Read(header)
-	if err != nil && err != io.EOF {
+	if err != nil {
 		Logger.Fields(LogFields{
 			"err": err,
 		}).Warn("read data error")
+		return
+	}
+	Logger.Info("done reading header")
+	//if n, err = io.ReadFull(this.Conn, header); err != nil {
+	//	Logger.Fields(LogFields{
+	//		"header": header,
+	//		"err": err,
+	//	}).Warn("shadowsocks: read header from connect error")
+	//	return
+	//}
+	if n <= 0 {
 		return
 	}
 	header = header[:n]
