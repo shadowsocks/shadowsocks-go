@@ -27,6 +27,7 @@ func (lb *LeakyBufType) Get() (b []byte) {
 	default:
 		b = make([]byte, lb.bufSize)
 	}
+	b = make([]byte, lb.bufSize)
 	return
 }
 
