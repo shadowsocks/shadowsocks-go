@@ -49,11 +49,12 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 	if err != nil {
 		return
 	}
-	buf = buf[:n]
 	Logger.Fields(ss.LogFields{
 		"buf": buf,
+		"n": n,
 		"buf_str": string(buf),
 	}).Info("check buffer")
+	//buf = buf[:n]
 
 	//var reqStart, reqEnd int
 	var reqEnd int

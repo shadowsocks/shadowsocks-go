@@ -77,7 +77,8 @@ func (c *Conn) initEncrypt() (err error) {
 				return
 			}
 		} else {
-			cryptor.iv_offset = 2
+			//cryptor.iv_offset = cryptor.CipherInst.Info.ivLen
+			cryptor.iv_offset = 0
 		}
 	} else if c.Cipher.CType == C_AEAD{
 		cryptor := c.cryptor.(*ConnAead)
@@ -252,6 +253,7 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, er
 		return
 	}
 	c = NewConn(conn, cipher)
+
 	_, err = c.Write(rawaddr)
 	if err != nil {
 		c.Close()

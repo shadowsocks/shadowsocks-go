@@ -94,18 +94,9 @@ func (this *ConnAead) getIV() (iv []byte, err error) {
 }
 
 func (this *ConnAead) Pack(packet_data []byte) (err error) {
-	Logger.Fields(LogFields{
-		"data": packet_data,
-		"data_len": len(packet_data),
-		"data_str": string(packet_data),
-	}).Info("check data before pack")
-
 	packet_len := len(packet_data)
 	chunk_num := math.Ceil(float64(packet_len)/float64(this.getPayloadSizeMask()))
-	Logger.Fields(LogFields{
-		"packet_len": packet_len,
-		"chunk_num": chunk_num,
-	}).Info("check packet info")
+
 	for chunk_counter := chunk_num; chunk_counter > 0;  {
 		payload_len := packet_len
 		if payload_len > this.getPayloadSizeMask() {
@@ -118,12 +109,6 @@ func (this *ConnAead) Pack(packet_data []byte) (err error) {
 		// get header
 		packet_buf[0], packet_buf[1] = byte(payload_len>>8), byte(payload_len)
 
-		Logger.Fields(LogFields{
-			"header": packet_buf[:2],
-			"iv": this.CipherInst.iv,
-			"nonce": this.CipherInst.nonce,
-		}).Info("check header before Encrypt")
-
 		// pack header
 		err = this.CipherInst.Encrypt(packet_buf, packet_buf[:2])
 		if err != nil {
@@ -135,22 +120,10 @@ func (this *ConnAead) Pack(packet_data []byte) (err error) {
 			}).Warn("encrypt header error")
 			break
 		}
-		Logger.Fields(LogFields{
-			"header": packet_buf[:2+this.CipherInst.Enc.Overhead()],
-			"iv": this.CipherInst.iv,
-			"nonce": this.CipherInst.nonce,
-		}).Info("check header after Encrypt")
 		this.CipherInst.SetNonce(true)
 
 		// get payload
 		payload := packet_data[:payload_len]
-
-		Logger.Fields(LogFields{
-			"payload_str": string(payload),
-			"payload": payload,
-			"iv": this.CipherInst.iv,
-			"nonce": this.CipherInst.nonce,
-		}).Info("check payload before Encrypt")
 
 		// pack payload
 		err = this.CipherInst.Encrypt(payload_buf, payload)
@@ -163,12 +136,6 @@ func (this *ConnAead) Pack(packet_data []byte) (err error) {
 			}).Warn("encrypt payload error")
 			break
 		}
-		Logger.Fields(LogFields{
-			"packet_buf": packet_buf,
-			"payload": payload_buf,
-			"iv": this.CipherInst.iv,
-			"nonce": this.CipherInst.nonce,
-		}).Info("check payload after Encrypt")
 		this.CipherInst.SetNonce(true)
 
 		_, err = this.data_buffer.Write(packet_buf)
@@ -191,7 +158,6 @@ func (this *ConnAead) UnPack() (err error) {
 	/// read header
 	header := make([]byte, 2+this.CipherInst.Dec.Overhead())
 
-	Logger.Info("begin reading header")
 	n, err = this.Conn.Read(header)
 	if err != nil {
 		Logger.Fields(LogFields{
@@ -199,7 +165,6 @@ func (this *ConnAead) UnPack() (err error) {
 		}).Warn("read data error")
 		return
 	}
-	Logger.Info("done reading header")
 
 	if n <= 0 {
 		return
@@ -207,10 +172,6 @@ func (this *ConnAead) UnPack() (err error) {
 	header = header[:n]
 
 	/// unpack header
-	Logger.Fields(LogFields{
-		"data": header,
-		"iv": this.CipherInst.iv,
-	}).Info("check header before unpack")
 	err = this.CipherInst.Decrypt(header, header) // decrypt packet data
 	if err != nil {
 		Logger.Fields(LogFields{
@@ -251,12 +212,6 @@ func (this *ConnAead) UnPack() (err error) {
 	}
 	payload = payload[:payload_size]
 	this.CipherInst.SetNonce(true)
-
-	//_, payload = RemoveEOF(payload)
-	Logger.Fields(LogFields{
-		"data": string(payload),
-		"iv": this.CipherInst.iv,
-	}).Info("check payload after unpack")
 
 	if payload == nil {
 		return
