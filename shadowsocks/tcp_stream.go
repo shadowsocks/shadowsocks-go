@@ -1,14 +1,12 @@
 package shadowsocks
 
 import (
+	"net"
 	"io"
 	"math"
-	"net"
 )
 
-const payloadSizeMask = 0x3FFF // 16*1024 - 1
-
-type ConnAead struct {
+type ConnStream struct {
 	net.Conn
 	Cipher *Cipher
 	Buffer *LeakyBufType
@@ -22,7 +20,8 @@ type ConnAead struct {
 	CipherInst *CipherAead
 }
 
-func (this *ConnAead) Init() {
+
+func (this *ConnStream) Init() {
 	inst := this.Cipher.Inst
 	if this.Cipher.CType == C_STREAM {
 
@@ -31,7 +30,7 @@ func (this *ConnAead) Init() {
 	}
 }
 
-func (this *ConnAead) initEncrypt() (err error) {
+func (this *ConnStream) initEncrypt() (err error) {
 	this.Init()
 
 	err = this.CipherInst.Init(nil, Encrypt)
@@ -51,7 +50,7 @@ func (this *ConnAead) initEncrypt() (err error) {
 	return
 }
 
-func (this *ConnAead) initDecrypt() (err error) {
+func (this *ConnStream) initDecrypt() (err error) {
 	this.Init()
 
 	var iv []byte
@@ -76,7 +75,7 @@ func (this *ConnAead) initDecrypt() (err error) {
 	return
 }
 
-func (this *ConnAead) getIV() (iv []byte, err error) {
+func (this *ConnStream) getIV() (iv []byte, err error) {
 	iv = make([]byte, this.CipherInst.IVSize())
 	if _, err = io.ReadFull(this.Conn, iv); err != nil {
 		Logger.Fields(LogFields{
@@ -89,7 +88,7 @@ func (this *ConnAead) getIV() (iv []byte, err error) {
 	return
 }
 
-func (this *ConnAead) Pack(packet_data []byte) (err error) {
+func (this *ConnStream) Pack(packet_data []byte) (err error) {
 	Logger.Fields(LogFields{
 		"data": packet_data,
 		"data_len": len(packet_data),
@@ -182,7 +181,7 @@ func (this *ConnAead) Pack(packet_data []byte) (err error) {
 	return
 }
 
-func (this *ConnAead) UnPack() (err error) {
+func (this *ConnStream) UnPack() (err error) {
 	var n int
 	/// read header
 	header := make([]byte, 2+this.CipherInst.Dec.Overhead())

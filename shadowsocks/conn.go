@@ -21,7 +21,7 @@ func NewConn(c net.Conn, cipher *Cipher) *Conn {
 
 	var cryptor interface{}
 	if cipher.CType == C_STREAM {
-		cryptor = &ConnAead{
+		cryptor = &ConnStream{
 			Conn:     c,
 			Buffer: leakyBuf,
 			Cipher: cipher,
@@ -65,7 +65,17 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 
 func (c *Conn) initEncrypt() (err error) {
 	if c.Cipher.CType == C_STREAM {
+		cryptor := c.cryptor.(*ConnStream)
+		cryptor.data_buffer = bytes.NewBuffer(nil)
 
+		if cryptor.CipherInst == nil || cryptor.CipherInst.Enc == nil {
+			err = cryptor.initEncrypt()
+			if err != nil {
+				return
+			}
+		} else {
+			cryptor.iv_offset = 2
+		}
 	} else if c.Cipher.CType == C_AEAD{
 		cryptor := c.cryptor.(*ConnAead)
 		cryptor.data_buffer = bytes.NewBuffer(nil)
@@ -85,6 +95,17 @@ func (c *Conn) initEncrypt() (err error) {
 
 func (c *Conn) initDecrypt() (err error) {
 	if c.Cipher.CType == C_STREAM {
+		cryptor := c.cryptor.(*ConnStream)
+		cryptor.data_buffer = bytes.NewBuffer(nil)
+
+		if cryptor.CipherInst == nil || cryptor.CipherInst.Dec == nil {
+			err = cryptor.initDecrypt()
+			if err != nil {
+				return
+			}
+		} else {
+			cryptor.iv_offset = 0
+		}
 
 	} else if c.Cipher.CType == C_AEAD{
 		cryptor := c.cryptor.(*ConnAead)
@@ -106,6 +127,24 @@ func (c *Conn) initDecrypt() (err error) {
 
 func (c *Conn) Pack(b []byte) (n int, err error) {
 	if c.Cipher.CType == C_STREAM {
+		cryptor := c.cryptor.(*ConnStream)
+
+		err = cryptor.Pack(b)
+		if err != nil {
+			Logger.Fields(LogFields{
+				"err": err,
+			}).Warn("pack error")
+			return
+		}
+
+		var buffer_len int64
+		buffer_len, err = cryptor.data_buffer.(*bytes.Buffer).WriteTo(c.Conn)
+		if err != nil {
+			Logger.Fields(LogFields{
+				"err": err,
+			}).Warn("write data error")
+		}
+		n = int(buffer_len)
 
 	} else if c.Cipher.CType == C_AEAD{
 		cryptor := c.cryptor.(*ConnAead)
@@ -134,6 +173,19 @@ func (c *Conn) Pack(b []byte) (n int, err error) {
 
 func (c *Conn) UnPack(b []byte) (n int, err error) {
 	if c.Cipher.CType == C_STREAM {
+		cryptor := c.cryptor.(*ConnStream)
+
+		err = cryptor.UnPack()
+		if err != nil {
+			Logger.Fields(LogFields{
+				"err": err,
+			}).Warn("unpack error")
+			return
+		}
+
+		data := cryptor.data_buffer.(*bytes.Buffer).Bytes()
+		n = len(data)
+		copy(b, data)
 
 	} else if c.Cipher.CType == C_AEAD{
 		cryptor := c.cryptor.(*ConnAead)
