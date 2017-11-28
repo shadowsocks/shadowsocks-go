@@ -16,14 +16,10 @@ type Conn struct {
 	//////////////////
 
 	CipherInst *CipherAead
-	doe DecOrEnc
 
 	data_buffer io.Writer
 
 	iv_offset int
-
-	payload []byte
-	payload_len int
 }
 
 func NewConn(c net.Conn, cipher *Cipher) *Conn {
@@ -38,7 +34,6 @@ func NewConn(c net.Conn, cipher *Cipher) *Conn {
 }
 
 func (c *Conn) Read(b []byte) (n int, err error) {
-	c.doe = Decrypt
 	c.data_buffer = bytes.NewBuffer(nil)
 
 	if c.CipherInst == nil || c.CipherInst.Dec == nil {
@@ -66,7 +61,6 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 }
 
 func (c *Conn) Write(b []byte) (n int, err error) {
-	c.doe = Encrypt
 	c.data_buffer = bytes.NewBuffer(nil)
 
 	if c.CipherInst == nil || c.CipherInst.Enc == nil {

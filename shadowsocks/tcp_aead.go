@@ -117,7 +117,6 @@ func (this *Conn) getIV() (iv []byte, err error) {
 
 func (this *Conn) Pack(packet_data []byte) (err error) {
 	Logger.Fields(LogFields{
-		"doe": this.doe,
 		"data": packet_data,
 		"data_len": len(packet_data),
 		"data_str": string(packet_data),
