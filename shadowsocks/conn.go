@@ -17,21 +17,24 @@ type Conn struct {
 }
 
 func NewConn(c net.Conn, cipher *Cipher) *Conn {
-	leakyBuf := NewLeakyBuf(maxNBuf, payloadSizeMask)
-
+	var leakyBuf *LeakyBufType
 	var cryptor interface{}
 	if cipher.CType == C_STREAM {
-		cryptor = &ConnStream{
+		conn_stream := &ConnStream{
 			Conn:     c,
 			Buffer: leakyBuf,
 			Cipher: cipher,
 		}
+		leakyBuf = conn_stream.getBuffer()
+		cryptor = conn_stream
 	} else if cipher.CType == C_AEAD {
-		cryptor = &ConnAead{
+		conn_aead := &ConnAead{
 			Conn:     c,
 			Buffer: leakyBuf,
 			Cipher: cipher,
 		}
+		leakyBuf = conn_aead.getBuffer()
+		cryptor = conn_aead
 	}
 
 	conn := &Conn{

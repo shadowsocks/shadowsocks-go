@@ -6,7 +6,7 @@ import (
 	"net"
 )
 
-const payloadSizeMask = 0x3FFF // 16*1024 - 1
+//const payloadSizeMask = 0x3FFF // 16*1024 - 1
 
 type ConnAead struct {
 	net.Conn
@@ -22,13 +22,17 @@ type ConnAead struct {
 	CipherInst *CipherAead
 }
 
+func (this *ConnAead) getPayloadSizeMask() int {
+	return 0x3FFF // 16*1024 - 1
+}
+
+func (this *ConnAead) getBuffer() *LeakyBufType {
+	return NewLeakyBuf(maxNBuf, this.getPayloadSizeMask())
+}
+
 func (this *ConnAead) Init() {
 	inst := this.Cipher.Inst
-	if this.Cipher.CType == C_STREAM {
-
-	} else if this.Cipher.CType == C_AEAD {
-		this.CipherInst = inst.(*CipherAead)
-	}
+	this.CipherInst = inst.(*CipherAead)
 }
 
 func (this *ConnAead) initEncrypt() (err error) {
@@ -97,15 +101,15 @@ func (this *ConnAead) Pack(packet_data []byte) (err error) {
 	}).Info("check data before pack")
 
 	packet_len := len(packet_data)
-	chunk_num := math.Ceil(float64(packet_len)/payloadSizeMask)
+	chunk_num := math.Ceil(float64(packet_len)/float64(this.getPayloadSizeMask()))
 	Logger.Fields(LogFields{
 		"packet_len": packet_len,
 		"chunk_num": chunk_num,
 	}).Info("check packet info")
 	for chunk_counter := chunk_num; chunk_counter > 0;  {
 		payload_len := packet_len
-		if payload_len > payloadSizeMask {
-			payload_len = payloadSizeMask
+		if payload_len > this.getPayloadSizeMask() {
+			payload_len = this.getPayloadSizeMask()
 		}
 
 		packet_buf := make([]byte, 2+this.CipherInst.Enc.Overhead()+payload_len+this.CipherInst.Enc.Overhead())
@@ -220,7 +224,7 @@ func (this *ConnAead) UnPack() (err error) {
 	this.CipherInst.SetNonce(true)
 
 	/// get payload size
-	payload_size := int(header[0])<<8 + int(header[1]) & payloadSizeMask
+	payload_size := int(header[0])<<8 + int(header[1]) & this.getPayloadSizeMask()
 
 	/// read payload encrypted data
 	payload := make([]byte, payload_size+this.CipherInst.Dec.Overhead())
