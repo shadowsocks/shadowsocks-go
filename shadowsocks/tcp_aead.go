@@ -3,11 +3,27 @@ package shadowsocks
 import (
 	"io"
 	"math"
+	"net"
 )
 
 const payloadSizeMask = 0x3FFF // 16*1024 - 1
 
-func (this *Conn) Init() {
+type ConnAead struct {
+	net.Conn
+	Cipher *Cipher
+	Buffer *LeakyBufType
+
+	//////////////////
+	cryptor interface{}
+
+	data_buffer io.Writer
+
+	iv_offset int
+
+	CipherInst *CipherAead
+}
+
+func (this *ConnAead) Init() {
 	inst := this.Cipher.Inst
 	if this.Cipher.CType == C_STREAM {
 
@@ -17,7 +33,7 @@ func (this *Conn) Init() {
 }
 
 // fetch data for decrypt
-func (this *Conn) getData(b []byte) (data []byte, err error) {
+func (this *ConnAead) getData(b []byte) (data []byte, err error) {
 	var n int
 	buf := this.Buffer.Get()
 	buf_len := len(buf)
@@ -57,7 +73,7 @@ func (this *Conn) getData(b []byte) (data []byte, err error) {
 	return
 }
 
-func (this *Conn) initEncrypt() (err error) {
+func (this *ConnAead) initEncrypt() (err error) {
 	this.Init()
 
 	err = this.CipherInst.Init(nil, Encrypt)
@@ -77,7 +93,7 @@ func (this *Conn) initEncrypt() (err error) {
 	return
 }
 
-func (this *Conn) initDecrypt() (err error) {
+func (this *ConnAead) initDecrypt() (err error) {
 	this.Init()
 
 	var iv []byte
@@ -102,7 +118,7 @@ func (this *Conn) initDecrypt() (err error) {
 	return
 }
 
-func (this *Conn) getIV() (iv []byte, err error) {
+func (this *ConnAead) getIV() (iv []byte, err error) {
 	iv = make([]byte, this.CipherInst.IVSize())
 	if _, err = io.ReadFull(this.Conn, iv); err != nil {
 		Logger.Fields(LogFields{
@@ -115,7 +131,7 @@ func (this *Conn) getIV() (iv []byte, err error) {
 	return
 }
 
-func (this *Conn) Pack(packet_data []byte) (err error) {
+func (this *ConnAead) Pack(packet_data []byte) (err error) {
 	Logger.Fields(LogFields{
 		"data": packet_data,
 		"data_len": len(packet_data),
@@ -208,7 +224,7 @@ func (this *Conn) Pack(packet_data []byte) (err error) {
 	return
 }
 
-func (this *Conn) UnPack() (err error) {
+func (this *ConnAead) UnPack() (err error) {
 	var n int
 	/// read header
 	header := make([]byte, 2+this.CipherInst.Dec.Overhead())
