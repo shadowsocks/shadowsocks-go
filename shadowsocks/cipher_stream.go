@@ -283,10 +283,10 @@ func (c *salsaStreamCipher) XORKeyStream(dst, src []byte) {
 	dataSize := len(src) + padLen
 	if cap(dst) >= dataSize {
 		buf = dst[:dataSize]
-	} else if leakyBufSize >= dataSize {
-		buf = leakyBuf.Get()
-		defer leakyBuf.Put(buf)
-		buf = buf[:dataSize]
+	//} else if leakyBufSize >= dataSize {
+	//	buf = leakyBuf.Get()
+	//	defer leakyBuf.Put(buf)
+	//	buf = buf[:dataSize]
 	} else {
 		buf = make([]byte, dataSize)
 	}

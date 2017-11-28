@@ -5,6 +5,8 @@ import (
 	"math"
 )
 
+const payloadSizeMask = 0x3FFF // 16*1024 - 1
+
 func (this *Conn) Init() {
 	inst := this.Cipher.Inst
 	if this.Cipher.CType == C_STREAM {
@@ -17,7 +19,7 @@ func (this *Conn) Init() {
 // fetch data for decrypt
 func (this *Conn) getData(b []byte) (data []byte, err error) {
 	var n int
-	buf := leakyBuf.Get()
+	buf := this.Buffer.Get()
 	buf_len := len(buf)
 	data_len := 0
 	counter := 1
@@ -64,7 +66,7 @@ func (this *Conn) initEncrypt() (err error) {
 	}
 	this.iv_offset[this.doe] = 2 + this.CipherInst.Enc.Overhead()
 
-	_, err = this.buffer[this.doe].Write(this.CipherInst.iv)
+	_, err = this.data_buffer[this.doe].Write(this.CipherInst.iv)
 	if err != nil {
 		Logger.Fields(LogFields{
 			"data": this.packet,
@@ -193,7 +195,7 @@ func (this *Conn) Pack(packet_data []byte) (err error) {
 		}).Info("check payload after Encrypt")
 		this.CipherInst.SetNonce(true)
 
-		_, err = this.buffer[this.doe].Write(packet_buf)
+		_, err = this.data_buffer[this.doe].Write(packet_buf)
 		if err != nil {
 			Logger.Fields(LogFields{
 				"data": packet_buf,
@@ -274,17 +276,17 @@ func (this *Conn) UnPack() (err error) {
 	payload = payload[:payload_size]
 	this.CipherInst.SetNonce(true)
 
-	_, payload = RemoveEOF(payload)
+	//_, payload = RemoveEOF(payload)
 	Logger.Fields(LogFields{
 		"data": string(payload),
 		"iv": this.CipherInst.iv,
 	}).Info("check payload after unpack")
-	//this.data = data
+
 	if payload == nil {
 		return
 	}
 
-	_, err = this.buffer[this.doe].Write(payload)
+	_, err = this.data_buffer[this.doe].Write(payload)
 	if err != nil {
 		Logger.Fields(LogFields{
 			"data": payload,

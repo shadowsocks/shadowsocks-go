@@ -50,6 +50,10 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 		return
 	}
 	buf = buf[:n]
+	Logger.Fields(ss.LogFields{
+		"buf": buf,
+		"buf_str": string(buf),
+	}).Info("check buffer")
 
 	//var reqStart, reqEnd int
 	var reqEnd int
@@ -155,8 +159,8 @@ func handleConnection(conn *ss.Conn) {
 	Logger.Infof("piping %s<->%s", conn.RemoteAddr(), host)
 
 	//ss.Piping(remote, conn, conn.Cipher)
-	go ss.Piping(conn, remote)
-	ss.Piping(remote, conn)
+	go ss.Piping(conn, remote, conn.Buffer)
+	ss.Piping(remote, conn, conn.Buffer)
 	closed = true
 	return
 }

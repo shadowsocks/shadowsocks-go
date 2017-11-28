@@ -29,7 +29,7 @@ const (
 	socksVer5       = 5
 	socksCmdConnect = 1
 )
-var leakyBuf *ss.LeakyBufType
+//var leakyBuf *ss.LeakyBufType
 var Logger = ss.Logger
 
 func init() {
@@ -330,9 +330,11 @@ func handleConnection(conn net.Conn) {
 		}
 	}()
 
+	//go ss.PipingTest(conn, remote) // testing
+	//ss.PipingTest(remote, conn) // testing
 	// pipe between local and ss server
-	go ss.Piping(conn, remote)
-	ss.Piping(remote, conn)
+	go ss.Piping(conn, remote, remote.Buffer)
+	ss.Piping(remote, conn, remote.Buffer)
 	//ss.Piping(conn, remote, remote.Cipher)
 	closed = true
 	Logger.Info("closed connection to", addr)
