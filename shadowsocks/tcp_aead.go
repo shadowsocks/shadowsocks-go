@@ -154,22 +154,15 @@ func (this *ConnAead) Pack(packet_data []byte) (err error) {
 }
 
 func (this *ConnAead) UnPack() (err error) {
-	var n int
 	/// read header
 	header := make([]byte, 2+this.CipherInst.Dec.Overhead())
 
-	n, err = this.Conn.Read(header)
-	if err != nil {
+	if _, err = io.ReadFull(this.Conn, header); err != nil {
 		Logger.Fields(LogFields{
 			"err": err,
 		}).Warn("read data error")
 		return
 	}
-
-	if n <= 0 {
-		return
-	}
-	header = header[:n]
 
 	/// unpack header
 	err = this.CipherInst.Decrypt(header, header) // decrypt packet data
@@ -189,8 +182,7 @@ func (this *ConnAead) UnPack() (err error) {
 
 	/// read payload encrypted data
 	payload := make([]byte, payload_size+this.CipherInst.Dec.Overhead())
-	n, err = this.Conn.Read(payload)
-	if err != nil && err != io.EOF {
+	if _, err = io.ReadFull(this.Conn, payload); err != nil {
 		Logger.Fields(LogFields{
 			"err": err,
 		}).Warn("read data error")
@@ -212,10 +204,6 @@ func (this *ConnAead) UnPack() (err error) {
 	}
 	payload = payload[:payload_size]
 	this.CipherInst.SetNonce(true)
-
-	if payload == nil {
-		return
-	}
 
 	_, err = this.data_buffer.Write(payload)
 	if err != nil {
