@@ -64,12 +64,11 @@ func (this *Conn) initEncrypt() (err error) {
 	if err != nil {
 		return
 	}
-	this.iv_offset[this.doe] = 2 + this.CipherInst.Enc.Overhead()
+	this.iv_offset = 2 + this.CipherInst.Enc.Overhead()
 
-	_, err = this.data_buffer[this.doe].Write(this.CipherInst.iv)
+	_, err = this.data_buffer.Write(this.CipherInst.iv)
 	if err != nil {
 		Logger.Fields(LogFields{
-			"data": this.packet,
 			"err": err,
 		}).Warn("write iv to connection error")
 		return
@@ -90,7 +89,7 @@ func (this *Conn) initDecrypt() (err error) {
 		return
 	}
 
-	this.iv_offset[this.doe] = len(iv)
+	this.iv_offset = len(iv)
 	err = this.CipherInst.Init(iv, Decrypt)
 	if err != nil {
 		Logger.Fields(LogFields{
@@ -195,7 +194,7 @@ func (this *Conn) Pack(packet_data []byte) (err error) {
 		}).Info("check payload after Encrypt")
 		this.CipherInst.SetNonce(true)
 
-		_, err = this.data_buffer[this.doe].Write(packet_buf)
+		_, err = this.data_buffer.Write(packet_buf)
 		if err != nil {
 			Logger.Fields(LogFields{
 				"data": packet_buf,
@@ -286,7 +285,7 @@ func (this *Conn) UnPack() (err error) {
 		return
 	}
 
-	_, err = this.data_buffer[this.doe].Write(payload)
+	_, err = this.data_buffer.Write(payload)
 	if err != nil {
 		Logger.Fields(LogFields{
 			"data": payload,

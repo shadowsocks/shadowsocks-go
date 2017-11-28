@@ -8,29 +8,22 @@ import (
 	"bytes"
 )
 
-var data_pipe chan []byte
-
 type Conn struct {
 	net.Conn
 	Cipher *Cipher
-	//ReadBuf  []byte
-	//WriteBuf []byte
 	Buffer *LeakyBufType
-	//buffer []byte
 
 	//////////////////
 
 	CipherInst *CipherAead
 	doe DecOrEnc
 
-	data_buffer [2]io.Writer
+	data_buffer io.Writer
 
-	iv_offset [2]int
+	iv_offset int
 
 	payload []byte
 	payload_len int
-
-	packet [2][]byte // [IV][encrypted payload]
 }
 
 func NewConn(c net.Conn, cipher *Cipher) *Conn {
@@ -39,8 +32,6 @@ func NewConn(c net.Conn, cipher *Cipher) *Conn {
 		Conn:     c,
 		Buffer: leakyBuf,
 		Cipher: cipher,
-		//readBuf:  leakyBuf.Get(),
-		//writeBuf: leakyBuf.Get(),
 	}
 
 	return conn
@@ -48,7 +39,7 @@ func NewConn(c net.Conn, cipher *Cipher) *Conn {
 
 func (c *Conn) Read(b []byte) (n int, err error) {
 	c.doe = Decrypt
-	c.data_buffer[c.doe] = bytes.NewBuffer(nil)
+	c.data_buffer = bytes.NewBuffer(nil)
 
 	if c.CipherInst == nil || c.CipherInst.Dec == nil {
 		err = c.initDecrypt()
@@ -56,7 +47,7 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 			return
 		}
 	} else {
-		c.iv_offset[c.doe] = 0
+		c.iv_offset = 0
 	}
 
 	err = c.UnPack()
@@ -67,29 +58,16 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 		return
 	}
 
-	data := c.data_buffer[c.doe].(*bytes.Buffer).Bytes()
+	data := c.data_buffer.(*bytes.Buffer).Bytes()
 	n = len(data)
-	//if n > 0 {
-	//	Logger.Fields(LogFields{
-	//		"data": data,
-	//	}).Info("unpack data write to pipe")
-	//	data_pipe <- data
-	//}
 	copy(b, data)
-	Logger.Fields(LogFields{
-		"data": data,
-		"data_len": len(data),
-		"b": b,
-		"b_len": len(b),
-		"n": n,
-	}).Info("check read data")
 
 	return
 }
 
 func (c *Conn) Write(b []byte) (n int, err error) {
 	c.doe = Encrypt
-	c.data_buffer[c.doe] = bytes.NewBuffer(nil)
+	c.data_buffer = bytes.NewBuffer(nil)
 
 	if c.CipherInst == nil || c.CipherInst.Enc == nil {
 		err = c.initEncrypt()
@@ -97,7 +75,7 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 			return
 		}
 	} else {
-		c.iv_offset[c.doe] = 2
+		c.iv_offset = 2
 	}
 
 	err = c.Pack(b)
@@ -108,36 +86,19 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 		return
 	}
 
-	//data := c.buffer[c.doe].(*bytes.Buffer).Bytes()
-	//n = len(data)
-	//if n > 0 {
-	//	Logger.Fields(LogFields{
-	//		"data": data,
-	//	}).Info("pack data write to pipe")
-	//	//data_pipe <- data
-	//	return c.Conn.Write(data)
-	//}
-
 	var buffer_len int64
-	buffer_len, err = c.data_buffer[c.doe].(*bytes.Buffer).WriteTo(c.Conn)
+	buffer_len, err = c.data_buffer.(*bytes.Buffer).WriteTo(c.Conn)
 	if err != nil {
 		Logger.Fields(LogFields{
 			"err": err,
 		}).Warn("write data error")
 	}
 	n = int(buffer_len)
-	//Logger.Fields(LogFields{
-	//	"data": data,
-	//	"data_len": len(data),
-	//	"n": n,
-	//}).Info("check write data")
 
 	return
 }
 
 func (c *Conn) Close() error {
-	//c.Buffer.Put(c.readBuf)
-	//leakyBuf.Put(c.writeBuf)
 	return c.Conn.Close()
 }
 

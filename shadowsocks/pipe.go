@@ -21,19 +21,7 @@ func Piping(src, dst net.Conn, buffer *LeakyBufType) {
 		// read may return EOF with n > 0
 		// should always process n > 0 bytes before handling error
 		if n > 0 {
-			//if n > len(buf) {
-			//	n = len(buf)
-			//}
 			// Note: avoid overwrite err returned by Read.
-			//Logger.Fields(LogFields{
-			//	"buf": buf[0:n],
-			//	"buf_str": string(buf[0:n]),
-			//}).Warn("Check write buffer")
-			Logger.Fields(LogFields{
-				//"buf": buf,
-				"buf_len": len(buf),
-				"n": n,
-			}).Info("check write ")
 			if _, err := dst.Write(buf[0:n]); err != nil {
 				Logger.Fields(LogFields{
 					"buf": buf,
