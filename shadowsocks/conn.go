@@ -10,14 +10,15 @@ import (
 type Conn struct {
 	net.Conn
 	Cipher *Cipher
-	Buffer *LeakyBufType
+	readBuf  []byte
+	writeBuf []byte
 
 	//////////////////
 	cryptor interface{}
 }
 
 func NewConn(c net.Conn, cipher *Cipher) *Conn {
-	var leakyBuf *LeakyBufType
+	//var leakyBuf *LeakyBufType
 	var cryptor interface{}
 	if cipher.CType == C_STREAM {
 		conn_stream := &ConnStream{
@@ -25,7 +26,7 @@ func NewConn(c net.Conn, cipher *Cipher) *Conn {
 			Buffer: leakyBuf,
 			Cipher: cipher,
 		}
-		leakyBuf = conn_stream.getBuffer()
+		//leakyBuf = conn_stream.getBuffer()
 		cryptor = conn_stream
 	} else if cipher.CType == C_AEAD {
 		conn_aead := &ConnAead{
@@ -33,13 +34,14 @@ func NewConn(c net.Conn, cipher *Cipher) *Conn {
 			Buffer: leakyBuf,
 			Cipher: cipher,
 		}
-		leakyBuf = conn_aead.getBuffer()
+		//leakyBuf = conn_aead.getBuffer()
 		cryptor = conn_aead
 	}
 
 	conn := &Conn{
 		Conn:     c,
-		Buffer: leakyBuf,
+		readBuf:  leakyBuf.Get(),
+		writeBuf: leakyBuf.Get(),
 		Cipher: cipher,
 		cryptor: cryptor,
 	}
@@ -212,6 +214,8 @@ func (c *Conn) UnPack(b []byte) (n int, err error) {
 }
 
 func (c *Conn) Close() error {
+	leakyBuf.Put(c.readBuf)
+	leakyBuf.Put(c.writeBuf)
 	return c.Conn.Close()
 }
 

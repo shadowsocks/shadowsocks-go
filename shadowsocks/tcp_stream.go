@@ -23,9 +23,9 @@ func (this *ConnStream) getPayloadSizeMask() int {
 	return 32 * 1024
 }
 
-func (this *ConnStream) getBuffer() *LeakyBufType {
-	return NewLeakyBuf(maxNBuf, this.getPayloadSizeMask())
-}
+//func (this *ConnStream) getBuffer() *LeakyBufType {
+//	return NewLeakyBuf(maxNBuf, this.getPayloadSizeMask())
+//}
 
 
 func (this *ConnStream) Init() {

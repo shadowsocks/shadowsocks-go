@@ -11,10 +11,10 @@ type Pipe interface {
 }
 
 // PipeThenClose copies data from src to dst, closes dst when done.
-func Piping(src, dst net.Conn, buffer *LeakyBufType) {
+func Piping(src, dst net.Conn) {
 	defer dst.Close()
-	buf := buffer.Get()
-	defer buffer.Put(buf)
+	buf := leakyBuf.Get()
+	defer leakyBuf.Put(buf)
 	for {
 		//SetReadTimeout(src)
 		n, err := src.Read(buf)

@@ -26,9 +26,9 @@ func (this *ConnAead) getPayloadSizeMask() int {
 	return 0x3FFF // 16*1024 - 1
 }
 
-func (this *ConnAead) getBuffer() *LeakyBufType {
-	return NewLeakyBuf(maxNBuf, this.getPayloadSizeMask())
-}
+//func (this *ConnAead) getBuffer() *LeakyBufType {
+//	return NewLeakyBuf(maxNBuf, this.getPayloadSizeMask())
+//}
 
 func (this *ConnAead) Init() {
 	inst := this.Cipher.Inst

@@ -19,7 +19,6 @@ import (
 )
 
 const (
-	AddrMask        byte = 0xf
 	idType  = 0 // address type index
 	idIP0   = 1 // ip addres start index
 	idDmLen = 1 // domain address length index
@@ -59,7 +58,7 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 	//var reqStart, reqEnd int
 	var reqEnd int
 	addrType := buf[idType]
-	switch addrType & AddrMask {
+	switch addrType & ss.AddrMask {
 	case typeIPv4:
 		reqEnd = idIP0+lenIPv4
 	case typeIPv6:
@@ -67,14 +66,14 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 	case typeDm:
 		reqEnd = idDm0+int(buf[idDmLen])+lenDmBase
 	default:
-		err = fmt.Errorf("addr type %d not supported", addrType&AddrMask)
+		err = fmt.Errorf("addr type %d not supported", addrType&ss.AddrMask)
 		return
 	}
 
 	// Return string for typeIP is not most efficient, but browsers (Chrome,
 	// Safari, Firefox) all seems using typeDm exclusively. So this is not a
 	// big problem.
-	switch addrType & AddrMask {
+	switch addrType & ss.AddrMask {
 	case typeIPv4:
 		host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
 	case typeIPv6:
@@ -160,8 +159,8 @@ func handleConnection(conn *ss.Conn) {
 	Logger.Infof("piping %s<->%s", conn.RemoteAddr(), host)
 
 	//ss.Piping(remote, conn, conn.Cipher)
-	go ss.Piping(conn, remote, conn.Buffer)
-	ss.Piping(remote, conn, conn.Buffer)
+	go ss.Piping(conn, remote)
+	ss.Piping(remote, conn)
 	closed = true
 	return
 }

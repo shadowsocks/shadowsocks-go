@@ -16,6 +16,8 @@ import (
 	"time"
 )
 
+const AddrMask        byte = 0xf
+
 var DebugLog = true
 
 type Config struct {
