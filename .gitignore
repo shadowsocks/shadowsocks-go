@@ -4,5 +4,5 @@ bin
 local
 server
 shadowsocks-go.iml
-test.sh
+*.sh
 .idea

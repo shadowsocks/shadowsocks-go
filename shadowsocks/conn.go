@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"net"
 	"strconv"
-	"bytes"
 )
 
 type Conn struct {
@@ -18,23 +17,12 @@ type Conn struct {
 }
 
 func NewConn(c net.Conn, cipher *Cipher) *Conn {
-	//var leakyBuf *LeakyBufType
 	var cryptor interface{}
 	if cipher.CType == C_STREAM {
-		conn_stream := &ConnStream{
-			Conn:     c,
-			Buffer: leakyBuf,
-			Cipher: cipher,
-		}
-		//leakyBuf = conn_stream.getBuffer()
+		conn_stream := &ConnStream{}
 		cryptor = conn_stream
 	} else if cipher.CType == C_AEAD {
-		conn_aead := &ConnAead{
-			Conn:     c,
-			Buffer: leakyBuf,
-			Cipher: cipher,
-		}
-		//leakyBuf = conn_aead.getBuffer()
+		conn_aead := &ConnAead{}
 		cryptor = conn_aead
 	}
 
@@ -71,28 +59,15 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 func (c *Conn) initEncrypt() (err error) {
 	if c.Cipher.CType == C_STREAM {
 		cryptor := c.cryptor.(*ConnStream)
-		cryptor.data_buffer = bytes.NewBuffer(nil)
-
-		if cryptor.CipherInst == nil || cryptor.CipherInst.Enc == nil {
-			err = cryptor.initEncrypt()
-			if err != nil {
-				return
-			}
-		} else {
-			//cryptor.iv_offset = cryptor.CipherInst.Info.ivLen
-			cryptor.iv_offset = 0
+		err = cryptor.initEncrypt(c.Conn, c.Cipher)
+		if err != nil {
+			return
 		}
 	} else if c.Cipher.CType == C_AEAD{
 		cryptor := c.cryptor.(*ConnAead)
-		cryptor.data_buffer = bytes.NewBuffer(nil)
-
-		if cryptor.CipherInst == nil || cryptor.CipherInst.Enc == nil {
-			err = cryptor.initEncrypt()
-			if err != nil {
-				return
-			}
-		} else {
-			cryptor.iv_offset = 2
+		err = cryptor.initEncrypt(c.Conn, c.Cipher)
+		if err != nil {
+			return
 		}
 	}
 
@@ -102,30 +77,17 @@ func (c *Conn) initEncrypt() (err error) {
 func (c *Conn) initDecrypt() (err error) {
 	if c.Cipher.CType == C_STREAM {
 		cryptor := c.cryptor.(*ConnStream)
-		cryptor.data_buffer = bytes.NewBuffer(nil)
-
-		if cryptor.CipherInst == nil || cryptor.CipherInst.Dec == nil {
-			err = cryptor.initDecrypt()
-			if err != nil {
-				return
-			}
-		} else {
-			cryptor.iv_offset = 0
+		err = cryptor.initDecrypt(c.Conn, c.Cipher)
+		if err != nil {
+			return
 		}
 
 	} else if c.Cipher.CType == C_AEAD{
 		cryptor := c.cryptor.(*ConnAead)
-		cryptor.data_buffer = bytes.NewBuffer(nil)
-
-		if cryptor.CipherInst == nil || cryptor.CipherInst.Dec == nil {
-			err = cryptor.initDecrypt()
-			if err != nil {
-				return
-			}
-		} else {
-			cryptor.iv_offset = 0
+		err = cryptor.initDecrypt(c.Conn, c.Cipher)
+		if err != nil {
+			return
 		}
-
 	}
 
 	return
@@ -144,12 +106,7 @@ func (c *Conn) Pack(b []byte) (n int, err error) {
 		}
 
 		var buffer_len int64
-		buffer_len, err = cryptor.data_buffer.(*bytes.Buffer).WriteTo(c.Conn)
-		if err != nil {
-			Logger.Fields(LogFields{
-				"err": err,
-			}).Warn("write data error")
-		}
+		buffer_len, err = cryptor.dataBuffer.WriteTo(c.Conn)
 		n = int(buffer_len)
 
 	} else if c.Cipher.CType == C_AEAD{
@@ -164,7 +121,7 @@ func (c *Conn) Pack(b []byte) (n int, err error) {
 		}
 
 		var buffer_len int64
-		buffer_len, err = cryptor.data_buffer.(*bytes.Buffer).WriteTo(c.Conn)
+		buffer_len, err = cryptor.dataBuffer.WriteTo(c.Conn)
 		if err != nil {
 			Logger.Fields(LogFields{
 				"err": err,
@@ -189,9 +146,7 @@ func (c *Conn) UnPack(b []byte) (n int, err error) {
 			return
 		}
 
-		data := cryptor.data_buffer.(*bytes.Buffer).Bytes()
-		n = len(data)
-		copy(b, data)
+		n, err = cryptor.dataBuffer.Read(b)
 
 	} else if c.Cipher.CType == C_AEAD{
 		cryptor := c.cryptor.(*ConnAead)
@@ -204,9 +159,7 @@ func (c *Conn) UnPack(b []byte) (n int, err error) {
 			return
 		}
 
-		data := cryptor.data_buffer.(*bytes.Buffer).Bytes()
-		n = len(data)
-		copy(b, data)
+		n, err = cryptor.dataBuffer.Read(b)
 
 	}
 

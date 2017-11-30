@@ -1,18 +1,18 @@
 package shadowsocks
 
 import (
-	"net"
 	"io"
+	"bytes"
 )
 
+type ConnCipher interface {
+	initEncrypt(r io.Reader, cipher *Cipher) (err error)
+	initDecrypt(r io.Reader, cipher *Cipher) (err error)
+}
+
 type ConnStream struct {
-	net.Conn
-	Cipher *Cipher
-	Buffer *LeakyBufType
-
-	//////////////////
-
-	data_buffer io.Writer
+	dataBuffer *bytes.Buffer
+	reader io.Reader
 
 	iv_offset int
 
@@ -28,13 +28,17 @@ func (this *ConnStream) getPayloadSizeMask() int {
 //}
 
 
-func (this *ConnStream) Init() {
-	inst := this.Cipher.Inst
-	this.CipherInst = inst.(*CipherStream)
+func (this *ConnStream) Init(r io.Reader, cipher *Cipher) {
+	this.CipherInst = cipher.Inst.(*CipherStream)
+	this.dataBuffer = bytes.NewBuffer(nil)
 }
 
-func (this *ConnStream) initEncrypt() (err error) {
-	this.Init()
+func (this *ConnStream) initEncrypt(r io.Reader, cipher *Cipher) (err error) {
+	if this.CipherInst != nil && this.CipherInst.Enc != nil {
+		this.iv_offset = 0
+		return
+	}
+	this.Init(r, cipher)
 
 	err = this.CipherInst.Init(nil, Encrypt)
 	if err != nil {
@@ -42,7 +46,7 @@ func (this *ConnStream) initEncrypt() (err error) {
 	}
 	this.iv_offset = 0
 
-	_, err = this.data_buffer.Write(this.CipherInst.iv)
+	_, err = this.dataBuffer.Write(this.CipherInst.iv)
 	if err != nil {
 		Logger.Fields(LogFields{
 			"err": err,
@@ -53,8 +57,13 @@ func (this *ConnStream) initEncrypt() (err error) {
 	return
 }
 
-func (this *ConnStream) initDecrypt() (err error) {
-	this.Init()
+func (this *ConnStream) initDecrypt(r io.Reader, cipher *Cipher) (err error) {
+	if this.CipherInst != nil && this.CipherInst.Dec != nil {
+		this.iv_offset = 0
+		return
+	}
+
+	this.Init(r, cipher)
 
 	var iv []byte
 	iv, err = this.getIV()
@@ -80,7 +89,7 @@ func (this *ConnStream) initDecrypt() (err error) {
 
 func (this *ConnStream) getIV() (iv []byte, err error) {
 	iv = make([]byte, this.CipherInst.IVSize())
-	if _, err = io.ReadFull(this.Conn, iv); err != nil {
+	if _, err = io.ReadFull(this.reader, iv); err != nil {
 		Logger.Fields(LogFields{
 			"iv": iv,
 			"err": err,
@@ -108,7 +117,7 @@ func (this *ConnStream) Pack(packet_data []byte) (err error) {
 		return
 	}
 
-	_, err = this.data_buffer.Write(packet_buf)
+	_, err = this.dataBuffer.Write(packet_buf)
 	if err != nil {
 		Logger.Fields(LogFields{
 			"data": packet_buf,
@@ -123,7 +132,7 @@ func (this *ConnStream) Pack(packet_data []byte) (err error) {
 func (this *ConnStream) UnPack() (err error) {
 	var n int
 	payload := make([]byte, this.getPayloadSizeMask())
-	n, err = this.Conn.Read(payload)
+	n, err = this.reader.Read(payload)
 	if err != nil && err != io.EOF {
 		Logger.Fields(LogFields{
 			"err": err,
@@ -146,7 +155,7 @@ func (this *ConnStream) UnPack() (err error) {
 		return
 	}
 
-	_, err = this.data_buffer.Write(payload)
+	_, err = this.dataBuffer.Write(payload)
 	if err != nil {
 		Logger.Fields(LogFields{
 			"data": payload,
