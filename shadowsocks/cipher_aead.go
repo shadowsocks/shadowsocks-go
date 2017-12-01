@@ -101,6 +101,7 @@ func (c *CipherAead) Init(iv []byte, doe DecOrEnc) (err error) {
 
 func (c *CipherAead) Encrypt(dst, src []byte) error {
 	c.Enc.Seal(dst[:0], c.Nonce(), src, nil)
+	c.SetNonce(true)
 
 	return nil
 }
@@ -128,6 +129,7 @@ func (c *CipherAead) Decrypt(dst, src []byte) error {
 		}).Warn("decrypt error")
 		return err
 	}
+	c.SetNonce(true)
 
 	return nil
 }

@@ -10,8 +10,6 @@ type ConnAead struct {
 	dataBuffer *bytes.Buffer
 	reader io.Reader
 
-	iv_offset int
-
 	CipherInst *CipherAead
 }
 
@@ -31,7 +29,6 @@ func (this *ConnAead) Init(r io.Reader, cipher *Cipher) {
 
 func (this *ConnAead) initEncrypt(r io.Reader, cipher *Cipher) (err error) {
 	if this.CipherInst != nil && this.CipherInst.Enc != nil {
-		this.iv_offset = 2
 		return
 	}
 	this.Init(r, cipher)
@@ -40,7 +37,6 @@ func (this *ConnAead) initEncrypt(r io.Reader, cipher *Cipher) (err error) {
 	if err != nil {
 		return
 	}
-	this.iv_offset = 2 + this.CipherInst.Enc.Overhead()
 
 	_, err = this.dataBuffer.Write(this.CipherInst.iv)
 	if err != nil {
@@ -55,7 +51,6 @@ func (this *ConnAead) initEncrypt(r io.Reader, cipher *Cipher) (err error) {
 
 func (this *ConnAead) initDecrypt(r io.Reader, cipher *Cipher) (err error) {
 	if this.CipherInst != nil && this.CipherInst.Dec != nil {
-		this.iv_offset = 0
 		return
 	}
 	this.Init(r, cipher)
@@ -69,7 +64,6 @@ func (this *ConnAead) initDecrypt(r io.Reader, cipher *Cipher) (err error) {
 		return
 	}
 
-	this.iv_offset = len(iv)
 	err = this.CipherInst.Init(iv, Decrypt)
 	if err != nil {
 		Logger.Fields(LogFields{
@@ -122,7 +116,6 @@ func (this *ConnAead) Pack(packet_data []byte) (err error) {
 			}).Warn("encrypt header error")
 			break
 		}
-		this.CipherInst.SetNonce(true)
 
 		// get payload
 		payload := packet_data[:payload_len]
@@ -138,7 +131,6 @@ func (this *ConnAead) Pack(packet_data []byte) (err error) {
 			}).Warn("encrypt payload error")
 			break
 		}
-		this.CipherInst.SetNonce(true)
 
 		_, err = this.dataBuffer.Write(packet_buf)
 		if err != nil {
@@ -177,7 +169,6 @@ func (this *ConnAead) UnPack() (err error) {
 		}).Warn("decrypt header error")
 		return
 	}
-	this.CipherInst.SetNonce(true)
 
 	/// get payload size
 	payload_size := int(header[0])<<8 + int(header[1]) & this.getPayloadSizeMask()
@@ -205,7 +196,7 @@ func (this *ConnAead) UnPack() (err error) {
 		return
 	}
 	payload = payload[:payload_size]
-	this.CipherInst.SetNonce(true)
+	//this.CipherInst.SetNonce(true)
 
 	_, err = this.dataBuffer.Write(payload)
 	if err != nil {
