@@ -4,13 +4,15 @@ import (
 	"io"
 	"math"
 	"bytes"
+	"crypto/cipher"
 )
 
 type ConnAead struct {
+	ConnCipher
 	dataBuffer *bytes.Buffer
 	reader io.Reader
 
-	CipherInst *CipherAead
+	CipherInst Cipher
 }
 
 func (this *ConnAead) getPayloadSizeMask() int {
@@ -21,24 +23,24 @@ func (this *ConnAead) getPayloadSizeMask() int {
 //	return NewLeakyBuf(maxNBuf, this.getPayloadSizeMask())
 //}
 
-func (this *ConnAead) Init(r io.Reader, cipher *Cipher) {
-	this.CipherInst = cipher.Inst.(*CipherAead)
+func (this *ConnAead) Init(r io.Reader, cipher Cipher) {
+	this.CipherInst = cipher
 	this.dataBuffer = bytes.NewBuffer(nil)
 	this.reader = r
 }
 
-func (this *ConnAead) initEncrypt(r io.Reader, cipher *Cipher) (err error) {
-	if this.CipherInst != nil && this.CipherInst.Enc != nil {
+func (this *ConnAead) initEncrypt(r io.Reader, cipher Cipher) (err error) {
+	if this.CipherInst != nil && this.CipherInst.GetCryptor() != nil {
 		return
 	}
 	this.Init(r, cipher)
 
-	err = this.CipherInst.Init(nil, Encrypt)
+	err = this.CipherInst.Init(nil, false)
 	if err != nil {
 		return
 	}
 
-	_, err = this.dataBuffer.Write(this.CipherInst.iv)
+	_, err = this.dataBuffer.Write(this.CipherInst.IV())
 	if err != nil {
 		Logger.Fields(LogFields{
 			"err": err,
@@ -49,8 +51,8 @@ func (this *ConnAead) initEncrypt(r io.Reader, cipher *Cipher) (err error) {
 	return
 }
 
-func (this *ConnAead) initDecrypt(r io.Reader, cipher *Cipher) (err error) {
-	if this.CipherInst != nil && this.CipherInst.Dec != nil {
+func (this *ConnAead) initDecrypt(r io.Reader, cipher Cipher) (err error) {
+	if this.CipherInst != nil && this.CipherInst.GetCryptor() != nil {
 		return
 	}
 	this.Init(r, cipher)
@@ -64,11 +66,11 @@ func (this *ConnAead) initDecrypt(r io.Reader, cipher *Cipher) (err error) {
 		return
 	}
 
-	err = this.CipherInst.Init(iv, Decrypt)
+	err = this.CipherInst.Init(iv, true)
 	if err != nil {
 		Logger.Fields(LogFields{
 			"iv": iv,
-			"this.cipher.iv": this.CipherInst.iv,
+			"this.cipher.iv": this.CipherInst.IV(),
 			"err": err,
 		}).Warn("decrypt init error")
 		return
@@ -99,8 +101,8 @@ func (this *ConnAead) Pack(packet_data []byte) (err error) {
 			payload_len = this.getPayloadSizeMask()
 		}
 
-		packet_buf := make([]byte, 2+this.CipherInst.Enc.Overhead()+payload_len+this.CipherInst.Enc.Overhead())
-		payload_buf := packet_buf[2+this.CipherInst.Enc.Overhead() : 2+this.CipherInst.Enc.Overhead()+payload_len+this.CipherInst.Enc.Overhead()]
+		packet_buf := make([]byte, 2+this.CipherInst.GetCryptor().(cipher.AEAD).Overhead()+payload_len+this.CipherInst.GetCryptor().(cipher.AEAD).Overhead())
+		payload_buf := packet_buf[2+this.CipherInst.GetCryptor().(cipher.AEAD).Overhead() : 2+this.CipherInst.GetCryptor().(cipher.AEAD).Overhead()+payload_len+this.CipherInst.GetCryptor().(cipher.AEAD).Overhead()]
 
 		// get header
 		packet_buf[0], packet_buf[1] = byte(payload_len>>8), byte(payload_len)
@@ -110,8 +112,8 @@ func (this *ConnAead) Pack(packet_data []byte) (err error) {
 		if err != nil {
 			Logger.Fields(LogFields{
 				"header": packet_buf[:2],
-				"this.cipher.iv": this.CipherInst.iv,
-				"nonce": this.CipherInst.nonce,
+				"this.cipher.iv": this.CipherInst.IV(),
+				//"nonce": this.CipherInst.nonce,
 				"err": err,
 			}).Warn("encrypt header error")
 			break
@@ -125,8 +127,8 @@ func (this *ConnAead) Pack(packet_data []byte) (err error) {
 		if err != nil {
 			Logger.Fields(LogFields{
 				"payload": payload_buf,
-				"this.cipher.iv": this.CipherInst.iv,
-				"nonce": this.CipherInst.nonce,
+				"this.cipher.iv": this.CipherInst.IV(),
+				//"nonce": this.CipherInst.nonce,
 				"err": err,
 			}).Warn("encrypt payload error")
 			break
@@ -149,7 +151,7 @@ func (this *ConnAead) Pack(packet_data []byte) (err error) {
 
 func (this *ConnAead) UnPack() (err error) {
 	/// read header
-	header := make([]byte, 2+this.CipherInst.Dec.Overhead())
+	header := make([]byte, 2+this.CipherInst.GetCryptor().(cipher.AEAD).Overhead())
 
 	if _, err = io.ReadFull(this.reader, header); err != nil {
 		Logger.Fields(LogFields{
@@ -163,8 +165,8 @@ func (this *ConnAead) UnPack() (err error) {
 	if err != nil {
 		Logger.Fields(LogFields{
 			"header": header,
-			"this.cipher.iv": this.CipherInst.iv,
-			"nonce": this.CipherInst.nonce,
+			"this.cipher.iv": this.CipherInst.IV(),
+			//"nonce": this.CipherInst.nonce,
 			"err": err,
 		}).Warn("decrypt header error")
 		return
@@ -174,7 +176,7 @@ func (this *ConnAead) UnPack() (err error) {
 	payload_size := int(header[0])<<8 + int(header[1]) & this.getPayloadSizeMask()
 
 	/// read payload encrypted data
-	payload := make([]byte, payload_size+this.CipherInst.Dec.Overhead())
+	payload := make([]byte, payload_size+this.CipherInst.GetCryptor().(cipher.AEAD).Overhead())
 	if _, err = io.ReadFull(this.reader, payload); err != nil {
 		Logger.Fields(LogFields{
 			"err": err,
@@ -189,8 +191,8 @@ func (this *ConnAead) UnPack() (err error) {
 			//"data_str": string(data),
 			"payload_len": len(payload),
 			"payload": payload,
-			"this.cipher.iv": this.CipherInst.iv,
-			"nonce": this.CipherInst.nonce,
+			"this.cipher.iv": this.CipherInst.IV(),
+			//"nonce": this.CipherInst.nonce,
 			"err": err,
 		}).Warn("decrypt payload error")
 		return
@@ -208,4 +210,12 @@ func (this *ConnAead) UnPack() (err error) {
 		return
 	}
 	return
+}
+
+func (this *ConnAead) WriteTo(w io.Writer) (n int64, err error) {
+	return this.dataBuffer.WriteTo(w)
+}
+
+func (this *ConnAead) Read(b []byte) (n int, err error) {
+	return this.dataBuffer.Read(b)
 }

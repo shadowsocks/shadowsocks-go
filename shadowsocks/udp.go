@@ -18,10 +18,10 @@ var (
 
 type SecurePacketConn struct {
 	net.PacketConn
-	*Cipher
+	Cipher
 }
 
-func NewSecurePacketConn(c net.PacketConn, cipher *Cipher) *SecurePacketConn {
+func NewSecurePacketConn(c net.PacketConn, cipher Cipher) *SecurePacketConn {
 	return &SecurePacketConn{
 		PacketConn: c,
 		Cipher:     cipher,

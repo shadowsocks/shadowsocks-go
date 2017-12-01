@@ -4,32 +4,39 @@ import (
 	"encoding/binary"
 	"net"
 	"strconv"
+	"io"
 )
+
+type ConnCipher interface {
+	initEncrypt(r io.Reader, cipher Cipher) (err error)
+	initDecrypt(r io.Reader, cipher Cipher) (err error)
+	Pack(packet_data []byte) (err error)
+	UnPack() (err error)
+	WriteTo(io io.Writer) (n int64, err error)
+	Read(b []byte) (n int, err error)
+}
 
 type Conn struct {
 	net.Conn
-	Cipher *Cipher
-	readBuf  []byte
-	writeBuf []byte
+	Cipher Cipher
 
 	//////////////////
-	cryptor interface{}
+	cryptor ConnCipher
 }
 
-func NewConn(c net.Conn, cipher *Cipher) *Conn {
-	var cryptor interface{}
-	if cipher.CType == C_STREAM {
-		conn_stream := &ConnStream{}
-		cryptor = conn_stream
-	} else if cipher.CType == C_AEAD {
-		conn_aead := &ConnAead{}
-		cryptor = conn_aead
+func newConnCipher(cipher Cipher) ConnCipher {
+	if cipher.isStream() {
+		return new(ConnStream)
+	} else {
+		return new(ConnAead)
 	}
+}
+
+func NewConn(c net.Conn, cipher Cipher) *Conn {
+	cryptor := newConnCipher(cipher)
 
 	conn := &Conn{
 		Conn:     c,
-		readBuf:  leakyBuf.Get(),
-		writeBuf: leakyBuf.Get(),
 		Cipher: cipher,
 		cryptor: cryptor,
 	}
@@ -57,118 +64,62 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 }
 
 func (c *Conn) initEncrypt() (err error) {
-	if c.Cipher.CType == C_STREAM {
-		cryptor := c.cryptor.(*ConnStream)
-		err = cryptor.initEncrypt(c.Conn, c.Cipher)
-		if err != nil {
-			return
-		}
-	} else if c.Cipher.CType == C_AEAD{
-		cryptor := c.cryptor.(*ConnAead)
-		err = cryptor.initEncrypt(c.Conn, c.Cipher)
-		if err != nil {
-			return
-		}
+
+	err = c.cryptor.initEncrypt(c.Conn, c.Cipher)
+	if err != nil {
+		return
 	}
 
 	return
 }
 
 func (c *Conn) initDecrypt() (err error) {
-	if c.Cipher.CType == C_STREAM {
-		cryptor := c.cryptor.(*ConnStream)
-		err = cryptor.initDecrypt(c.Conn, c.Cipher)
-		if err != nil {
-			return
-		}
-
-	} else if c.Cipher.CType == C_AEAD{
-		cryptor := c.cryptor.(*ConnAead)
-		err = cryptor.initDecrypt(c.Conn, c.Cipher)
-		if err != nil {
-			return
-		}
+	err = c.cryptor.initDecrypt(c.Conn, c.Cipher)
+	if err != nil {
+		return
 	}
 
 	return
 }
 
 func (c *Conn) Pack(b []byte) (n int, err error) {
-	if c.Cipher.CType == C_STREAM {
-		cryptor := c.cryptor.(*ConnStream)
-
-		err = cryptor.Pack(b)
-		if err != nil {
-			Logger.Fields(LogFields{
-				"err": err,
-			}).Warn("pack error")
-			return
-		}
-
-		var buffer_len int64
-		buffer_len, err = cryptor.dataBuffer.WriteTo(c.Conn)
-		n = int(buffer_len)
-
-	} else if c.Cipher.CType == C_AEAD{
-		cryptor := c.cryptor.(*ConnAead)
-
-		err = cryptor.Pack(b)
-		if err != nil {
-			Logger.Fields(LogFields{
-				"err": err,
-			}).Warn("pack error")
-			return
-		}
-
-		var buffer_len int64
-		buffer_len, err = cryptor.dataBuffer.WriteTo(c.Conn)
-		if err != nil {
-			Logger.Fields(LogFields{
-				"err": err,
-			}).Warn("write data error")
-		}
-		n = int(buffer_len)
-
+	cryptor := c.cryptor
+	err = cryptor.Pack(b)
+	if err != nil {
+		Logger.Fields(LogFields{
+			"err": err,
+		}).Warn("pack error")
+		return
 	}
+
+	var buffer_len int64
+	buffer_len, err = cryptor.WriteTo(c.Conn)
+	if err != nil {
+		Logger.Fields(LogFields{
+			"err": err,
+		}).Warn("write data error")
+	}
+	n = int(buffer_len)
 
 	return
 }
 
 func (c *Conn) UnPack(b []byte) (n int, err error) {
-	if c.Cipher.CType == C_STREAM {
-		cryptor := c.cryptor.(*ConnStream)
-
-		err = cryptor.UnPack()
-		if err != nil {
-			Logger.Fields(LogFields{
-				"err": err,
-			}).Warn("unpack error")
-			return
-		}
-
-		n, err = cryptor.dataBuffer.Read(b)
-
-	} else if c.Cipher.CType == C_AEAD{
-		cryptor := c.cryptor.(*ConnAead)
-
-		err = cryptor.UnPack()
-		if err != nil {
-			Logger.Fields(LogFields{
-				"err": err,
-			}).Warn("unpack error")
-			return
-		}
-
-		n, err = cryptor.dataBuffer.Read(b)
-
+	cryptor := c.cryptor
+	err = cryptor.UnPack()
+	if err != nil {
+		Logger.Fields(LogFields{
+			"err": err,
+		}).Warn("unpack error")
+		return
 	}
+
+	n, err = cryptor.Read(b)
 
 	return
 }
 
 func (c *Conn) Close() error {
-	leakyBuf.Put(c.readBuf)
-	leakyBuf.Put(c.writeBuf)
 	return c.Conn.Close()
 }
 
@@ -200,7 +151,7 @@ func RawAddr(addr string) (buf []byte, err error) {
 	return
 }
 
-func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, err error) {
+func DialWithRawAddr(rawaddr []byte, server string, cipher Cipher) (c *Conn, err error) {
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
 		Logger.Fields(LogFields{
@@ -221,7 +172,7 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, er
 }
 
 // addr should be in the form of host:port
-func Dial(addr, server string, cipher *Cipher) (c *Conn, err error) {
+func Dial(addr, server string, cipher Cipher) (c *Conn, err error) {
 	ra, err := RawAddr(addr)
 	if err != nil {
 		Logger.Fields(LogFields{

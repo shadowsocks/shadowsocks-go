@@ -152,7 +152,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 
 type ServerCipher struct {
 	server string
-	cipher *ss.Cipher
+	cipher ss.Cipher
 }
 
 var servers struct {
@@ -195,7 +195,7 @@ func parseServerConfig(config *ss.Config) {
 		n := len(config.ServerPassword)
 		servers.srvCipher = make([]*ServerCipher, n)
 
-		cipherCache := make(map[string]*ss.Cipher)
+		cipherCache := make(map[string]ss.Cipher)
 		i := 0
 		for _, serverInfo := range config.ServerPassword {
 			if len(serverInfo) < 2 || len(serverInfo) > 3 {

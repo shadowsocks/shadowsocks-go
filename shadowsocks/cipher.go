@@ -12,51 +12,47 @@ const (
 	Encrypt
 )
 
-const (
-	C_STREAM CipherType = iota
-	C_AEAD
-)
-
 type cipherInfo struct {
 	method string
-	ctype CipherType
-	keyLen    int
-	ivLen     int
-	makeCipher func(info interface{}) (interface{}, error)
+	KeySize    int
+	IVSize     int
+	makeCipher func(password string, info *cipherInfo) (Cipher, error) // make general cipher
+	makeKey func(password string, keySize int) (key []byte) // make key by password
+	makeCryptor func(key []byte, iv []byte, decrypt bool) (interface{}, error) // make stream for stream cipher with key or make aead for aead cipher with subkey which is made by key and iv
 }
 
-//type Cipher struct {
-//	Doe DecOrEnc
-//	Enc  interface{}
-//	Dec  interface{}
-//	Info *cipherInfo
-//}
-//type Cipher interface {
-//	Encrypt(dst, src []byte) (error)
-//	Decrypt(dst, src []byte) (error)
-//	Copy() (error)
-//	Init(info *cipherInfo) (error)
-//}
-type Cipher struct {
-	Inst interface{}
-	CType CipherType
+type Cipher interface {
+	/////////////////////////////////////////////////
+	isStream() bool
+	Init(iv []byte, decrypt bool) (err error)
+	SetKey(key []byte)
+	SetInfo(info *cipherInfo)
+	SetCryptor(cryptor interface{})
+	GetCryptor() interface{}
+	newIV() (err error)
+	IV() []byte
+	KeySize() int
+	IVSize() int
+	Encrypt(dst, src []byte) error
+	Decrypt(dst, src []byte) error
+	/////////////////////////////////////////////////
 }
 
 var cipherMethod = map[string]*cipherInfo{
-	"aes-128-cfb":   {"aes-128-cfb", C_STREAM,16, 16, newAESCFBStream},
-	"aes-192-cfb":   {"aes-192-cfb", C_STREAM,24, 16, newAESCFBStream},
-	"aes-256-cfb":   {"aes-256-cfb", C_STREAM,32, 16, newAESCFBStream},
-	"aes-128-ctr":   {"aes-128-ctr", C_STREAM,16, 16, newAESCTRStream},
-	"aes-192-ctr":   {"aes-192-ctr", C_STREAM,24, 16, newAESCTRStream},
-	"aes-256-ctr":   {"aes-256-ctr", C_STREAM,32, 16, newAESCTRStream},
-	"des-cfb":       {"des-cfb", C_STREAM,8, 8, newDESStream},
-	"bf-cfb":        {"bf-cfb", C_STREAM,16, 8, newBlowFishStream},
-	"cast5-cfb":     {"cast5-cfb", C_STREAM,16, 8, newCast5Stream},
-	"rc4-md5":       {"rc4-md5", C_STREAM,16, 16, newRC4MD5Stream},
-	"chacha20":      {"chacha20", C_STREAM,32, 8, newChaCha20Stream},
-	"chacha20-ietf": {"chacha20-ietf", C_STREAM,32, 12, newChaCha20IETFStream},
-	"chacha20-ietf-poly1305": {"chacha20-ietf-poly1305", C_AEAD,32, 32, newChaCha20IETFPoly1305Aead},
-	"salsa20":       {"salsa20", C_STREAM,32, 8, newSalsa20Stream},
+	"aes-128-cfb":   {"aes-128-cfb", 16, 16, newStream, evpBytesToKey, newAESCFBStream},
+	"aes-192-cfb":   {"aes-192-cfb", 24, 16, newStream, evpBytesToKey, newAESCFBStream},
+	"aes-256-cfb":   {"aes-256-cfb", 32, 16, newStream, evpBytesToKey, newAESCFBStream},
+	"aes-128-ctr":   {"aes-128-ctr", 16, 16, newStream, evpBytesToKey, newAESCTRStream},
+	"aes-192-ctr":   {"aes-192-ctr", 24, 16, newStream, evpBytesToKey, newAESCTRStream},
+	"aes-256-ctr":   {"aes-256-ctr", 32, 16, newStream, evpBytesToKey, newAESCTRStream},
+	"des-cfb":       {"des-cfb", 8, 8, newStream, evpBytesToKey, newDESStream},
+	"bf-cfb":        {"bf-cfb", 16, 8, newStream, evpBytesToKey, newBlowFishStream},
+	"cast5-cfb":     {"cast5-cfb", 16, 8, newStream, evpBytesToKey, newCast5Stream},
+	"rc4-md5":       {"rc4-md5", 16, 16, newStream, evpBytesToKey, newRC4MD5Stream},
+	"chacha20":      {"chacha20", 32, 8, newStream, evpBytesToKey, newChaCha20Stream},
+	"chacha20-ietf": {"chacha20-ietf", 32, 12, newStream, evpBytesToKey, newChaCha20IETFStream},
+	"chacha20-ietf-poly1305": {"chacha20-ietf-poly1305", 32, 32, newAead, kdf, newChaCha20IETFPoly1305Aead},
+	"salsa20":       {"salsa20", 32, 8, newStream, evpBytesToKey, newSalsa20Stream},
 }
 ////////////////////////////////////////////////////////////////////////////////////////
 func CheckCipherMethod(method string) error {
@@ -74,31 +70,19 @@ func CheckCipherMethod(method string) error {
 // NewCipher creates a cipher that can be used in Dial() etc.
 // Use cipher.Copy() to create a new cipher with the same method and password
 // to avoid the cost of repeated cipher initialization.
-func NewCipher(method, password string) (c *Cipher, err error) {
-	if password == "" {
-		Logger.Fields(LogFields{"password": password}).Error("empty password")
-		return nil, errEmptyPassword
-	}
+func NewCipher(method, password string) (c Cipher, err error) {
+	if password == "" { err = errors.New("password is empty"); return }
 	mi, ok := cipherMethod[method]
-	if !ok {
-		Logger.Fields(LogFields{"method": method}).Error("Unsupported encryption method")
-		return nil, errors.New("Unsupported encryption method: " + method)
-	}
-
-	var i interface{}
-
-	if mi.ctype == C_STREAM {
-		i = newStream(password, mi)
-	} else if mi.ctype == C_AEAD {
-		i = newAead(password, mi)
-	}
-	c = &Cipher{Inst: i, CType:mi.ctype}
-
-	return c, nil
+	if !ok { err = errors.New("Unsupported encryption method: " + method); return }
+	return mi.makeCipher(password, mi)
 }
 
+func CopyCipher(c Cipher) Cipher {
+	nc := c
+	return nc
+}
 //// Copy creates a new cipher at it's initial state.
-func CopyCipher(c *Cipher) *Cipher {
+//func CopyCipher(c *Cipher) *Cipher {
 	//return c
 
 	// This optimization maybe not necessary. But without this function, we
@@ -114,19 +98,20 @@ func CopyCipher(c *Cipher) *Cipher {
 	// because the current implementation is not highly optimized, or this is
 	// the nature of the algorithm.)
 	//
-	if c.CType == C_STREAM {
-		//c := c.(*CipherStream)
-		//inst := c.Inst.(*CipherStream).Copy()
-		nc := *c
-		nc.Inst = ((nc.Inst).(*CipherStream)).Copy()
-		return &nc
-	} else if c.CType == C_AEAD {
-		//c := c.(*CipherAead)
-		//inst := c.Inst.(*CipherAead).Copy()
-		nc := *c
-		nc.Inst = ((nc.Inst).(*CipherAead)).Copy()
-		return &nc
-	}
 
-	return nil
-}
+	//if c.CType == C_STREAM {
+	//	//c := c.(*CipherStream)
+	//	//inst := c.Inst.(*CipherStream).Copy()
+	//	nc := *c
+	//	nc.Inst = ((nc.Inst).(*CipherStream)).Copy()
+	//	return &nc
+	//} else if c.CType == C_AEAD {
+	//	//c := c.(*CipherAead)
+	//	//inst := c.Inst.(*CipherAead).Copy()
+	//	nc := *c
+	//	nc.Inst = ((nc.Inst).(*CipherAead)).Copy()
+	//	return &nc
+	//}
+//
+//	return nil
+//}

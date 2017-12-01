@@ -309,7 +309,7 @@ func run(port, password string) {
 		os.Exit(1)
 	}
 	passwdManager.add(port, password, ln)
-	var cipher *ss.Cipher
+	var cipher ss.Cipher
 	Logger.Fields(ss.LogFields{"port": port}).Info("server listening ...")
 	for {
 		conn, err := ln.Accept()

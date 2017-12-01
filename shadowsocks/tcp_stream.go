@@ -5,18 +5,14 @@ import (
 	"bytes"
 )
 
-type ConnCipher interface {
-	initEncrypt(r io.Reader, cipher *Cipher) (err error)
-	initDecrypt(r io.Reader, cipher *Cipher) (err error)
-}
-
 type ConnStream struct {
+	ConnCipher
 	dataBuffer *bytes.Buffer
 	reader io.Reader
 
 	iv_offset int
 
-	CipherInst *CipherStream
+	CipherInst Cipher
 }
 
 func (this *ConnStream) getPayloadSizeMask() int {
@@ -28,25 +24,26 @@ func (this *ConnStream) getPayloadSizeMask() int {
 //}
 
 
-func (this *ConnStream) Init(r io.Reader, cipher *Cipher) {
-	this.CipherInst = cipher.Inst.(*CipherStream)
+func (this *ConnStream) Init(r io.Reader, cipher Cipher) {
+	//this.CipherInst = cipher.Inst.(*CipherStream)
+	this.CipherInst = cipher
 	this.dataBuffer = bytes.NewBuffer(nil)
 }
 
-func (this *ConnStream) initEncrypt(r io.Reader, cipher *Cipher) (err error) {
-	if this.CipherInst != nil && this.CipherInst.Enc != nil {
+func (this *ConnStream) initEncrypt(r io.Reader, cipher Cipher) (err error) {
+	if this.CipherInst != nil && this.CipherInst.GetCryptor() != nil {
 		this.iv_offset = 0
 		return
 	}
 	this.Init(r, cipher)
 
-	err = this.CipherInst.Init(nil, Encrypt)
+	err = this.CipherInst.Init(nil, false)
 	if err != nil {
 		return
 	}
 	this.iv_offset = 0
 
-	_, err = this.dataBuffer.Write(this.CipherInst.iv)
+	_, err = this.dataBuffer.Write(this.CipherInst.IV())
 	if err != nil {
 		Logger.Fields(LogFields{
 			"err": err,
@@ -57,8 +54,8 @@ func (this *ConnStream) initEncrypt(r io.Reader, cipher *Cipher) (err error) {
 	return
 }
 
-func (this *ConnStream) initDecrypt(r io.Reader, cipher *Cipher) (err error) {
-	if this.CipherInst != nil && this.CipherInst.Dec != nil {
+func (this *ConnStream) initDecrypt(r io.Reader, cipher Cipher) (err error) {
+	if this.CipherInst != nil && this.CipherInst.GetCryptor() != nil {
 		this.iv_offset = 0
 		return
 	}
@@ -75,11 +72,11 @@ func (this *ConnStream) initDecrypt(r io.Reader, cipher *Cipher) (err error) {
 	}
 
 	this.iv_offset = len(iv)
-	err = this.CipherInst.Init(iv, Decrypt)
+	err = this.CipherInst.Init(iv, true)
 	if err != nil {
 		Logger.Fields(LogFields{
 			"iv": iv,
-			"this.cipher.iv": this.CipherInst.iv,
+			"this.cipher.iv": this.CipherInst.IV(),
 			"err": err,
 		}).Warn("decrypt init error")
 		return
@@ -104,14 +101,14 @@ func (this *ConnStream) Pack(packet_data []byte) (err error) {
 	packet_buf := make([]byte, this.iv_offset + len(packet_data))
 
 	if this.iv_offset > 0 {
-		copy(packet_buf[:this.iv_offset], this.CipherInst.iv) // write iv to header
+		copy(packet_buf[:this.iv_offset], this.CipherInst.IV()) // write iv to header
 	}
 
 	err = this.CipherInst.Encrypt(packet_buf[this.iv_offset:], packet_data) // encrypt true data and write encrypted data to rest of space in packet
 	if err != nil {
 		Logger.Fields(LogFields{
 			"data": packet_data,
-			"cipher.iv": this.CipherInst.iv,
+			"cipher.iv": this.CipherInst.IV(),
 			"err": err,
 		}).Warn("encrypt error")
 		return
@@ -149,7 +146,7 @@ func (this *ConnStream) UnPack() (err error) {
 	if err != nil {
 		Logger.Fields(LogFields{
 			"payload": payload,
-			"this.cipher.iv": this.CipherInst.iv,
+			"this.cipher.iv": this.CipherInst.IV(),
 			"err": err,
 		}).Warn("decrypt error")
 		return
@@ -166,4 +163,12 @@ func (this *ConnStream) UnPack() (err error) {
 	}
 
 	return
+}
+
+func (this *ConnStream) WriteTo(w io.Writer) (n int64, err error) {
+	return this.dataBuffer.WriteTo(w)
+}
+
+func (this *ConnStream) Read(b []byte) (n int, err error) {
+	return this.dataBuffer.Read(b)
 }
