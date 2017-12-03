@@ -14,10 +14,8 @@ type CipherAead struct {
 	EnCryptor cipher.AEAD
 	DeCryptor cipher.AEAD
 	Info *cipherInfo
-
 	key []byte
 	nonce [2][]byte
-
 	ivSize int
 	keySize int
 }
@@ -60,22 +58,12 @@ func (this *CipherAead) SetNonce(decrypt DecOrEnc, increment bool) {
 
 func newChaCha20IETFPoly1305Aead(key, iv []byte, decrypt DecOrEnc) (interface{}, error) { return chacha20poly1305.New(key) }
 func newAead(password string, info *cipherInfo) (c Cipher, err error) {
-	key := info.makeKey(password, info.KeySize)
-	c = new(CipherAead); c.SetKey(key); c.SetInfo(info)
-	return
-}
+	key := info.makeKey(password, info.KeySize); c = new(CipherAead); c.SetKey(key); c.SetInfo(info); return }
 
 func hkdfSHA1(secret, iv, info, outkey []byte) (err error) {
-	r := hkdf.New(sha1.New, secret, iv, info)
-	if _, err = io.ReadFull(r, outkey); err != nil { return }
-	return
-}
+	r := hkdf.New(sha1.New, secret, iv, info); if _, err = io.ReadFull(r, outkey); err != nil { return }; return }
 // key-derivation function from original Shadowsocks
-func kdf(password string, keyLen int) []byte {
-	var b, prev []byte
-	h := md5.New()
-	for len(b) < keyLen {
-		h.Write(prev); h.Write([]byte(password)); b = h.Sum(b); prev = b[len(b)-h.Size():]; h.Reset()
-	}
-	return b[:keyLen]
-}
+func genAeadKey(password string, keyLen int) []byte {
+	var b, prev []byte; h := md5.New()
+	for len(b) < keyLen { h.Write(prev); h.Write([]byte(password)); b = h.Sum(b); prev = b[len(b)-h.Size():]; h.Reset() }
+	return b[:keyLen] }

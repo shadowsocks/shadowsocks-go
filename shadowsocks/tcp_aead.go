@@ -15,7 +15,6 @@ type AeadCryptor struct {
 	buffer *LeakyBufType
 	reader io.Reader
 	writer io.Writer
-
 	cipher Cipher
 	iv []byte
 }

@@ -158,9 +158,9 @@ func handleConnection(conn *ss.Conn) {
 	}()
 	Logger.Infof("piping %s<->%s", conn.RemoteAddr(), host)
 
-	//ss.Piping(remote, conn, conn.Cipher)
-	go ss.Piping(conn, remote)
-	ss.Piping(remote, conn)
+	//ss.Piping(remote, conn, conn.Cryptor)
+	//go ss.Piping(conn, remote)
+	//ss.Piping(remote, conn)
 	closed = true
 	return
 }
@@ -309,7 +309,7 @@ func run(port, password string) {
 		os.Exit(1)
 	}
 	passwdManager.add(port, password, ln)
-	var cipher ss.Cipher
+	var cryptor ss.Cryptor
 	Logger.Fields(ss.LogFields{"port": port}).Info("server listening ...")
 	for {
 		conn, err := ln.Accept()
@@ -318,25 +318,25 @@ func run(port, password string) {
 			// listener maybe closed to update password
 			return
 		}
-		// Creating cipher upon first connection.
-		if cipher == nil {
-			Logger.Info("creating cipher for port:", port)
-			cipher, err = ss.NewCipher(config.Method, password)
+		// Creating cryptor upon first connection.
+		if cryptor == nil {
+			Logger.Info("creating cryptor for port:", port)
+			cryptor, err = ss.NewCryptor(config.Method, password)
 			if err != nil {
 				Logger.Fields(ss.LogFields{
 					"port": port,
 					"err": err,
-				}).Error("Error generating cipher for port")
+				}).Error("Error generating cryptor for port")
 				conn.Close()
 				continue
 			}
 		}
-		go handleConnection(ss.NewConn(conn, ss.CopyCipher(cipher)))
+		go handleConnection(ss.NewConn(conn, cryptor))
 	}
 }
 
 //func runUDP(port, password string) {
-//	var cipher *ss.Cipher
+//	var cryptor *ss.Cryptor
 //	port_i, _ := strconv.Atoi(port)
 //	log.Printf("listening udp port %v\n", port)
 //	conn, err := net.ListenUDP("udp", &net.UDPAddr{
@@ -349,12 +349,12 @@ func run(port, password string) {
 //		return
 //	}
 //	defer conn.Close()
-//	cipher, err = ss.NewCipher(config.Method, password)
+//	cryptor, err = ss.NewCryptor(config.Method, password)
 //	if err != nil {
-//		log.Printf("Error generating cipher for udp port: %s %v\n", port, err)
+//		log.Printf("Error generating cryptor for udp port: %s %v\n", port, err)
 //		conn.Close()
 //	}
-//	SecurePacketConn := ss.NewSecurePacketConn(conn, cipher.Copy())
+//	SecurePacketConn := ss.NewSecurePacketConn(conn, cryptor.Copy())
 //	for {
 //		if err := ss.ReadAndHandleUDPReq(SecurePacketConn); err != nil {
 //			debug.Println(err)
@@ -426,7 +426,7 @@ func main() {
 		ss.Logger.Fields(ss.LogFields{
 			"method": config.Method,
 			"err": err,
-		}).Error("check cipher method error")
+		}).Error("check cryptor method error")
 		os.Exit(1)
 	}
 	if err = unifyPortPassword(config); err != nil {

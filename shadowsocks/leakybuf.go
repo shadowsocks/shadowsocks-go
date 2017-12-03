@@ -24,10 +24,8 @@ func NewLeakyBuf(n, bufSize int) *LeakyBufType {
 func (lb *LeakyBufType) Get() (b []byte) {
 	select {
 	case b = <-lb.freeList:
-	default:
-		b = make([]byte, lb.bufSize)
+	default: b = make([]byte, lb.bufSize)
 	}
-	//b = make([]byte, lb.bufSize)
 	return
 }
 
@@ -35,11 +33,6 @@ func (lb *LeakyBufType) Get() (b []byte) {
 // size is not the same with the leaky buffer's. This is intended to expose
 // error usage of leaky buffer.
 func (lb *LeakyBufType) Put(b []byte) {
-	//Logger.Fields(LogFields{
-	//	"b": b,
-	//	"b_string": string(b),
-	//	"b_len": len(b),
-	//}).Info("checking buffer")
 	if len(b) != lb.bufSize {
 		Logger.Fields(LogFields{
 			"b": b,

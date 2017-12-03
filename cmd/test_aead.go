@@ -2,7 +2,8 @@ package main
 
 import (
 	ss "github.com/qunxyz/shadowsocks-go/shadowsocks"
-	"bytes"
+	"crypto/cipher"
+	"fmt"
 )
 
 func main() {
@@ -16,47 +17,21 @@ func main() {
 			"err": err,
 		}).Fatal("new cipher error")
 	}
-	aead := c.(*ss.CipherAead)
-	aead_copy := aead.Copy()
-	//////////////////////////////////
-	buffer := bytes.NewBuffer(nil)
+	//iv, err := c.NewIV()
+	//iv := []byte{144,196,220,148,226,43,179,9,123,110,176,237,81,3,152,169,39,139,19,172,126,205,250,168,86,87,154,73,35,214,32,54}
+	iv := []byte{54,211,221,126,29,73,15,101,192,103,98,71,255,159,44,33,68,117,12,136,61,140,123,125,40,179,172,59,40,33,67,237}
+	c.Init(iv, ss.Decrypt)
+	src := []byte{127,211,100,44,95,80,200,254,227,121,150,129,137,19,151,142,167,15}
+	dst := make([]byte, len(src)+c.GetCryptor().(cipher.AEAD).Overhead())
 
-	src_len := 26
-	src := make([]byte, src_len)
-	for i := 97; i < src_len + 97; i++ {
-		src[i-97] = byte(i)
+	fmt.Printf("iv: %d\n", iv)
+	fmt.Printf("dst_len: %d\n", len(dst))
+	fmt.Printf("src_len: %d\n", len(src))
+	for i := 0; i < 10; i++ {
+		c.(*ss.CipherAead).SetNonce(true)
+		fmt.Printf("nonce: %d\n", c.(*ss.CipherAead).Nonce())
+		err = c.Decrypt(dst, src)
+		if err != nil { fmt.Println(err) }
+		fmt.Printf("%d\n", dst)
 	}
-
-	//////////////////////////////////
-	encrypt := new(ss.PacketAead)
-	encrypt.Cipher = aead
-	encrypt.Init(buffer, src, ss.Encrypt)
-	encrypt.Pack()
-	/////////////////////////////////
-	src = buffer.Bytes()
-	_, src = ss.RemoveEOF(src)
-	//src = src[aead.IVSize():] // need to cut iv from header, cause we use buffer to test not real socket connection
-	ss.Logger.Fields(ss.LogFields{
-		"src": src,
-		"iv": encrypt.Cipher.IV(),
-		//"src_str": string(src),
-		//"data": buffer.Bytes(),
-	}).Info("check encrypted data")
-	/////////////////////////////////
-	decrypt := new(ss.PacketAead)
-	decrypt.Cipher = aead_copy
-	decrypt.Init(buffer, src, ss.Decrypt)
-	decrypt.UnPack()
-	/////////////////////////////////
-	src = buffer.Bytes()
-	_, src = ss.RemoveEOF(src)
-	//src = src[aead.IVSize():] // need to cut iv from header, cause we use buffer to test not real socket connection
-	ss.Logger.Fields(ss.LogFields{
-		"src_str": string(src),
-		"src": src,
-		"iv": decrypt.Cipher.IV(),
-		//"src_str": string(src),
-		//"data": buffer.Bytes(),
-	}).Info("check decrypted data")
-	/////////////////////////////////
 }

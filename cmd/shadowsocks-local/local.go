@@ -134,7 +134,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 
 	rawaddr = buf[idType:reqLen]
 
-	if ss.DebugLog {
+	//if ss.DebugLog {
 		switch buf[idType] {
 		case typeIPv4:
 			host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
@@ -145,18 +145,18 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 		}
 		port := binary.BigEndian.Uint16(buf[reqLen-2 : reqLen])
 		host = net.JoinHostPort(host, strconv.Itoa(int(port)))
-	}
+	//}
 
 	return
 }
 
-type ServerCipher struct {
+type ServerCryptor struct {
 	server string
-	cipher ss.Cipher
+	cryptor ss.Cryptor
 }
 
 var servers struct {
-	srvCipher []*ServerCipher
+	srvCryptor []*ServerCryptor
 	failCnt   []int // failed connection count
 }
 
@@ -173,29 +173,29 @@ func parseServerConfig(config *ss.Config) {
 		method := config.Method
 
 		// only one encryption table
-		cipher, err := ss.NewCipher(method, config.Password)
+		cryptor, err := ss.NewCryptor(method, config.Password)
 		if err != nil {
-			Logger.Fatal("Failed generating ciphers:", err)
+			Logger.Fatal("Failed generating cryptors:", err)
 		}
 		srvPort := strconv.Itoa(config.ServerPort)
 		srvArr := config.GetServerArray()
 		n := len(srvArr)
-		servers.srvCipher = make([]*ServerCipher, n)
+		servers.srvCryptor = make([]*ServerCryptor, n)
 
 		for i, s := range srvArr {
 			if hasPort(s) {
 				Logger.Println("ignore server_port option for server", s)
-				servers.srvCipher[i] = &ServerCipher{s, cipher}
+				servers.srvCryptor[i] = &ServerCryptor{s, cryptor}
 			} else {
-				servers.srvCipher[i] = &ServerCipher{net.JoinHostPort(s, srvPort), cipher}
+				servers.srvCryptor[i] = &ServerCryptor{net.JoinHostPort(s, srvPort), cryptor}
 			}
 		}
 	} else {
 		// multiple servers
 		n := len(config.ServerPassword)
-		servers.srvCipher = make([]*ServerCipher, n)
+		servers.srvCryptor = make([]*ServerCryptor, n)
 
-		cipherCache := make(map[string]ss.Cipher)
+		cryptorCache := make(map[string]ss.Cryptor)
 		i := 0
 		for _, serverInfo := range config.ServerPassword {
 			if len(serverInfo) < 2 || len(serverInfo) > 3 {
@@ -213,35 +213,36 @@ func parseServerConfig(config *ss.Config) {
 			// Using "|" as delimiter is safe here, since no encryption
 			// method contains it in the name.
 			cacheKey := encmethod + "|" + passwd
-			cipher, ok := cipherCache[cacheKey]
+			cryptor, ok := cryptorCache[cacheKey]
 			if !ok {
 				var err error
-				cipher, err = ss.NewCipher(encmethod, passwd)
+				cryptor, err = ss.NewCryptor(encmethod, passwd)
 				if err != nil {
-					Logger.Fatal("Failed generating ciphers:", err)
+					Logger.Fatal("Failed generating cryptors:", err)
 				}
-				cipherCache[cacheKey] = cipher
+				cryptorCache[cacheKey] = cryptor
 			}
-			servers.srvCipher[i] = &ServerCipher{server, cipher}
+			servers.srvCryptor[i] = &ServerCryptor{server, cryptor}
 			i++
 		}
 	}
-	servers.failCnt = make([]int, len(servers.srvCipher))
-	for _, se := range servers.srvCipher {
+	servers.failCnt = make([]int, len(servers.srvCryptor))
+	for _, se := range servers.srvCryptor {
 		Logger.Println("available remote server", se.server)
 	}
 	return
 }
 
 func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn, err error) {
-	se := servers.srvCipher[serverId]
-	remote, err = ss.DialWithRawAddr(rawaddr, se.server, ss.CopyCipher(se.cipher))
+	se := servers.srvCryptor[serverId]
+	remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cryptor)
 	if err != nil {
 		Logger.Fields(ss.LogFields{
 			"rawaddr": rawaddr,
+			"rawaddr_str": string(rawaddr),
 			"server": se.server,
 			"err": err,
-		}).Error("error connecting to shadowsocks server")
+		}).Warn("error connecting to shadowsocks server")
 		const maxFailCnt = 30
 		if servers.failCnt[serverId] < maxFailCnt {
 			servers.failCnt[serverId]++
@@ -262,7 +263,7 @@ func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn
 // servers.
 func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) {
 	const baseFailCnt = 20
-	n := len(servers.srvCipher)
+	n := len(servers.srvCryptor)
 	skipped := make([]int, 0)
 	for i := 0; i < n; i++ {
 		// skip failed server, but try it with some probability
@@ -290,6 +291,7 @@ func handleConnection(conn net.Conn) {
 	closed := false
 	defer func() {
 		if !closed {
+			Logger.Info("close socks connect from ", conn.RemoteAddr().String())
 			conn.Close()
 		}
 	}()
@@ -315,7 +317,10 @@ func handleConnection(conn net.Conn) {
 
 	remote, err := createServerConn(rawaddr, addr) // connect to ss server and send request from local
 	if err != nil {
-		if len(servers.srvCipher) > 1 {
+		//Logger.Fields(ss.LogFields{
+		//	"err": err,
+		//}).Warn("check createServerConn error")
+		if len(servers.srvCryptor) > 1 {
 			Logger.Fields(ss.LogFields{
 				"rawaddr": rawaddr,
 				"addr": addr,
@@ -326,18 +331,19 @@ func handleConnection(conn net.Conn) {
 	}
 	defer func() {
 		if !closed {
+			Logger.Info("close socks connect from ", remote.RemoteAddr().String())
 			remote.Close()
 		}
 	}()
 
-	//go ss.PipingTest(conn, remote) // testing
-	//ss.PipingTest(remote, conn) // testing
+	go ss.Pack(conn, remote) // testing
+	ss.UnPack(remote, conn) // testing
 	// pipe between local and ss server
-	go ss.Piping(conn, remote)
-	ss.Piping(remote, conn)
-	//ss.Piping(conn, remote, remote.Cipher)
+	//go ss.Piping(conn, remote)
+	//ss.Piping(remote, conn)
+	//ss.Piping(conn, remote, remote.Cryptor)
 	closed = true
-	Logger.Info("closed connection to", addr)
+	Logger.Infof("closed connection to %x", addr)
 }
 
 func run(listenAddr string) { // listening from local request
