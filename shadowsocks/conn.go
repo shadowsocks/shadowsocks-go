@@ -7,114 +7,66 @@ import (
 	"io"
 )
 
-type ConnCipher interface {
-	initEncrypt(r io.Reader, cipher Cipher) (err error)
-	initDecrypt(r io.Reader, cipher Cipher) (err error)
-	Pack(packet_data []byte) (err error)
-	UnPack() (err error)
-	WriteTo(io io.Writer) (n int64, err error)
-	Read(b []byte) (n int, err error)
-}
-
 type Conn struct {
 	net.Conn
-	Cipher Cipher
 
 	//////////////////
-	cryptor ConnCipher
+	encrypted bool
+	decrypted bool
+	cryptor Cryptor
 }
 
-func newConnCipher(cipher Cipher) ConnCipher {
-	if cipher.isStream() {
-		return new(ConnStream)
-	} else {
-		return new(ConnAead)
-	}
-}
-
-func NewConn(c net.Conn, cipher Cipher) *Conn {
-	cryptor := newConnCipher(cipher)
-
-	conn := &Conn{
+func NewConn(c net.Conn, cryptor Cryptor) (conn *Conn) {
+	conn = &Conn{
 		Conn:     c,
-		Cipher: cipher,
 		cryptor: cryptor,
 	}
 
-	return conn
+	return
 }
 
 func (c *Conn) Read(b []byte) (n int, err error) {
-	err = c.initDecrypt()
-	if err != nil {
-		return
+	if !c.decrypted {
+		if err = c.cryptor.initDecrypt(c.Conn, c.Conn); err != nil { return }
+		c.decrypted = true
 	}
 
-	return c.UnPack(b)
+	return c.cryptor.UnPack(b)
 }
 
 func (c *Conn) Write(b []byte) (n int, err error) {
-
-	err = c.initEncrypt()
-	if err != nil {
-		return
+	if !c.encrypted {
+		if err = c.cryptor.initEncrypt(c.Conn, c.Conn); err != nil { return }
+		c.encrypted = true
 	}
 
-	return c.Pack(b)
+	return c.cryptor.Pack(b)
 }
 
-func (c *Conn) initEncrypt() (err error) {
+func (c *Conn) Packing(r io.Reader) (n int, err error) {
+	buffer, err := c.cryptor.GetBuffer(); if err != nil { return }
+	buf := buffer.Get(); defer buffer.Put(buf)
 
-	err = c.cryptor.initEncrypt(c.Conn, c.Cipher)
-	if err != nil {
-		return
-	}
+	if n, err = r.Read(buf); err != nil { return }
 
-	return
+	return c.Write(buf[:n])
 }
 
-func (c *Conn) initDecrypt() (err error) {
-	err = c.cryptor.initDecrypt(c.Conn, c.Cipher)
-	if err != nil {
-		return
+func (c *Conn) UnPacking(w io.Writer) (n int, err error) {
+	//err = c.cryptor.initDecrypt(c.Conn, c.Conn); if err != nil { return }
+
+	buffer, err := c.cryptor.GetBuffer(); if err != nil { return }
+	buf := buffer.Get(); defer buffer.Put(buf)
+
+	if n, err = c.Read(buf); err != nil { return }
+	if _, err = w.Write(buf[:n]); err != nil { return }
+	Logger.Fields(LogFields{
+		"n": n,
+		"buf_size": len(buf),
+	}).Info("check size")
+	if n == len(buf) {
+		n, err = c.UnPacking(w); if err != nil { return }
 	}
-
-	return
-}
-
-func (c *Conn) Pack(b []byte) (n int, err error) {
-	cryptor := c.cryptor
-	err = cryptor.Pack(b)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"err": err,
-		}).Warn("pack error")
-		return
-	}
-
-	var buffer_len int64
-	buffer_len, err = cryptor.WriteTo(c.Conn)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"err": err,
-		}).Warn("write data error")
-	}
-	n = int(buffer_len)
-
-	return
-}
-
-func (c *Conn) UnPack(b []byte) (n int, err error) {
-	cryptor := c.cryptor
-	err = cryptor.UnPack()
-	if err != nil {
-		Logger.Fields(LogFields{
-			"err": err,
-		}).Warn("unpack error")
-		return
-	}
-
-	n, err = cryptor.Read(b)
 
 	return
 }
@@ -125,21 +77,9 @@ func (c *Conn) Close() error {
 
 func RawAddr(addr string) (buf []byte, err error) {
 	host, portStr, err := net.SplitHostPort(addr)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"addr": addr,
-			"err": err,
-		}).Warn("shadowsocks: address error")
-		return nil, err
-	}
+	if err != nil { return }
 	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"portStr": portStr,
-			"err": err,
-		}).Warn("shadowsocks: invalid port")
-		return nil, err
-	}
+	if err != nil { return }
 
 	hostLen := len(host)
 	l := 1 + 1 + hostLen + 2 // addrType + lenByte + address + port
@@ -151,35 +91,19 @@ func RawAddr(addr string) (buf []byte, err error) {
 	return
 }
 
-func DialWithRawAddr(rawaddr []byte, server string, cipher Cipher) (c *Conn, err error) {
+func DialWithRawAddr(rawaddr []byte, server string, cryptor Cryptor) (c *Conn, err error) {
 	conn, err := net.Dial("tcp", server)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"server": server,
-			"err": err,
-		}).Warn("shadowsocks: Dialing to server")
-		return
-	}
-	c = NewConn(conn, cipher)
+	if err != nil { return }
+	c = NewConn(conn, cryptor)
 
-	_, err = c.Write(rawaddr)
-	if err != nil {
-		c.Close()
-		return
-	}
+	if _, err = c.Write(rawaddr); err != nil { c.Close(); return }
 
 	return
 }
 
 // addr should be in the form of host:port
-func Dial(addr, server string, cipher Cipher) (c *Conn, err error) {
+func Dial(addr, server string, cryptor Cryptor) (c *Conn, err error) {
 	ra, err := RawAddr(addr)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"addr": addr,
-			"err": err,
-		}).Warn("shadowsocks: Parsing addr")
-		return
-	}
-	return DialWithRawAddr(ra, server, cipher)
+	if err != nil { return }
+	return DialWithRawAddr(ra, server, cryptor)
 }

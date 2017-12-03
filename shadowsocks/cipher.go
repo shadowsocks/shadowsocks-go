@@ -2,6 +2,7 @@ package shadowsocks
 
 import (
 	"errors"
+	"io"
 )
 
 type DecOrEnc int
@@ -18,19 +19,29 @@ type cipherInfo struct {
 	IVSize     int
 	makeCipher func(password string, info *cipherInfo) (Cipher, error) // make general cipher
 	makeKey func(password string, keySize int) (key []byte) // make key by password
-	makeCryptor func(key []byte, iv []byte, decrypt bool) (interface{}, error) // make stream for stream cipher with key or make aead for aead cipher with subkey which is made by key and iv
+	makeCryptor func(key []byte, iv []byte, decrypt DecOrEnc) (interface{}, error) // make stream for stream cipher with key or make aead for aead cipher with subkey which is made by key and iv
+}
+
+type Cryptor interface {
+	Init(c Cipher) Cryptor
+	initEncrypt(r io.Reader, w io.Writer) (err error)
+	initDecrypt(r io.Reader, w io.Writer) (err error)
+	Pack(b []byte) (n int, err error)
+	UnPack(b []byte) (n int, err error)
+	WriteTo() (n int, err error)
+	Read(b []byte) (n int, err error)
+	GetBuffer() (buffer *LeakyBufType, err error)
 }
 
 type Cipher interface {
 	/////////////////////////////////////////////////
 	isStream() bool
-	Init(iv []byte, decrypt bool) (err error)
+	Init(iv []byte, decrypt DecOrEnc) (err error)
 	SetKey(key []byte)
 	SetInfo(info *cipherInfo)
-	SetCryptor(cryptor interface{})
-	GetCryptor() interface{}
-	newIV() (err error)
-	IV() []byte
+	SetCryptor(cryptor interface{}, decrypt DecOrEnc)
+	GetCryptor(decrypt DecOrEnc) interface{}
+	NewIV() (iv []byte, err error)
 	KeySize() int
 	IVSize() int
 	Encrypt(dst, src []byte) error
@@ -70,16 +81,27 @@ func CheckCipherMethod(method string) error {
 // NewCipher creates a cipher that can be used in Dial() etc.
 // Use cipher.Copy() to create a new cipher with the same method and password
 // to avoid the cost of repeated cipher initialization.
-func NewCipher(method, password string) (c Cipher, err error) {
+func newCipher(method, password string) (c Cipher, err error) {
 	if password == "" { err = errors.New("password is empty"); return }
 	mi, ok := cipherMethod[method]
 	if !ok { err = errors.New("Unsupported encryption method: " + method); return }
 	return mi.makeCipher(password, mi)
 }
 
+func NewCryptor(method, password string) (c Cryptor, err error) {
+	cipher, err := newCipher(method, password)
+	if err != nil { return }
+
+	if cipher.isStream() { c = new(StreamCryptor).Init(cipher)
+	} else { c = new(AeadCryptor).Init(cipher) }
+
+	return
+}
+
 func CopyCipher(c Cipher) Cipher {
-	nc := c
-	return nc
+	return c
+	////nc := c
+	//return (*c).Copy(c)
 }
 //// Copy creates a new cipher at it's initial state.
 //func CopyCipher(c *Cipher) *Cipher {

@@ -21,62 +21,64 @@ var errEmptyPassword = errors.New("empty key")
 
 type CipherStream struct {
 	Cipher
-	Cryptor cipher.Stream
+	EnCryptor cipher.Stream
+	DeCryptor cipher.Stream
 	Info *cipherInfo
 
 	key []byte
-	iv []byte
 
 	ivSize int
 	keySize int
 }
 func (this *CipherStream) isStream() bool { return true }
-func (this *CipherStream) setIV(iv []byte) (err error) { if iv != nil { this.iv = iv; return }; if err = this.newIV(); err != nil { return }; return }
-func (this *CipherStream) Init(iv []byte, decrypt bool) (err error) {
-	var cryptor interface{}; if err = this.setIV(iv); err != nil { return }
-	cryptor, err = this.Info.makeCryptor(this.key, this.iv, decrypt)
-	this.SetCryptor(cryptor); if err != nil { return }; return
+func (this *CipherStream) Init(iv []byte, decrypt DecOrEnc) (err error) {
+	var cryptor interface{};
+	if cryptor, err = this.Info.makeCryptor(this.key, iv, decrypt); err != nil { return }
+	this.SetCryptor(cryptor, decrypt)
+	return
 }
 func (this *CipherStream) SetKey(key []byte) { this.key = key }
 func (this *CipherStream) SetInfo(info *cipherInfo) { this.Info = info }
-func (this *CipherStream) SetCryptor(cryptor interface{}) { this.Cryptor = cryptor.(cipher.Stream) }
-func (this *CipherStream) GetCryptor() interface{} { return this.Cryptor }
-func (this *CipherStream) newIV() (err error) { iv := make([]byte, this.IVSize()); if _, err = io.ReadFull(rand.Reader, iv); err != nil { return }; this.iv = iv; return }
-func (this *CipherStream) IV() []byte { return this.iv }
+func (this *CipherStream) SetCryptor(cryptor interface{}, decrypt DecOrEnc) {
+	if decrypt == Decrypt { this.DeCryptor = cryptor.(cipher.Stream) } else { this.EnCryptor = cryptor.(cipher.Stream) } }
+func (this *CipherStream) GetCryptor(decrypt DecOrEnc) interface{} {
+	if decrypt == Decrypt { return this.DeCryptor } else { return this.EnCryptor } }
+func (this *CipherStream) NewIV() (iv []byte, err error) {
+	iv = make([]byte, this.IVSize()); if _, err = io.ReadFull(rand.Reader, iv); err != nil { return }; return }
 func (this *CipherStream) KeySize() int { return this.Info.KeySize }
 func (this *CipherStream) IVSize() int { return this.Info.IVSize }
-func (this *CipherStream) Encrypt(dst, src []byte) (err error) { this.Cryptor.XORKeyStream(dst, src); return }
-func (this *CipherStream) Decrypt(dst, src []byte) (err error) { this.Cryptor.XORKeyStream(dst, src); return }
+func (this *CipherStream) Encrypt(dst, src []byte) (err error) { this.EnCryptor.XORKeyStream(dst, src); return }
+func (this *CipherStream) Decrypt(dst, src []byte) (err error) { this.DeCryptor.XORKeyStream(dst, src); return }
 
-func newAESCFBStream(key, iv []byte, decrypt bool) (cryptor interface{}, err error) {
+func newAESCFBStream(key, iv []byte, decrypt DecOrEnc) (cryptor interface{}, err error) {
 	var block cipher.Block; if block, err = aes.NewCipher(key); err != nil { return }
-	if decrypt { cryptor = cipher.NewCFBDecrypter(block, iv) } else { cryptor = cipher.NewCFBEncrypter(block, iv) }
+	if decrypt == Decrypt { cryptor = cipher.NewCFBDecrypter(block, iv) } else { cryptor = cipher.NewCFBEncrypter(block, iv) }
 	return
 }
-func newAESCTRStream(key, iv []byte, decrypt bool) (cryptor interface{}, err error) {
+func newAESCTRStream(key, iv []byte, decrypt DecOrEnc) (cryptor interface{}, err error) {
 	var block cipher.Block; if block, err = aes.NewCipher(key); err != nil { return }
 	cryptor = cipher.NewCTR(block, iv); return
 }
-func newDESStream(key, iv []byte, decrypt bool) (cryptor interface{}, err error) {
+func newDESStream(key, iv []byte, decrypt DecOrEnc) (cryptor interface{}, err error) {
 	var block cipher.Block; if block, err = des.NewCipher(key); err != nil { return }
-	if decrypt { cryptor = cipher.NewCFBDecrypter(block, iv) } else { cryptor = cipher.NewCFBEncrypter(block, iv) }
+	if decrypt == Decrypt { cryptor = cipher.NewCFBDecrypter(block, iv) } else { cryptor = cipher.NewCFBEncrypter(block, iv) }
 	return
 }
-func newBlowFishStream(key, iv []byte, decrypt bool) (cryptor interface{}, err error) {
+func newBlowFishStream(key, iv []byte, decrypt DecOrEnc) (cryptor interface{}, err error) {
 	var block cipher.Block; if block, err = blowfish.NewCipher(key); err != nil { return }
-	if decrypt { cryptor = cipher.NewCFBDecrypter(block, iv) } else { cryptor = cipher.NewCFBEncrypter(block, iv) }
+	if decrypt == Decrypt { cryptor = cipher.NewCFBDecrypter(block, iv) } else { cryptor = cipher.NewCFBEncrypter(block, iv) }
 	return
 }
-func newCast5Stream(key, iv []byte, decrypt bool) (cryptor interface{}, err error) {
+func newCast5Stream(key, iv []byte, decrypt DecOrEnc) (cryptor interface{}, err error) {
 	var block cipher.Block; if block, err = cast5.NewCipher(key); err != nil { return }
-	if decrypt { cryptor = cipher.NewCFBDecrypter(block, iv) } else { cryptor = cipher.NewCFBEncrypter(block, iv) }
+	if decrypt == Decrypt { cryptor = cipher.NewCFBDecrypter(block, iv) } else { cryptor = cipher.NewCFBEncrypter(block, iv) }
 	return
 }
-func newRC4MD5Stream(key, iv []byte, decrypt bool) (cryptor interface{}, err error) {
+func newRC4MD5Stream(key, iv []byte, decrypt DecOrEnc) (cryptor interface{}, err error) {
 	h := md5.New(); h.Write(key); h.Write(iv); rc4key := h.Sum(nil); return rc4.NewCipher(rc4key)
 }
-func newChaCha20Stream(key, iv []byte, decrypt bool) (interface{}, error) { return chacha20.NewCipher(key, iv) }
-func newChaCha20IETFStream(key, iv []byte, decrypt bool) (interface{}, error) { return chacha20.NewCipher(key, iv) }
+func newChaCha20Stream(key, iv []byte, decrypt DecOrEnc) (interface{}, error) { return chacha20.NewCipher(key, iv) }
+func newChaCha20IETFStream(key, iv []byte, decrypt DecOrEnc) (interface{}, error) { return chacha20.NewCipher(key, iv) }
 type salsaStreamCipher struct {
 	nonce   [8]byte
 	key     [32]byte
@@ -101,7 +103,7 @@ func (c *salsaStreamCipher) XORKeyStream(dst, src []byte) {
 
 	c.counter += len(src)
 }
-func newSalsa20Stream(key, iv []byte, decrypt bool) (interface{}, error) {
+func newSalsa20Stream(key, iv []byte, decrypt DecOrEnc) (interface{}, error) {
 	var c salsaStreamCipher; copy(c.nonce[:], iv[:8]); copy(c.key[:], key[:32]); return &c, nil
 }
 

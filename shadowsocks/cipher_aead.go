@@ -11,50 +11,54 @@ import (
 )
 type CipherAead struct {
 	Cipher
-	Cryptor cipher.AEAD
+	EnCryptor cipher.AEAD
+	DeCryptor cipher.AEAD
 	Info *cipherInfo
 
 	key []byte
-	iv []byte
-	nonce []byte
+	nonce [2][]byte
 
 	ivSize int
 	keySize int
 }
 
 func (this *CipherAead) isStream() bool { return false }
-func (this *CipherAead) setIV(iv []byte) (err error) { if iv != nil { this.iv = iv; return }; return this.newIV() }
-func (this *CipherAead) Init(iv []byte, decrypt bool) (err error) {
-	this.nonce = nil
-	if err = this.setIV(iv); err != nil { return }
+func (this *CipherAead) Init(iv []byte, decrypt DecOrEnc) (err error) {
+	this.nonce[decrypt] = nil
 
 	subkey := make([]byte, this.KeySize())
-	hkdfSHA1(this.key, this.iv, []byte("ss-subkey"), subkey)
+	hkdfSHA1(this.key, iv, []byte("ss-subkey"), subkey)
 
 	var cryptor interface{}
-	if cryptor, err = this.Info.makeCryptor(subkey, this.iv, decrypt); err != nil { return }
-	this.SetCryptor(cryptor)
+	if cryptor, err = this.Info.makeCryptor(subkey, iv, decrypt); err != nil { return }
+	this.SetCryptor(cryptor, decrypt)
 
 	return
 }
 func (this *CipherAead) SetKey(key []byte) { this.key = key }
 func (this *CipherAead) SetInfo(info *cipherInfo) { this.Info = info }
-func (this *CipherAead) SetCryptor(cryptor interface{}) { this.Cryptor = cryptor.(cipher.AEAD) }
-func (this *CipherAead) GetCryptor() interface{} { return this.Cryptor }
-func (this *CipherAead) newIV() (err error) { iv := make([]byte, this.IVSize()); if _, err = io.ReadFull(rand.Reader, iv); err != nil { return }; this.iv = iv; return}
-func (this *CipherAead) IV() []byte { return this.iv }
+func (this *CipherAead) SetCryptor(cryptor interface{}, decrypt DecOrEnc) {
+	if decrypt == Decrypt { this.DeCryptor = cryptor.(cipher.AEAD) } else { this.EnCryptor = cryptor.(cipher.AEAD) } }
+func (this *CipherAead) GetCryptor(decrypt DecOrEnc) interface{} {
+	if decrypt == Decrypt { return this.DeCryptor } else { return this.EnCryptor } }
+func (this *CipherAead) NewIV() (iv []byte, err error) {
+	iv = make([]byte, this.IVSize()); if _, err = io.ReadFull(rand.Reader, iv); err != nil { return }; return}
 func (this *CipherAead) KeySize() int { return this.Info.KeySize }
 func (this *CipherAead) IVSize() int { if ks := this.KeySize(); ks > this.Info.IVSize { return ks }; return this.Info.IVSize}
-func (this *CipherAead) Encrypt(dst, src []byte) (err error) { this.Cryptor.Seal(dst[:0], this.Nonce(), src, nil); this.SetNonce(true); return }
-func (this *CipherAead) Decrypt(dst, src []byte) (err error) { _, err = this.Cryptor.Open(dst[:0], this.Nonce(), src, nil); if err != nil { return }; this.SetNonce(true); return }
-func (this *CipherAead) Nonce() []byte { if this.nonce == nil { this.SetNonce(false) }; return this.nonce }
-func (this *CipherAead) SetNonce(increment bool) {
-	if !increment { this.nonce = make([]byte, this.Cryptor.NonceSize()) }
-	for i := range this.nonce { this.nonce[i]++; if this.nonce[i] != 0 { return } }
-	return
+func (this *CipherAead) Encrypt(dst, src []byte) (err error) {
+	this.EnCryptor.Seal(dst[:0], this.Nonce(Encrypt), src, nil); this.SetNonce(Encrypt, true); return }
+func (this *CipherAead) Decrypt(dst, src []byte) (err error) {
+	_, err = this.DeCryptor.Open(dst[:0], this.Nonce(Decrypt), src, nil); if err != nil { return }; this.SetNonce(Decrypt, true); return }
+func (this *CipherAead) Nonce(decrypt DecOrEnc) []byte {
+	if this.nonce[decrypt] == nil { this.SetNonce(decrypt, false) }; return this.nonce[decrypt] }
+func (this *CipherAead) SetNonce(decrypt DecOrEnc, increment bool) {
+	var size int
+	if decrypt == Decrypt { size = this.DeCryptor.NonceSize() } else { size = this.EnCryptor.NonceSize() }
+	if !increment { this.nonce[decrypt] = make([]byte, size); return }
+	for i := range this.nonce { this.nonce[decrypt][i]++; if this.nonce[decrypt][i] != 0 { return } }; return
 }
 
-func newChaCha20IETFPoly1305Aead(key, iv []byte, decrypt bool) (interface{}, error) { return chacha20poly1305.New(key) }
+func newChaCha20IETFPoly1305Aead(key, iv []byte, decrypt DecOrEnc) (interface{}, error) { return chacha20poly1305.New(key) }
 func newAead(password string, info *cipherInfo) (c Cipher, err error) {
 	key := info.makeKey(password, info.KeySize)
 	c = new(CipherAead); c.SetKey(key); c.SetInfo(info)

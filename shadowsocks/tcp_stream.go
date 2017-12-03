@@ -3,89 +3,77 @@ package shadowsocks
 import (
 	"io"
 	"bytes"
+	"crypto/rand"
+	"errors"
 )
 
-type ConnStream struct {
-	ConnCipher
+type StreamCryptor struct {
+	Cryptor
 	dataBuffer *bytes.Buffer
+	buffer *LeakyBufType
 	reader io.Reader
+	writer io.Writer
 
-	iv_offset int
+	iv [2][]byte
 
-	CipherInst Cipher
+	cipher Cipher
 }
 
-func (this *ConnStream) getPayloadSizeMask() int {
-	return 32 * 1024
+func (this *StreamCryptor) getPayloadSizeMask() int {
+	return 1024
+	//return 32*1024
 }
 
-//func (this *ConnStream) getBuffer() *LeakyBufType {
-//	return NewLeakyBuf(maxNBuf, this.getPayloadSizeMask())
-//}
+func (this *StreamCryptor) GetBuffer() (buffer *LeakyBufType, err error) {
+	buffer = this.buffer
+	if buffer != nil { return }
+	buffer = NewLeakyBuf(maxNBuf, this.getPayloadSizeMask()); this.buffer = buffer; return
+}
 
+func (this *StreamCryptor) newIV() (iv []byte, err error) {
+	iv = make([]byte, this.cipher.IVSize()); if _, err = io.ReadFull(rand.Reader, iv); err != nil { return }; return }
 
-func (this *ConnStream) Init(r io.Reader, cipher Cipher) {
-	//this.CipherInst = cipher.Inst.(*CipherStream)
-	this.CipherInst = cipher
+func (this *StreamCryptor) Init(cipher Cipher) Cryptor {
+	this.cipher = cipher
 	this.dataBuffer = bytes.NewBuffer(nil)
+	return this
 }
 
-func (this *ConnStream) initEncrypt(r io.Reader, cipher Cipher) (err error) {
-	if this.CipherInst != nil && this.CipherInst.GetCryptor() != nil {
-		this.iv_offset = 0
-		return
-	}
-	this.Init(r, cipher)
+func (this *StreamCryptor) isInit(decrypt DecOrEnc) bool {
+	//if this.cipher != nil && this.cipher.GetCryptor(decrypt) != nil && this.iv[decrypt] != nil { return true }
+	if this.cipher != nil && this.cipher.GetCryptor(decrypt) != nil { return true }
 
-	err = this.CipherInst.Init(nil, false)
-	if err != nil {
-		return
-	}
-	this.iv_offset = 0
-
-	_, err = this.dataBuffer.Write(this.CipherInst.IV())
-	if err != nil {
-		Logger.Fields(LogFields{
-			"err": err,
-		}).Warn("write iv to connection error")
-		return
-	}
-
-	return
+	return false
 }
 
-func (this *ConnStream) initDecrypt(r io.Reader, cipher Cipher) (err error) {
-	if this.CipherInst != nil && this.CipherInst.GetCryptor() != nil {
-		this.iv_offset = 0
-		return
-	}
-
-	this.Init(r, cipher)
+func (this *StreamCryptor) initEncrypt(r io.Reader, w io.Writer) (err error) {
+	this.reader = r; this.writer = w;
+	this.dataBuffer = bytes.NewBuffer(nil)
 
 	var iv []byte
-	iv, err = this.getIV()
-	if err != nil {
-		Logger.Fields(LogFields{
-			"err": err,
-		}).Warn("get iv from connection error")
-		return
-	}
+	if iv, err = this.newIV(); err != nil { return }
+	if err = this.cipher.Init(iv, Encrypt); err != nil { return }
 
-	this.iv_offset = len(iv)
-	err = this.CipherInst.Init(iv, true)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"iv": iv,
-			"this.cipher.iv": this.CipherInst.IV(),
-			"err": err,
-		}).Warn("decrypt init error")
-		return
-	}
+	if _, err = this.dataBuffer.Write(iv); err != nil { return }
+	this.iv[Encrypt] = iv
+
 	return
 }
 
-func (this *ConnStream) getIV() (iv []byte, err error) {
-	iv = make([]byte, this.CipherInst.IVSize())
+func (this *StreamCryptor) initDecrypt(r io.Reader, w io.Writer) (err error) {
+	this.reader = r; this.writer = w
+	this.dataBuffer = bytes.NewBuffer(nil)
+
+	var iv []byte; if iv, err = this.getIV(); err != nil { return }
+
+	if err = this.cipher.Init(iv, Decrypt); err != nil { return }
+	this.iv[Decrypt] = iv
+
+	return
+}
+
+func (this *StreamCryptor) getIV() (iv []byte, err error) {
+	iv = make([]byte, this.cipher.IVSize())
 	if _, err = io.ReadFull(this.reader, iv); err != nil {
 		Logger.Fields(LogFields{
 			"iv": iv,
@@ -97,78 +85,91 @@ func (this *ConnStream) getIV() (iv []byte, err error) {
 	return
 }
 
-func (this *ConnStream) Pack(packet_data []byte) (err error) {
-	packet_buf := make([]byte, this.iv_offset + len(packet_data))
-
-	if this.iv_offset > 0 {
-		copy(packet_buf[:this.iv_offset], this.CipherInst.IV()) // write iv to header
-	}
-
-	err = this.CipherInst.Encrypt(packet_buf[this.iv_offset:], packet_data) // encrypt true data and write encrypted data to rest of space in packet
-	if err != nil {
-		Logger.Fields(LogFields{
-			"data": packet_data,
-			"cipher.iv": this.CipherInst.IV(),
-			"err": err,
-		}).Warn("encrypt error")
+func (this *StreamCryptor) Pack(b []byte) (n int, err error) {
+	if !this.isInit(Encrypt) {
+		Logger.Warn("Encryptor not init")
+		err = errors.New("Encryptor not init")
 		return
 	}
+	if n, err = bytes.NewReader(b).Read(b); err != nil { return }
+	buf := make([]byte, n)
 
-	_, err = this.dataBuffer.Write(packet_buf)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"data": packet_buf,
-			"err": err,
-		}).Warn("write data to connection error")
-		return
+	if n > 0 {
+		packet_data := b[:n]
+
+		err = this.cipher.Encrypt(buf, packet_data)
+		if err != nil {
+			Logger.Fields(LogFields{
+				"data": packet_data,
+				"cipher.iv": this.iv[Encrypt],
+				"err": err,
+			}).Warn("encrypt error")
+			return
+		}
+
+		_, err = this.dataBuffer.Write(buf)
+		if err != nil {
+			Logger.Fields(LogFields{
+				"data": buf,
+				"err": err,
+			}).Warn("write data to connection error")
+			return
+		}
 	}
 
-	return
+	return this.WriteTo()
 }
 
-func (this *ConnStream) UnPack() (err error) {
-	var n int
-	payload := make([]byte, this.getPayloadSizeMask())
-	n, err = this.reader.Read(payload)
-	if err != nil && err != io.EOF {
+func (this *StreamCryptor) UnPack(b []byte) (n int, err error) {
+	if !this.isInit(Decrypt) {
+		Logger.Warn("Decryptor not init")
+		err = errors.New("Decryptor not init")
+		return
+	}
+	this.dataBuffer = bytes.NewBuffer(nil)
+
+	n, err = this.reader.Read(b)
+	if err != nil {
 		Logger.Fields(LogFields{
 			"err": err,
 		}).Warn("read data error")
 		return
 	}
 
-	if n <= 0 {
-		return
+	if n > 0 {
+		payload := b[:n]
+		err = this.cipher.Decrypt(payload, payload) // decrypt packet data
+		if err != nil {
+			Logger.Fields(LogFields{
+				"payload": payload,
+				"this.cipher.iv": this.iv[Decrypt],
+				"err": err,
+			}).Warn("decrypt error")
+			return
+		}
+
+		_, err = this.dataBuffer.Write(payload)
+		if err != nil {
+			Logger.Fields(LogFields{
+				"data": payload,
+				"data_str": string(payload),
+				"err": err,
+			}).Warn("write data to connection error")
+			return
+		}
 	}
 
-	payload = payload[:n]
-	err = this.CipherInst.Decrypt(payload, payload) // decrypt packet data
-	if err != nil {
-		Logger.Fields(LogFields{
-			"payload": payload,
-			"this.cipher.iv": this.CipherInst.IV(),
-			"err": err,
-		}).Warn("decrypt error")
-		return
-	}
+	return this.Read(b)
+}
 
-	_, err = this.dataBuffer.Write(payload)
-	if err != nil {
-		Logger.Fields(LogFields{
-			"data": payload,
-			"data_str": string(payload),
-			"err": err,
-		}).Warn("write data to connection error")
-		return
-	}
-
+func (this *StreamCryptor) WriteTo() (n int, err error) {
+	var n_64 int64
+	if n_64, err = this.dataBuffer.WriteTo(this.writer); err != nil { return }
+	n = int(n_64)
 	return
 }
 
-func (this *ConnStream) WriteTo(w io.Writer) (n int64, err error) {
-	return this.dataBuffer.WriteTo(w)
-}
-
-func (this *ConnStream) Read(b []byte) (n int, err error) {
-	return this.dataBuffer.Read(b)
+func (this *StreamCryptor) Read(b []byte) (n int, err error) {
+	data := this.dataBuffer.Bytes()
+	return bytes.NewReader(data).Read(b)
 }

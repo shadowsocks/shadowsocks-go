@@ -2,12 +2,9 @@ package shadowsocks
 
 import (
 	"encoding/binary"
-	"fmt"
 	"net"
 	"strconv"
-	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -130,123 +127,123 @@ func parseHeaderFromAddr(addr net.Addr) ([]byte, int) {
 }
 
 func Pipeloop(write net.PacketConn, writeAddr net.Addr, readClose net.PacketConn) {
-	buf := leakyBuf.Get()
-	defer leakyBuf.Put(buf)
-	defer readClose.Close()
-	for {
-		readClose.SetDeadline(time.Now().Add(udpTimeout))
-		n, raddr, err := readClose.ReadFrom(buf)
-		if err != nil {
-			if ne, ok := err.(*net.OpError); ok {
-				if ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE {
-					// log too many open file error
-					// EMFILE is process reaches open file limits, ENFILE is system limit
-					Logger.Println("[udp]read error:", err)
-				}
-			}
-			Logger.Printf("[udp]closed pipe %s<-%s\n", writeAddr, readClose.LocalAddr())
-			return
-		}
-		// need improvement here
-		if req, ok := reqList.Get(raddr.String()); ok {
-			write.WriteTo(append(req, buf[:n]...), writeAddr)
-		} else {
-			header, hlen := parseHeaderFromAddr(raddr)
-			write.WriteTo(append(header[:hlen], buf[:n]...), writeAddr)
-		}
-	}
+	//buf := leakyBuf.Get()
+	//defer leakyBuf.Put(buf)
+	//defer readClose.Close()
+	//for {
+	//	readClose.SetDeadline(time.Now().Add(udpTimeout))
+	//	n, raddr, err := readClose.ReadFrom(buf)
+	//	if err != nil {
+	//		if ne, ok := err.(*net.OpError); ok {
+	//			if ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE {
+	//				// log too many open file error
+	//				// EMFILE is process reaches open file limits, ENFILE is system limit
+	//				Logger.Println("[udp]read error:", err)
+	//			}
+	//		}
+	//		Logger.Printf("[udp]closed pipe %s<-%s\n", writeAddr, readClose.LocalAddr())
+	//		return
+	//	}
+	//	// need improvement here
+	//	if req, ok := reqList.Get(raddr.String()); ok {
+	//		write.WriteTo(append(req, buf[:n]...), writeAddr)
+	//	} else {
+	//		header, hlen := parseHeaderFromAddr(raddr)
+	//		write.WriteTo(append(header[:hlen], buf[:n]...), writeAddr)
+	//	}
+	//}
 }
 
 func handleUDPConnection(handle *SecurePacketConn, n int, src net.Addr, receive []byte) {
-	var dstIP net.IP
-	var reqLen int
-	addrType := receive[idType]
-	defer leakyBuf.Put(receive)
-
-	switch addrType & AddrMask {
-	case typeIPv4:
-		reqLen = lenIPv4
-		if len(receive) < reqLen {
-			Logger.Println("[udp]invalid received message.")
-		}
-		dstIP = net.IP(receive[idIP0 : idIP0+net.IPv4len])
-	case typeIPv6:
-		reqLen = lenIPv6
-		if len(receive) < reqLen {
-			Logger.Println("[udp]invalid received message.")
-		}
-		dstIP = net.IP(receive[idIP0 : idIP0+net.IPv6len])
-	case typeDm:
-		reqLen = int(receive[idDmLen]) + lenDmBase
-		if len(receive) < reqLen {
-			Logger.Println("[udp]invalid received message.")
-		}
-		name := string(receive[idDm0 : idDm0+int(receive[idDmLen])])
-		// avoid panic: syscall: string with NUL passed to StringToUTF16 on windows.
-		if strings.ContainsRune(name, 0x00) {
-			fmt.Println("[udp]invalid domain name.")
-			return
-		}
-		dIP, err := net.ResolveIPAddr("ip", name) // carefully with const type
-		if err != nil {
-			Logger.Printf("[udp]failed to resolve domain name: %s\n", string(receive[idDm0:idDm0+receive[idDmLen]]))
-			return
-		}
-		dstIP = dIP.IP
-	default:
-		Logger.Printf("[udp]addrType %d not supported", addrType)
-		return
-	}
-	dst := &net.UDPAddr{
-		IP:   dstIP,
-		Port: int(binary.BigEndian.Uint16(receive[reqLen-2 : reqLen])),
-	}
-	if _, ok := reqList.Get(dst.String()); !ok {
-		req := make([]byte, reqLen)
-		copy(req, receive)
-		reqList.Put(dst.String(), req)
-	}
-
-	remote, exist, err := natlist.Get(src.String())
-	if err != nil {
-		return
-	}
-	if !exist {
-		Logger.Printf("[udp]new client %s->%s via %s\n", src, dst, remote.LocalAddr())
-		go func() {
-			Pipeloop(handle, src, remote)
-			natlist.Delete(src.String())
-		}()
-	} else {
-		Logger.Printf("[udp]using cached client %s->%s via %s\n", src, dst, remote.LocalAddr())
-	}
-	if remote == nil {
-		fmt.Println("WTF")
-	}
-	remote.SetDeadline(time.Now().Add(udpTimeout))
-	_, err = remote.WriteTo(receive[reqLen:n], dst)
-	if err != nil {
-		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
-			// log too many open file error
-			// EMFILE is process reaches open file limits, ENFILE is system limit
-			Logger.Println("[udp]write error:", err)
-		} else {
-			Logger.Println("[udp]error connecting to:", dst, err)
-		}
-		if conn := natlist.Delete(src.String()); conn != nil {
-			conn.Close()
-		}
-	}
+	//var dstIP net.IP
+	//var reqLen int
+	//addrType := receive[idType]
+	//defer leakyBuf.Put(receive)
+	//
+	//switch addrType & AddrMask {
+	//case typeIPv4:
+	//	reqLen = lenIPv4
+	//	if len(receive) < reqLen {
+	//		Logger.Println("[udp]invalid received message.")
+	//	}
+	//	dstIP = net.IP(receive[idIP0 : idIP0+net.IPv4len])
+	//case typeIPv6:
+	//	reqLen = lenIPv6
+	//	if len(receive) < reqLen {
+	//		Logger.Println("[udp]invalid received message.")
+	//	}
+	//	dstIP = net.IP(receive[idIP0 : idIP0+net.IPv6len])
+	//case typeDm:
+	//	reqLen = int(receive[idDmLen]) + lenDmBase
+	//	if len(receive) < reqLen {
+	//		Logger.Println("[udp]invalid received message.")
+	//	}
+	//	name := string(receive[idDm0 : idDm0+int(receive[idDmLen])])
+	//	// avoid panic: syscall: string with NUL passed to StringToUTF16 on windows.
+	//	if strings.ContainsRune(name, 0x00) {
+	//		fmt.Println("[udp]invalid domain name.")
+	//		return
+	//	}
+	//	dIP, err := net.ResolveIPAddr("ip", name) // carefully with const type
+	//	if err != nil {
+	//		Logger.Printf("[udp]failed to resolve domain name: %s\n", string(receive[idDm0:idDm0+receive[idDmLen]]))
+	//		return
+	//	}
+	//	dstIP = dIP.IP
+	//default:
+	//	Logger.Printf("[udp]addrType %d not supported", addrType)
+	//	return
+	//}
+	//dst := &net.UDPAddr{
+	//	IP:   dstIP,
+	//	Port: int(binary.BigEndian.Uint16(receive[reqLen-2 : reqLen])),
+	//}
+	//if _, ok := reqList.Get(dst.String()); !ok {
+	//	req := make([]byte, reqLen)
+	//	copy(req, receive)
+	//	reqList.Put(dst.String(), req)
+	//}
+	//
+	//remote, exist, err := natlist.Get(src.String())
+	//if err != nil {
+	//	return
+	//}
+	//if !exist {
+	//	Logger.Printf("[udp]new client %s->%s via %s\n", src, dst, remote.LocalAddr())
+	//	go func() {
+	//		Pipeloop(handle, src, remote)
+	//		natlist.Delete(src.String())
+	//	}()
+	//} else {
+	//	Logger.Printf("[udp]using cached client %s->%s via %s\n", src, dst, remote.LocalAddr())
+	//}
+	//if remote == nil {
+	//	fmt.Println("WTF")
+	//}
+	//remote.SetDeadline(time.Now().Add(udpTimeout))
+	//_, err = remote.WriteTo(receive[reqLen:n], dst)
+	//if err != nil {
+	//	if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
+	//		// log too many open file error
+	//		// EMFILE is process reaches open file limits, ENFILE is system limit
+	//		Logger.Println("[udp]write error:", err)
+	//	} else {
+	//		Logger.Println("[udp]error connecting to:", dst, err)
+	//	}
+	//	if conn := natlist.Delete(src.String()); conn != nil {
+	//		conn.Close()
+	//	}
+	//}
 	// Pipeloop
 	return
 }
 
 func ReadAndHandleUDPReq(c *SecurePacketConn) error {
-	buf := leakyBuf.Get()
-	n, src, err := c.ReadFrom(buf[0:])
-	if err != nil {
-		return err
-	}
-	go handleUDPConnection(c, n, src, buf)
+	//buf := leakyBuf.Get()
+	//n, src, err := c.ReadFrom(buf[0:])
+	//if err != nil {
+	//	return err
+	//}
+	//go handleUDPConnection(c, n, src, buf)
 	return nil
 }
