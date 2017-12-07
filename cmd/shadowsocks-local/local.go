@@ -317,9 +317,9 @@ func handleConnection(conn net.Conn) {
 
 	remote, err := createServerConn(rawaddr, addr) // connect to ss server and send request from local
 	if err != nil {
-		//Logger.Fields(ss.LogFields{
-		//	"err": err,
-		//}).Warn("check createServerConn error")
+		Logger.Fields(ss.LogFields{
+			"err": err,
+		}).Warn("check createServerConn error")
 		if len(servers.srvCryptor) > 1 {
 			Logger.Fields(ss.LogFields{
 				"rawaddr": rawaddr,
@@ -336,14 +336,17 @@ func handleConnection(conn net.Conn) {
 		}
 	}()
 
-	go ss.Pack(conn, remote) // testing
-	ss.UnPack(remote, conn) // testing
+	ss.Pipe(conn, remote)
+	//go ss.Piping(conn, remote, remote.Buffer) // testing
+	//ss.Piping(remote, conn, remote.Buffer) // testing
+	//conn.Close()
+	//remote.Close()
 	// pipe between local and ss server
 	//go ss.Piping(conn, remote)
 	//ss.Piping(remote, conn)
 	//ss.Piping(conn, remote, remote.Cryptor)
-	closed = true
-	Logger.Infof("closed connection to %x", addr)
+	//closed = true
+	Logger.Infof("closed connection to %s", addr)
 }
 
 func run(listenAddr string) { // listening from local request
@@ -433,6 +436,15 @@ func main() {
 	}
 
 	parseServerConfig(config)
+	//go func() {
+	//	http.ListenAndServe("localhost:6060", nil)
+	//	http.Handle("/debug/pprof/", http.HandlerFunc(pprof.Index))
+	//	http.Handle("/debug/pprof/cmdline", http.HandlerFunc(pprof.Cmdline))
+	//	http.Handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
+	//	http.Handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
+	//	http.Handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
+	//}()
 
 	run(cmdLocal + ":" + strconv.Itoa(config.LocalPort))
+
 }

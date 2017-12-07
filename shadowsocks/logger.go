@@ -12,6 +12,9 @@ type LogType struct {
 	fields *logrus.Entry
 }
 
+const caller_level = 6
+const stack_len = 3
+
 type LogFields map[string]interface{}
 
 func New() (*LogType) {
@@ -27,21 +30,33 @@ func New() (*LogType) {
 var Logger = New()
 
 func (this *LogType) Fields(fields LogFields) (*LogType) { this.setFields(fields); return this }
-
+func (this *LogType) formatOutput(skip int) {
+	for i := 0; i < stack_len; i++ {
+		file, line, fun := this.getCallerInfo(skip-i)
+		if i == 0 {
+			fmt.Print("\n")
+		}
+		for j := 0; j < i; j++ {
+			fmt.Print(" ")
+		}
+		fmt.Printf("Line: %d %s %s =>\n", line, fun, file)
+	}
+}
 func (this *LogType) setFields(fields LogFields) {
-	file, line, fun := this.getCallerInfo(6)
-	fmt.Printf("\nLine: %d %s %s =>\n", line, fun, file)
-
-	file, line, fun = this.getCallerInfo(5)
-	fmt.Printf("  Line: %d %s %s =>\n", line, fun, file)
-
-	file, line, fun = this.getCallerInfo(4)
-	fmt.Printf("    Line: %d %s %s =>\n", line, fun, file)
+	//file, line, fun := this.getCallerInfo(6)
+	//fmt.Printf("\nLine: %d %s %s =>\n", line, fun, file)
+	//
+	//file, line, fun = this.getCallerInfo(5)
+	//fmt.Printf("  Line: %d %s %s =>\n", line, fun, file)
+	//
+	//file, line, fun = this.getCallerInfo(4)
+	//fmt.Printf("    Line: %d %s %s =>\n", line, fun, file)
 
 	this.fields = this.logger.WithFields((map[string]interface{})(fields))
 }
 
 func (this *LogType) Debug(args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Debug(args...)
 		this.fields = nil
@@ -51,6 +66,7 @@ func (this *LogType) Debug(args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Debugf(format string, args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Debugf(format, args...)
 		this.fields = nil
@@ -60,6 +76,7 @@ func (this *LogType) Debugf(format string, args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Info(args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Info(args...)
 		this.fields = nil
@@ -69,6 +86,7 @@ func (this *LogType) Info(args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Infof(format string, args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Infof(format, args...)
 		this.fields = nil
@@ -78,6 +96,7 @@ func (this *LogType) Infof(format string, args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Warn(args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Warn(args...)
 		this.fields = nil
@@ -87,6 +106,7 @@ func (this *LogType) Warn(args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Warnf(format string, args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Warnf(format, args...)
 		this.fields = nil
@@ -96,6 +116,7 @@ func (this *LogType) Warnf(format string, args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Error(args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Error(args...)
 		this.fields = nil
@@ -105,6 +126,7 @@ func (this *LogType) Error(args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Errorf(format string, args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Errorf(format, args...)
 		this.fields = nil
@@ -114,6 +136,7 @@ func (this *LogType) Errorf(format string, args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Fatal(args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Fatal(args...)
 		this.fields = nil
@@ -123,6 +146,7 @@ func (this *LogType) Fatal(args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Fatalf(format string, args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Fatalf(format, args...)
 		this.fields = nil
@@ -132,6 +156,7 @@ func (this *LogType) Fatalf(format string, args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Panic(args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Panic(args...)
 		this.fields = nil
@@ -141,6 +166,7 @@ func (this *LogType) Panic(args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Panicf(format string, args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Panicf(format, args...)
 		this.fields = nil
@@ -150,6 +176,7 @@ func (this *LogType) Panicf(format string, args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Printf(format string, args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Printf(format, args...)
 		this.fields = nil
@@ -159,6 +186,7 @@ func (this *LogType) Printf(format string, args ...interface{}) (*LogType) {
 }
 
 func (this *LogType) Println(args ...interface{}) (*LogType) {
+	this.formatOutput(caller_level)
 	if this.fields != nil {
 		this.fields.Println(args...)
 		this.fields = nil

@@ -2,48 +2,30 @@ package main
 
 import (
 	ss "github.com/qunxyz/shadowsocks-go/shadowsocks"
+	"fmt"
 )
 
-//func main() {
-//	method := "chacha20-ietf"
-//	password := "123456"
-//	c, err := ss.NewCipher(method, password)
-//	if err != nil {
-//		ss.Logger.Fields(ss.LogFields{
-//			"method": method,
-//			"password":password,
-//			"err": err,
-//		}).Fatal("new cipher error")
-//	}
-//	stream := c.(*ss.CipherStream)
-//	stream_copy := stream.Copy()
-//	//////////////////////////////////
-//	buffer := bytes.NewBuffer(nil)
-//
-//	src_len := 26
-//	src := make([]byte, src_len)
-//	for i := 97; i < src_len + 97; i++ {
-//		src[i-97] = byte(i)
-//	}
-//
-//	//////////////////////////////////
-//	encrypt := new(ss.PacketStream)
-//	encrypt.Cipher = stream
-//	encrypt.Init(buffer, src, ss.Encrypt)
-//	encrypt.Pack()
-//	/////////////////////////////////
-//	ss.Logger.Fields(ss.LogFields{
-//		"src": src,
-//		"src_str": string(src),
-//		"data": buffer.Bytes(),
-//	}).Info("check encrypted data")
-//	/////////////////////////////////
-//	decrypt := new(ss.PacketStream)
-//	decrypt.Cipher = stream_copy
-//	decrypt.Init(buffer, src, ss.Decrypt)
-//	decrypt.UnPack()
-//}
 func main() {
+	src := []byte("GET /go.php HTTP/1.1\r\nHost: test.com\r\nConnection: keep-alive\r\nCache-Control: max-age=0\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36\r\nUpgrade-Insecure-Requests: 1\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8\r\nDNT: 1\r\nAccept-Encoding: gzip, deflate\r\nAccept-Language: zh-CN,zh;q=0.9,en;q=0.8,zh-TW;q=0.7,ja;q=0.6\r\nCookie: PHPSESSID=eleine4o6cvrumsukftglgdkf5; LUM_SESSION=p37m370h9v5plu7419vibavs31; language=en-gb; currency=USD; __atuvc=2%7C48; default=g798i1qf76943q6u9g64db4i93\r\n\r\n")
+	//dst := []byte{33,152,111,160,190,196,121,202,149,163,99,87,91,96,157,45,96,67,79,191,98,17,158,217,104,134,41,32,
+	//63,134,97,53,34,126,24,71,255,125,33,95,162,102,67,90,131,219,20,158,22,33,54,175,145,192,172,167,130,210,142,78,
+	//34,233,65,64,121,1,193,44,69,130,0,184,156,66,253,86,92,123,52,156,253,174,103,24,50,179,193,156,147,153,244,21,69,
+	//100,83,231,88,165,89,157,122,101,3,138,119,69,3,98,34,57,185,34,65,137,26,127,124,6,14,34,185,25,50,106,88,84,64,
+	//110,236,81,253,175,160,216,11,252,87,222,102,203,71,141,27,195,235,35,146,182,136,9,52,78,123,187,209,105,129,28,
+	//176,135,98,194,23,4,200,179,162,157,3,2,114,102,123,102,66,2,124,223,4,207,250,13,3,54,38,117,155,179,69,10,245,33,
+	//15,31,253,76,44,81,88,60,11,50,157,216,184,77,107,48,235,90,240,41,78,113,97,76,45,85,183,191,251,41,190,183,65,205,
+	//5,61,229,14,199,16,94,129,132,212,34,175,194,226,205,63,103,247,58,138,14,40,71,139,120,237,37,248,142,40,213,77,59,
+	//194,166,81,13,115,128,55,65,71,228,218,63,123,186,240,80,150,239,224,102,149,230,192,150,88,199,86,2,165,78,235,169,
+	//200,223,191,254,53,169,72,77,86,24,209,46,165,121,194,222,202,97,244,247,198,189,118,197,211,73,88,133,143,199,135,
+	//112,53,215,2,148,47,184,224,46,150,0,13,176,19,123,51,18,14,149,35,188,183,131,66,213,168,157,86,13,117,204,220,74,
+	//168,201,233,150,178,61,243,16,61,224,170,144,240,93,123,62,239,17,147,116,232,219,32,28,195,140,53,147,127,52,142,16,
+	//249,81,166,236,39,54,36,24,53,72,247,18,186,130,98,6,141,194,90,47,75,122,219,20,81,88,113,77,55,207,85,253,247,195,
+	//217,101,242,160,74,64,148,16,61,222,192,147,18,33,219,17,93,96,116,12,203,208,156,32,222,226,47,248,79,132,179,171,
+	//117,1,210,67,108,153,80,120,69,165,230,89,236,18,161,116,170,25,233,234,112,148,220,194,119,50,115,141,15,21,155,37,
+	//6,96,173,138,78,235,133,157,190,42,127,188,29,220,137,237,218,200,221,14,209,203,83,135,175,149,144,226,55,144,142,
+	//21,116,152,178,80,208,136,212,43,105,16,251,247,236,215,255,111,159,106,165,172,112,183,54,30,91,29,94,248,52,170,
+	//88,219,19,94,253,229,222,127,161,132,15,198,107,151,71,44,55,66,26,24,32,190,110,132,16,205,62,19,84,101,186,74,192,
+	//228,199,106,79,81,163,201,31,109,240,52,193,82,26,197,202,169,72,215,2,0,36,167,242}
 	method := "chacha20-ietf"
 	password := "123456"
 	c, err := ss.NewCipher(method, password)
@@ -54,32 +36,24 @@ func main() {
 			"err": err,
 		}).Fatal("new cipher error")
 	}
+	fmt.Println(c.Key())
+	dst := make([]byte, len(src))
+	////iv := []byte{52,77,100,24,104,25,223,99,52,173,12,137}
+	////iv := []byte{70,130,254,49,31,189,120,185,43,243,226,85}
+	//iv := []byte{212,177,154,8,216,17,187,199,159,133,233,94}
+	//iv := []byte{10,240,122,68,84,164,62,5,90,37,132,240}
+	//iv := []byte{46,65,210,80,138,143,230,142,33,72,151,53}
+	//iv := []byte{249,130,7,11,153,204,207,20,156,201,110,155}
+	//iv := []byte{223,75,150,223,117,72,200,211,56,186,218,134}
+	iv := []byte{183,103,32,160,64,186,136,26,60,14,29,109}
+	////c.Init(iv, ss.Decrypt)
+	c.Init(iv, ss.Encrypt)
+	c.Encrypt(dst, src)
 
-	stream := c.Inst.(*ss.CipherStream)
-	stream_copy := stream.Copy()
-	//////////////////////////////////
-	src_len := 26
-	src := make([]byte, src_len)
-	for i := 97; i < src_len + 97; i++ {
-		src[i-97] = byte(i)
-	}
+	//c.Init(iv, ss.Decrypt)
+	//c.Decrypt(src, src)
 
-	buf := make([]byte, src_len)
-	//////////////////////////////////
-	stream.Init(nil, ss.Encrypt)
-	stream.Encrypt(buf, src)
-	/////////////////////////////////
-	ss.Logger.Fields(ss.LogFields{
-		"src": src,
-		"src_str": string(src),
-		"buf": buf,
-	}).Info("check encrypted data")
-	/////////////////////////////////
-	stream_copy.Init(stream.IV(), ss.Decrypt)
-	stream_copy.Decrypt(buf, buf)
-	/////////////////////////////////
-	ss.Logger.Fields(ss.LogFields{
-		"buf": buf,
-		"buf_str": string(buf),
-	}).Info("check decrypted data")
+	fmt.Printf("dst: %d\n", dst)
+	//fmt.Printf("iv: %d\n", iv)
+	//fmt.Printf("src_len: %d\n", len(src))
 }
