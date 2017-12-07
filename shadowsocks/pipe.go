@@ -10,8 +10,6 @@ func chanFromConn(conn net.Conn, b []byte) chan []byte {
 	c := make(chan []byte)
 
 	go func() {
-		//b := make([]byte, 1024)
-
 		for {
 			n, err := conn.Read(b)
 			if n > 0 {

@@ -42,7 +42,7 @@ type EnCryptor interface {
 }
 
 type DeCryptor interface {
-	Init(c Cipher) DeCryptor
+	Init(c Cipher, b []byte) DeCryptor
 	ReadTo(b []byte, r io.Reader) (n int, err error)
 }
 

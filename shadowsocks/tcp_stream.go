@@ -23,7 +23,7 @@ func (this *StreamCryptor) initCryptor(doe DecOrEnc) interface{} {
 	if doe == Encrypt {
 		return new(StreamEnCryptor).Init(this.cipher, this.GetBuffer())
 	} else {
-		return new(StreamDeCryptor).Init(this.cipher)
+		return new(StreamDeCryptor).Init(this.cipher, this.GetBuffer())
 	}
 }
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -83,13 +83,15 @@ type StreamDeCryptor struct {
 	DeCryptor
 	iv []byte
 	cipher Cipher
+	buffer []byte
 	is_begin bool
 	cipher.Stream
 }
 
-func (this *StreamDeCryptor) Init(c Cipher) DeCryptor {
+func (this *StreamDeCryptor) Init(c Cipher, b []byte) DeCryptor {
 	this.cipher = c
 	this.is_begin = true
+	this.buffer = b
 
 	return this
 }
