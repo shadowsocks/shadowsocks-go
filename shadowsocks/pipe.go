@@ -6,11 +6,11 @@ import (
 )
 // chanFromConn creates a channel from a Conn object, and sends everything it
 //  Read()s from the socket to the channel.
-func chanFromConn(conn net.Conn) chan []byte {
+func chanFromConn(conn net.Conn, b []byte) chan []byte {
 	c := make(chan []byte)
 
 	go func() {
-		b := make([]byte, 1024)
+		//b := make([]byte, 1024)
 
 		for {
 			n, err := conn.Read(b)
@@ -34,9 +34,9 @@ func chanFromConn(conn net.Conn) chan []byte {
 }
 
 // Pipe creates a full-duplex pipe between the two sockets and transfers data from one to the other.
-func Pipe(conn1 net.Conn, conn2 net.Conn) {
-	chan1 := chanFromConn(conn1)
-	chan2 := chanFromConn(conn2)
+func Pipe(conn1 net.Conn, conn2 net.Conn, buffer []byte) {
+	chan1 := chanFromConn(conn1, buffer)
+	chan2 := chanFromConn(conn2, buffer)
 
 	for {
 		select {

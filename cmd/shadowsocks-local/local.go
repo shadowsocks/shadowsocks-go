@@ -336,7 +336,7 @@ func handleConnection(conn net.Conn) {
 		}
 	}()
 
-	ss.Pipe(conn, remote)
+	ss.Pipe(conn, remote, remote.Buffer)
 	//go ss.Piping(conn, remote, remote.Buffer) // testing
 	//ss.Piping(remote, conn, remote.Buffer) // testing
 	//conn.Close()
