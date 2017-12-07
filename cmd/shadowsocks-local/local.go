@@ -337,15 +337,6 @@ func handleConnection(conn net.Conn) {
 	}()
 
 	ss.Pipe(conn, remote, remote.Buffer)
-	//go ss.Piping(conn, remote, remote.Buffer) // testing
-	//ss.Piping(remote, conn, remote.Buffer) // testing
-	//conn.Close()
-	//remote.Close()
-	// pipe between local and ss server
-	//go ss.Piping(conn, remote)
-	//ss.Piping(remote, conn)
-	//ss.Piping(conn, remote, remote.Cryptor)
-	//closed = true
 	Logger.Infof("closed connection to %s", addr)
 }
 

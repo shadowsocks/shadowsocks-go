@@ -9,8 +9,7 @@ import (
 
 type AeadCryptor struct {
 	Cryptor
-	cipher     Cipher
-	iv         []byte
+	cipher Cipher
 }
 
 func (this *AeadCryptor) initCryptor(doe DecOrEnc) interface{} {
@@ -28,15 +27,16 @@ func (this *AeadCryptor) getPayloadSizeMask() int {
 func (this *AeadCryptor) GetBuffer() []byte {
 	return make([]byte, this.getPayloadSizeMask())
 }
+
 /////////////////////////////////////////////////////////////////////////////////////////
 type AeadEnCryptor struct {
 	EnCryptor
-	iv []byte
-	cipher Cipher
-	buffer []byte
+	iv       []byte
+	cipher   Cipher
+	buffer   []byte
 	is_begin bool
 	cipher.AEAD
-	nonce []byte
+	nonce    []byte
 }
 
 func (this *AeadEnCryptor) Init(c Cipher, b []byte) EnCryptor {
@@ -72,9 +72,15 @@ func (this *AeadEnCryptor) getNonce() []byte {
 
 func (this *AeadEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) {
 	if this.is_begin {
-		if this.iv, err = this.cipher.NewIV(); err != nil { return }
-		if err = this.cipher.Init(this.iv, Encrypt); err != nil { return }
-		if _, err = w.Write(this.iv); err != nil { return }
+		if this.iv, err = this.cipher.NewIV(); err != nil {
+			return
+		}
+		if err = this.cipher.Init(this.iv, Encrypt); err != nil {
+			return
+		}
+		if _, err = w.Write(this.iv); err != nil {
+			return
+		}
 		this.AEAD = this.cipher.GetCryptor(Encrypt).(cipher.AEAD)
 		this.nonce = nil
 		this.is_begin = false
@@ -85,7 +91,7 @@ func (this *AeadEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) {
 	packet_len := len(b)
 	chunk_num := math.Ceil(float64(packet_len) / float64(size))
 	overhead := cryptor.Overhead()
-	header_offset := 2+overhead
+	header_offset := 2 + overhead
 
 	for chunk_counter := chunk_num; chunk_counter > 0; {
 		payload_len := packet_len
@@ -110,13 +116,9 @@ func (this *AeadEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) {
 		cryptor.Seal(payload_buf[:0], this.getNonce(), payload, nil)
 		this.setNonce(true)
 
-		Logger.Fields(LogFields{
-			"payload": payload_buf,
-			"payload_size": payload_len,
-			"iv": this.iv,
-		}).Info("check after encrypt")
-
-		if _, err = w.Write(packet_buf); err != nil { break }
+		if _, err = w.Write(packet_buf); err != nil {
+			break
+		}
 		chunk_counter--
 		packet_len -= payload_len
 	}
@@ -126,12 +128,12 @@ func (this *AeadEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) {
 
 type AeadDeCryptor struct {
 	DeCryptor
-	iv []byte
-	cipher Cipher
+	iv       []byte
+	cipher   Cipher
 	is_begin bool
 	cipher.AEAD
-	nonce []byte
-	buffer []byte
+	nonce    []byte
+	buffer   []byte
 }
 
 func (this *AeadDeCryptor) Init(c Cipher, b []byte) DeCryptor {
@@ -173,8 +175,12 @@ func (this *AeadDeCryptor) getNonce() []byte {
 
 func (this *AeadDeCryptor) ReadTo(b []byte, r io.Reader) (n int, err error) {
 	if this.is_begin {
-		if this.iv, err = this.getIV(r); err != nil { return }
-		if err = this.cipher.Init(this.iv, Decrypt); err != nil { return }
+		if this.iv, err = this.getIV(r); err != nil {
+			return
+		}
+		if err = this.cipher.Init(this.iv, Decrypt); err != nil {
+			return
+		}
 		this.AEAD = this.cipher.GetCryptor(Decrypt).(cipher.AEAD)
 		this.is_begin = false
 		this.nonce = nil
@@ -187,20 +193,16 @@ func (this *AeadDeCryptor) ReadTo(b []byte, r io.Reader) (n int, err error) {
 	header_offset := 2 + overhead
 	header := b[:header_offset]
 
-	if _, err = io.ReadFull(r, header); err != nil { return }
-
-	/// unpack header
-	if _, err = this.AEAD.Open(header[:0], this.getNonce(), header, nil); err != nil {
-		Logger.Fields(LogFields{
-			"header": header,
-			"err": err,
-		}).Warn("decrypt header error")
+	if _, err = io.ReadFull(r, header); err != nil {
 		return
 	}
+
+	/// unpack header
+	if _, err = this.AEAD.Open(header[:0], this.getNonce(), header, nil); err != nil { return }
 	this.setNonce(true)
 
 	/// get payload size
-	payload_size := int(header[0])<<8 + int(header[1]) & buffer_size
+	payload_size := int(header[0])<<8 + int(header[1])&buffer_size
 	if buffer_size < payload_size {
 		err = errors.New("buffer size is too small")
 		return
@@ -208,22 +210,12 @@ func (this *AeadDeCryptor) ReadTo(b []byte, r io.Reader) (n int, err error) {
 
 	/// read payload encrypted data
 	payload := make([]byte, payload_size+overhead)
-	if _, err = io.ReadFull(r, payload); err != nil { return }
-
-	Logger.Fields(LogFields{
-		"buffer_size": buffer_size,
-		"payload": payload,
-		"payload_size": payload_size,
-		"iv": this.iv,
-	}).Info("check before decrypt payload")
-	/// unpack payload
-	if _, err = this.AEAD.Open(payload[:0], this.getNonce(), payload, nil); err != nil {
-		Logger.Fields(LogFields{
-			"payload": payload,
-			"err": err,
-		}).Warn("decrypt payload error")
+	if _, err = io.ReadFull(r, payload); err != nil {
 		return
 	}
+
+	/// unpack payload
+	if _, err = this.AEAD.Open(payload[:0], this.getNonce(), payload, nil); err != nil { return }
 	this.setNonce(true)
 
 	copy(b, payload[:payload_size])

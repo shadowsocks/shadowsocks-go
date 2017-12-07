@@ -7,15 +7,6 @@ import (
 
 type StreamCryptor struct {
 	Cryptor
-	//dataBuffer []byte
-	//dataBuffer *bytes.Buffer
-	//buffer *LeakyBufType
-	//reader io.Reader
-	//writer io.Writer
-
-	//iv_offset int
-	iv        [2][]byte
-
 	cipher Cipher
 }
 
@@ -53,28 +44,9 @@ func (this *StreamEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) {
 		this.is_begin = false
 	}
 
-
-	Logger.Fields(LogFields{
-		"key": this.cipher.(*CipherStream).Key(),
-		"b": b,
-		"b_len": len(b),
-		"b_str": string(b),
-		"iv": this.iv,
-		"iv_cipher":    this.cipher.IV(Encrypt),
-	}).Info("check before pack data")
-
 	payload_len := len(b)
 	payload := this.buffer[:payload_len]
 	this.Stream.XORKeyStream(payload, b)
-	//if err = this.cipher.Encrypt(payload, b); err != nil { return }
-	Logger.Fields(LogFields{
-		"payload": payload,
-		"b": string(b[:n]),
-		"payload_len": n,
-		"iv": this.iv,
-		"buf": b,
-		"buf_len": len(b),
-	}).Info("check after pack data")
 
 	return w.Write(payload)
 }
@@ -111,21 +83,8 @@ func (this *StreamDeCryptor) ReadTo(b []byte, r io.Reader) (n int, err error) {
 	}
 	if n, err = r.Read(b); err != nil { return }
 	if n > 0 {
-		Logger.Fields(LogFields{
-			"payload": b[:n],
-			"payload_len": n,
-			"iv": this.iv,
-		}).Info("check before unpack data")
 		payload := b[:n]
 		this.Stream.XORKeyStream(payload, payload)
-		Logger.Fields(LogFields{
-			"payload": string(payload),
-			"b": string(b[:n]),
-			"payload_len": n,
-			"iv": this.iv,
-			"buf": b,
-			"buf_len": len(b),
-		}).Info("check after unpack data")
 	}
 	return
 }

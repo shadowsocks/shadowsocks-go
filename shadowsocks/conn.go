@@ -15,10 +15,10 @@ type Conn struct {
 
 func NewConn(c net.Conn, cryptor Cryptor) (conn *Conn) {
 	conn = &Conn{
-		Conn:    c,
+		Conn:      c,
 		Encryptor: cryptor.initCryptor(Encrypt).(EnCryptor),
 		DeCryptor: cryptor.initCryptor(Decrypt).(DeCryptor),
-		Buffer:  cryptor.GetBuffer(),
+		Buffer:    cryptor.GetBuffer(),
 	}
 
 	return

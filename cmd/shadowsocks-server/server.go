@@ -159,10 +159,7 @@ func handleConnection(conn *ss.Conn) {
 	Logger.Infof("piping %s<->%s", conn.RemoteAddr(), host)
 
 	ss.Pipe(conn, remote, conn.Buffer)
-	//ss.Piping(remote, conn, conn.Cryptor)
-	//go ss.Piping(conn, remote)
-	//ss.Piping(remote, conn)
-	//closed = true
+
 	return
 }
 

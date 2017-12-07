@@ -14,7 +14,6 @@ import (
 	"github.com/Yawning/chacha20"
 	"io"
 	"crypto/rand"
-	"bytes"
 )
 
 type CipherStream struct {
@@ -23,7 +22,6 @@ type CipherStream struct {
 	DeCryptor cipher.Stream
 	Info      *cipherInfo
 	key       []byte
-	iv        [2][]byte
 	ivSize    int
 	keySize   int
 }
@@ -31,12 +29,10 @@ type CipherStream struct {
 /////////////////////////////////////////////////////////
 func (this *CipherStream) isStream() bool { return true }
 func (this *CipherStream) Init(iv []byte, doe DecOrEnc) (err error) {
-	if bytes.Equal(this.iv[doe], iv) { return }
 	var cryptor interface{}
 	if cryptor, err = this.Info.makeCryptor(this.key, iv, doe); err != nil {
 		return
 	}
-	this.iv[doe] = iv
 
 	this.SetCryptor(cryptor, doe)
 	return
@@ -64,12 +60,8 @@ func (this *CipherStream) NewIV() (iv []byte, err error) {
 	}
 	return
 }
-func (this *CipherStream) Key() []byte                         { return this.key }
-func (this *CipherStream) IV(doe DecOrEnc) []byte          { return this.iv[doe] }
 func (this *CipherStream) KeySize() int                        { return this.Info.KeySize }
 func (this *CipherStream) IVSize() int                         { return this.Info.IVSize }
-func (this *CipherStream) Encrypt(dst, src []byte) (err error) { this.EnCryptor.XORKeyStream(dst, src); return }
-func (this *CipherStream) Decrypt(dst, src []byte) (err error) { this.DeCryptor.XORKeyStream(dst, src); return }
 
 /////////////////////////////////////////////////////////
 

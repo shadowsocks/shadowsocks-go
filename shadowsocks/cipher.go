@@ -54,12 +54,12 @@ type Cipher interface {
 	SetCryptor(cryptor interface{}, doe DecOrEnc)
 	GetCryptor(doe DecOrEnc) interface{}
 	NewIV() (iv []byte, err error)
-	Key() []byte
-	IV(doe DecOrEnc) []byte
+	//Key() []byte
+	//IV(doe DecOrEnc) []byte
 	KeySize() int
 	IVSize() int
-	Encrypt(dst, src []byte) error
-	Decrypt(dst, src []byte) error
+	//Encrypt(dst, src []byte) error
+	//Decrypt(dst, src []byte) error
 }
 
 var cipherMethod = map[string]*cipherInfo{
