@@ -50,12 +50,7 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 	if err != nil {
 		return
 	}
-	Logger.Fields(ss.LogFields{
-		"buf": buf,
-		"n": n,
-		"buf_str": string(buf),
-	}).Info("check buffer")
-	//buf = buf[:n]
+	buf = buf[:n]
 
 	//var reqStart, reqEnd int
 	var reqEnd int
@@ -342,13 +337,8 @@ func runUDP(port, password string) {
 		IP:   net.IPv6zero,
 		Port: port_i,
 	}
-	ss.Logger.Fields(ss.LogFields{
-		"addr_str": addr.String(),
-	}).Info("check addr")
 	log.Printf("listening udp port %v\n", port)
-	//c, err := net.ListenUDP("udp", addr)
-	//c, err := net.ListenPacket("udp", addr.String())
-	c, err := net.ListenPacket("udp", "127.0.0.1:8388")
+	c, err := net.ListenPacket("udp", addr.String())
 	passwdManager.addUDP(port, password, c)
 	if err != nil {
 		log.Printf("error listening udp port %v: %v\n", port, err)
@@ -370,27 +360,18 @@ func runUDP(port, password string) {
 			ss.Logger.Warnf("UDP remote read error: %v", err)
 			continue
 		}
-		ss.Logger.Fields(ss.LogFields{
-			"raddr": raddr.String(),
-		}).Info("check raddr")
 
 		tgtAddr := ss.SplitAddr(buf[:n])
 		if tgtAddr == nil {
 			ss.Logger.Warnf("failed to split target address from packet: %q", buf[:n])
 			continue
 		}
-		ss.Logger.Fields(ss.LogFields{
-			"tgtAddr": tgtAddr.String(),
-		}).Info("check tgtAddr")
 
 		tgtUDPAddr, err := net.ResolveUDPAddr("udp", tgtAddr.String())
 		if err != nil {
 			ss.Logger.Warnf("failed to resolve target UDP address: %v", err)
 			continue
 		}
-		ss.Logger.Fields(ss.LogFields{
-			"tgtUDPAddr": tgtUDPAddr.String(),
-		}).Info("check udp addr")
 
 		payload := buf[len(tgtAddr):n]
 
@@ -404,10 +385,6 @@ func runUDP(port, password string) {
 
 			nm.Add(raddr, SecurePacketConn, pc, true)
 		}
-		ss.Logger.Fields(ss.LogFields{
-			"payload": payload,
-			"payload_str": string(payload),
-		}).Info("check payload")
 
 		_, err = pc.WriteTo(payload, tgtUDPAddr) // accept only UDPAddr despite the signature
 		if err != nil {
@@ -415,45 +392,7 @@ func runUDP(port, password string) {
 			continue
 		}
 	}
-	//for {
-	//	ss.PipePacket(conn, SecurePacketConn, SecurePacketConn.Buffer)
-	//	//if err := ss.ReadAndHandleUDPReq(SecurePacketConn); err != nil {
-	//	//	Logger.Fields(ss.LogFields{
-	//	//		"err": err,
-	//	//	}).Error("Error ReadAndHandleUDPReq")
-	//	//}
-	//}
 }
-//
-//func runUDP(port, password string) {
-//	var cipher ss.Cipher
-//	port_i, _ := strconv.Atoi(port)
-//	log.Printf("listening udp port %v\n", port)
-//	conn, err := net.ListenUDP("udp", &net.UDPAddr{
-//		IP:   net.IPv6zero,
-//		Port: port_i,
-//	})
-//	passwdManager.addUDP(port, password, conn)
-//	if err != nil {
-//		log.Printf("error listening udp port %v: %v\n", port, err)
-//		return
-//	}
-//	defer conn.Close()
-//	cipher, err = ss.NewCipher(config.Method, password)
-//	if err != nil {
-//		log.Printf("Error generating cipher for udp port: %s %v\n", port, err)
-//		conn.Close()
-//	}
-//	SecurePacketConn := ss.NewSecurePacketConn(conn, cipher)
-//	for {
-//		ss.PipePacket(conn, SecurePacketConn, SecurePacketConn.Buffer)
-//		//if err := ss.ReadAndHandleUDPReq(SecurePacketConn); err != nil {
-//		//	Logger.Fields(ss.LogFields{
-//		//		"err": err,
-//		//	}).Error("Error ReadAndHandleUDPReq")
-//		//}
-//	}
-//}
 
 func enoughOptions(config *ss.Config) bool {
 	return config.ServerPort != 0 && config.Password != ""

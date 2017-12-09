@@ -9,16 +9,16 @@ import (
 type Conn struct {
 	net.Conn
 	Buffer    []byte
-	Encryptor EnCryptor
-	DeCryptor DeCryptor
+	Encryptor StreamEnCryptor
+	DeCryptor StreamDeCryptor
 }
 
 func NewConn(c net.Conn, cipher Cipher) (conn *Conn) {
-	cryptor := NewCryptor(cipher, false)
+	cryptor := NewStreamCryptor(cipher)
 	conn = &Conn{
 		Conn:      c,
-		Encryptor: cryptor.initCryptor(Encrypt).(EnCryptor),
-		DeCryptor: cryptor.initCryptor(Decrypt).(DeCryptor),
+		Encryptor: cryptor.initCryptor(Encrypt).(StreamEnCryptor),
+		DeCryptor: cryptor.initCryptor(Decrypt).(StreamDeCryptor),
 		Buffer:    cryptor.GetBuffer(),
 	}
 

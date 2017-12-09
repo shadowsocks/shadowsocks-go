@@ -26,7 +26,7 @@ type SecurePacketConn struct {
 }
 
 func NewSecurePacketConn(c net.PacketConn, cipher Cipher) *SecurePacketConn {
-	cryptor := NewCryptor(cipher, true)
+	cryptor := NewPacketCryptor(cipher)
 	return &SecurePacketConn{
 		PacketConn: c,
 		Encryptor: cryptor.initCryptor(Encrypt).(PacketEnCryptor).initPacket(c),

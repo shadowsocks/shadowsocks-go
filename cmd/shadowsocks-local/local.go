@@ -444,9 +444,7 @@ func main() {
 	//	http.Handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
 	//}()
 
-	//ss.Logger.Infof("going to run udp: %s", UDPTun)
 	if UDPTun != "" {
-		ss.Logger.Info("going to run udp")
 		for _, tun := range strings.Split(UDPTun, ",") {
 			p := strings.Split(tun, "=")
 			go RunUDP(p[0], p[1])
@@ -458,11 +456,6 @@ func main() {
 
 func RunUDP(laddr, target string) {
 	var err error
-	//srvAddr, err := net.ResolveUDPAddr("udp", server)
-	//if err != nil {
-	//	Logger.Warnf("UDP server address error: %v", err)
-	//	return
-	//}
 
 	// parse target
 	tgt := ss.ParseAddr(target)
@@ -494,12 +487,10 @@ func RunUDP(laddr, target string) {
 	SecurePacketConn := ss.NewSecurePacketConn(c, cipher)
 
 	nm := ss.NewNATmap(UDPTimeout)
-	//buf := make([]byte, 1024)
 	buf := SecurePacketConn.Buffer
 	copy(buf, tgt)
 
 	ss.Logger.Infof("UDP tunnel %s <-> %s <-> %s", laddr, srvAddr.String(), target)
-	//ss.PipePacket(conn, SecurePacketConn, SecurePacketConn.Buffer)
 	for {
 		// read plaintext request from client
 		n, raddr, err := c.ReadFrom(buf[len(tgt):])
@@ -522,11 +513,9 @@ func RunUDP(laddr, target string) {
 				continue
 			}
 
-			//pc = shadow(pc)
 			pc = ss.NewSecurePacketConn(pc, cipher)
 			nm.Add(raddr, c, pc, false)
 		}
-		//pc = ss.NewSecurePacketConn(pc, cipher)
 
 		_, err = pc.WriteTo(buf[:len(tgt)+n], srvAddr)
 		if err != nil {
@@ -566,26 +555,13 @@ func createUDPServerConn() (srvAddr *net.UDPAddr, cipher ss.Cipher, err error) {
 			skipped = append(skipped, i)
 			continue
 		}
-		//////////////////////////
-		//se := servers.srvCipher[i]
-		//srvAddr, err := net.ResolveUDPAddr("udp", se.server)
-		//if err == nil {
-		//	//Logger.Warnf("UDP server address error: %v", err)
-		//	return
-		//}
-		//////////////////////////
+
 		srvAddr, err = connectToUDPServer(i)
 		if err == nil {
 			cipher = servers.srvCipher[i].cipher
 			return
 		}
 	}
-	// last resort, try skipped servers, not likely to succeed
-	//for _, i := range skipped {
-	//	remote, err = connectToUDPServer(i, rawaddr, addr)
-	//	if err == nil {
-	//		return
-	//	}
-	//}
+
 	return
 }

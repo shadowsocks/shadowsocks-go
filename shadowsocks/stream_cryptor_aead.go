@@ -7,36 +7,36 @@ import (
 	"errors"
 )
 
-type TCPAeadCryptor struct {
+type StreamCryptorAead struct {
 	Cryptor
 	cipher Cipher
 }
 
-func (this *TCPAeadCryptor) init(cipher Cipher) Cryptor {
+func (this *StreamCryptorAead) init(cipher Cipher) Cryptor {
 	this.cipher = cipher
 
 	return this
 }
 
-func (this *TCPAeadCryptor) initCryptor(doe DecOrEnc) interface{} {
+func (this *StreamCryptorAead) initCryptor(doe DecOrEnc) interface{} {
 	if doe == Encrypt {
-		return new(TCPAeadEnCryptor).Init(this.cipher, this.GetBuffer())
+		return new(StreamEnCryptorAead).Init(this.cipher, this.GetBuffer())
 	} else {
-		return new(TCPAeadDeCryptor).Init(this.cipher, this.GetBuffer())
+		return new(StreamDeCryptorAead).Init(this.cipher, this.GetBuffer())
 	}
 }
 
-func (this *TCPAeadCryptor) getPayloadSizeMask() int {
+func (this *StreamCryptorAead) getPayloadSizeMask() int {
 	return 0x3FFF // 16*1024 - 1
 }
 
-func (this *TCPAeadCryptor) GetBuffer() []byte {
+func (this *StreamCryptorAead) GetBuffer() []byte {
 	return make([]byte, this.getPayloadSizeMask())
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-type TCPAeadEnCryptor struct {
-	EnCryptor
+type StreamEnCryptorAead struct {
+	StreamEnCryptor
 	iv       []byte
 	cipher   Cipher
 	buffer   []byte
@@ -45,7 +45,7 @@ type TCPAeadEnCryptor struct {
 	nonce    []byte
 }
 
-func (this *TCPAeadEnCryptor) Init(c Cipher, b []byte) EnCryptor {
+func (this *StreamEnCryptorAead) Init(c Cipher, b []byte) StreamEnCryptor {
 	this.cipher = c
 	this.buffer = b
 	this.is_begin = true
@@ -53,7 +53,7 @@ func (this *TCPAeadEnCryptor) Init(c Cipher, b []byte) EnCryptor {
 	return this
 }
 
-func (this *TCPAeadEnCryptor) setNonce(increment bool) {
+func (this *StreamEnCryptorAead) setNonce(increment bool) {
 	var size int
 	size = this.AEAD.NonceSize()
 	if !increment {
@@ -69,14 +69,14 @@ func (this *TCPAeadEnCryptor) setNonce(increment bool) {
 	return
 }
 
-func (this *TCPAeadEnCryptor) getNonce() []byte {
+func (this *StreamEnCryptorAead) getNonce() []byte {
 	if this.nonce == nil {
 		this.setNonce(false)
 	};
 	return this.nonce
 }
 
-func (this *TCPAeadEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) {
+func (this *StreamEnCryptorAead) WriteTo(b []byte, w io.Writer) (n int, err error) {
 	if this.is_begin {
 		if this.iv, err = this.cipher.NewIV(); err != nil {
 			return
@@ -133,8 +133,8 @@ func (this *TCPAeadEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) 
 	return
 }
 
-type TCPAeadDeCryptor struct {
-	DeCryptor
+type StreamDeCryptorAead struct {
+	StreamDeCryptor
 	iv       []byte
 	cipher   Cipher
 	is_begin bool
@@ -143,7 +143,7 @@ type TCPAeadDeCryptor struct {
 	buffer   []byte
 }
 
-func (this *TCPAeadDeCryptor) Init(c Cipher, b []byte) DeCryptor {
+func (this *StreamDeCryptorAead) Init(c Cipher, b []byte) StreamDeCryptor {
 	this.cipher = c
 	this.is_begin = true
 	this.buffer = b
@@ -151,13 +151,13 @@ func (this *TCPAeadDeCryptor) Init(c Cipher, b []byte) DeCryptor {
 	return this
 }
 
-func (this *TCPAeadDeCryptor) getIV(r io.Reader) (iv []byte, err error) {
+func (this *StreamDeCryptorAead) getIV(r io.Reader) (iv []byte, err error) {
 	iv = make([]byte, this.cipher.IVSize())
 	_, err = io.ReadFull(r, iv)
 	return
 }
 
-func (this *TCPAeadDeCryptor) setNonce(increment bool) {
+func (this *StreamDeCryptorAead) setNonce(increment bool) {
 	var size int
 	size = this.AEAD.NonceSize()
 	if !increment {
@@ -173,14 +173,14 @@ func (this *TCPAeadDeCryptor) setNonce(increment bool) {
 	return
 }
 
-func (this *TCPAeadDeCryptor) getNonce() []byte {
+func (this *StreamDeCryptorAead) getNonce() []byte {
 	if this.nonce == nil {
 		this.setNonce(false)
 	}
 	return this.nonce
 }
 
-func (this *TCPAeadDeCryptor) ReadTo(b []byte, r io.Reader) (n int, err error) {
+func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error) {
 	if this.is_begin {
 		if this.iv, err = this.getIV(r); err != nil {
 			return

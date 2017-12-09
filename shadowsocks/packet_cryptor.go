@@ -15,3 +15,12 @@ type PacketDeCryptor interface {
 	initPacket(p net.PacketConn) PacketDeCryptor
 	ReadTo(b []byte) (n int, addr net.Addr, err error)
 }
+
+func NewPacketCryptor(cipher Cipher) (c Cryptor) {
+	if cipher.isStream() {
+		c = new(PacketCryptorStream).init(cipher)
+	} else {
+		c = new(PacketCryptorAead).init(cipher)
+	}
+	return
+}

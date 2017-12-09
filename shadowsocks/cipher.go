@@ -2,7 +2,6 @@ package shadowsocks
 
 import (
 	"errors"
-	"io"
 	"crypto/md5"
 )
 
@@ -34,16 +33,6 @@ type Cryptor interface {
 	//Read(b []byte) (n int, err error)
 	////GetBuffer() (buffer *LeakyBufType, err error)
 	GetBuffer() ([]byte)
-}
-
-type EnCryptor interface {
-	Init(c Cipher, b []byte) EnCryptor
-	WriteTo(b []byte, w io.Writer) (n int, err error)
-}
-
-type DeCryptor interface {
-	Init(c Cipher, b []byte) DeCryptor
-	ReadTo(b []byte, r io.Reader) (n int, err error)
 }
 
 type Cipher interface {
@@ -104,27 +93,6 @@ func NewCipher(method, password string) (c Cipher, err error) {
 		return
 	}
 	return mi.makeCipher(password, mi)
-}
-
-func NewCryptor(cipher Cipher, is_udp bool) (c Cryptor) {
-	//cipher, err := NewCipher(method, password)
-	//if err != nil {
-	//	return
-	//}
-	if is_udp {
-		if cipher.isStream() {
-			c = new(UDPStreamCryptor).init(cipher)
-		} else {
-			c = new(UDPAeadCryptor).init(cipher)
-		}
-	} else {
-		if cipher.isStream() {
-			c = new(TCPStreamCryptor).init(cipher)
-		} else {
-			c = new(TCPAeadCryptor).init(cipher)
-		}
-	}
-	return
 }
 
 // key-derivation function from original Shadowsocks
