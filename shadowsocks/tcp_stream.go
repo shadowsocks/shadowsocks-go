@@ -5,20 +5,20 @@ import (
 	"crypto/cipher"
 )
 
-type StreamCryptor struct {
+type TCPStreamCryptor struct {
 	Cryptor
 	cipher Cipher
 }
 
-func (this *StreamCryptor) initCryptor(doe DecOrEnc) interface{} {
+func (this *TCPStreamCryptor) initCryptor(doe DecOrEnc) interface{} {
 	if doe == Encrypt {
-		return new(StreamEnCryptor).Init(this.cipher, this.GetBuffer())
+		return new(TCPStreamEnCryptor).Init(this.cipher, this.GetBuffer())
 	} else {
-		return new(StreamDeCryptor).Init(this.cipher, this.GetBuffer())
+		return new(TCPStreamDeCryptor).Init(this.cipher, this.GetBuffer())
 	}
 }
 /////////////////////////////////////////////////////////////////////////////////////////
-type StreamEnCryptor struct {
+type TCPStreamEnCryptor struct {
 	EnCryptor
 	iv []byte
 	cipher Cipher
@@ -27,7 +27,7 @@ type StreamEnCryptor struct {
 	cipher.Stream
 }
 
-func (this *StreamEnCryptor) Init(c Cipher, b []byte) EnCryptor {
+func (this *TCPStreamEnCryptor) Init(c Cipher, b []byte) EnCryptor {
 	this.cipher = c
 	this.buffer = b
 	this.is_begin = true
@@ -35,7 +35,7 @@ func (this *StreamEnCryptor) Init(c Cipher, b []byte) EnCryptor {
 	return this
 }
 
-func (this *StreamEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) {
+func (this *TCPStreamEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) {
 	if this.is_begin {
 		if this.iv, err = this.cipher.NewIV(); err != nil { return }
 		if err = this.cipher.Init(this.iv, Encrypt); err != nil { return }
@@ -51,7 +51,7 @@ func (this *StreamEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) {
 	return w.Write(payload)
 }
 
-type StreamDeCryptor struct {
+type TCPStreamDeCryptor struct {
 	DeCryptor
 	iv []byte
 	cipher Cipher
@@ -60,7 +60,7 @@ type StreamDeCryptor struct {
 	cipher.Stream
 }
 
-func (this *StreamDeCryptor) Init(c Cipher, b []byte) DeCryptor {
+func (this *TCPStreamDeCryptor) Init(c Cipher, b []byte) DeCryptor {
 	this.cipher = c
 	this.is_begin = true
 	this.buffer = b
@@ -68,13 +68,13 @@ func (this *StreamDeCryptor) Init(c Cipher, b []byte) DeCryptor {
 	return this
 }
 
-func (this *StreamDeCryptor) getIV(r io.Reader) (iv []byte, err error) {
+func (this *TCPStreamDeCryptor) getIV(r io.Reader) (iv []byte, err error) {
 	iv = make([]byte, this.cipher.IVSize())
 	_, err = io.ReadFull(r, iv)
 	return
 }
 
-func (this *StreamDeCryptor) ReadTo(b []byte, r io.Reader) (n int, err error) {
+func (this *TCPStreamDeCryptor) ReadTo(b []byte, r io.Reader) (n int, err error) {
 	if this.is_begin {
 		if this.iv, err = this.getIV(r); err != nil { return }
 		if err = this.cipher.Init(this.iv, Decrypt); err != nil { return }
@@ -90,16 +90,16 @@ func (this *StreamDeCryptor) ReadTo(b []byte, r io.Reader) (n int, err error) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-func (this *StreamCryptor) getPayloadSizeMask() int {
+func (this *TCPStreamCryptor) getPayloadSizeMask() int {
 	return 1024
 	//return 32*1024
 }
 
-func (this *StreamCryptor) GetBuffer() ([]byte) {
+func (this *TCPStreamCryptor) GetBuffer() ([]byte) {
 	return make([]byte, this.getPayloadSizeMask())
 }
 
-func (this *StreamCryptor) init(cipher Cipher) Cryptor {
+func (this *TCPStreamCryptor) init(cipher Cipher) Cryptor {
 	this.cipher = cipher
 
 	return this

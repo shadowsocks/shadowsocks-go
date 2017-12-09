@@ -106,15 +106,23 @@ func NewCipher(method, password string) (c Cipher, err error) {
 	return mi.makeCipher(password, mi)
 }
 
-func NewCryptor(method, password string) (c Cryptor, err error) {
-	cipher, err := NewCipher(method, password)
-	if err != nil {
-		return
-	}
-	if cipher.isStream() {
-		c = new(StreamCryptor).init(cipher)
+func NewCryptor(cipher Cipher, is_udp bool) (c Cryptor) {
+	//cipher, err := NewCipher(method, password)
+	//if err != nil {
+	//	return
+	//}
+	if is_udp {
+		if cipher.isStream() {
+			c = new(UDPStreamCryptor).init(cipher)
+		} else {
+			c = new(UDPAeadCryptor).init(cipher)
+		}
 	} else {
-		c = new(AeadCryptor).init(cipher)
+		if cipher.isStream() {
+			c = new(TCPStreamCryptor).init(cipher)
+		} else {
+			c = new(TCPAeadCryptor).init(cipher)
+		}
 	}
 	return
 }

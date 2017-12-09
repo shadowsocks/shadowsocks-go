@@ -14,6 +14,7 @@ import (
 	"time"
 
 	ss "github.com/qunxyz/shadowsocks-go/shadowsocks"
+	"strings"
 )
 
 var (
@@ -31,6 +32,10 @@ const (
 )
 //var leakyBuf *ss.LeakyBufType
 var Logger = ss.Logger
+
+var udp bool
+var UDPTun string
+var UDPTimeout time.Duration
 
 func init() {
 	rand.Seed(time.Now().Unix())
@@ -150,13 +155,13 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 	return
 }
 
-type ServerCryptor struct {
+type ServerCipher struct {
 	server string
-	cryptor ss.Cryptor
+	cipher ss.Cipher
 }
 
 var servers struct {
-	srvCryptor []*ServerCryptor
+	srvCipher []*ServerCipher
 	failCnt   []int // failed connection count
 }
 
@@ -173,29 +178,29 @@ func parseServerConfig(config *ss.Config) {
 		method := config.Method
 
 		// only one encryption table
-		cryptor, err := ss.NewCryptor(method, config.Password)
+		cipher, err := ss.NewCipher(method, config.Password)
 		if err != nil {
-			Logger.Fatal("Failed generating cryptors:", err)
+			Logger.Fatal("Failed generating ciphers:", err)
 		}
 		srvPort := strconv.Itoa(config.ServerPort)
 		srvArr := config.GetServerArray()
 		n := len(srvArr)
-		servers.srvCryptor = make([]*ServerCryptor, n)
+		servers.srvCipher = make([]*ServerCipher, n)
 
 		for i, s := range srvArr {
 			if hasPort(s) {
 				Logger.Println("ignore server_port option for server", s)
-				servers.srvCryptor[i] = &ServerCryptor{s, cryptor}
+				servers.srvCipher[i] = &ServerCipher{s, cipher}
 			} else {
-				servers.srvCryptor[i] = &ServerCryptor{net.JoinHostPort(s, srvPort), cryptor}
+				servers.srvCipher[i] = &ServerCipher{net.JoinHostPort(s, srvPort), cipher}
 			}
 		}
 	} else {
 		// multiple servers
 		n := len(config.ServerPassword)
-		servers.srvCryptor = make([]*ServerCryptor, n)
+		servers.srvCipher = make([]*ServerCipher, n)
 
-		cryptorCache := make(map[string]ss.Cryptor)
+		cipherCache := make(map[string]ss.Cipher)
 		i := 0
 		for _, serverInfo := range config.ServerPassword {
 			if len(serverInfo) < 2 || len(serverInfo) > 3 {
@@ -213,29 +218,29 @@ func parseServerConfig(config *ss.Config) {
 			// Using "|" as delimiter is safe here, since no encryption
 			// method contains it in the name.
 			cacheKey := encmethod + "|" + passwd
-			cryptor, ok := cryptorCache[cacheKey]
+			cipher, ok := cipherCache[cacheKey]
 			if !ok {
 				var err error
-				cryptor, err = ss.NewCryptor(encmethod, passwd)
+				cipher, err = ss.NewCipher(encmethod, passwd)
 				if err != nil {
-					Logger.Fatal("Failed generating cryptors:", err)
+					Logger.Fatal("Failed generating ciphers:", err)
 				}
-				cryptorCache[cacheKey] = cryptor
+				cipherCache[cacheKey] = cipher
 			}
-			servers.srvCryptor[i] = &ServerCryptor{server, cryptor}
+			servers.srvCipher[i] = &ServerCipher{server, cipher}
 			i++
 		}
 	}
-	servers.failCnt = make([]int, len(servers.srvCryptor))
-	for _, se := range servers.srvCryptor {
+	servers.failCnt = make([]int, len(servers.srvCipher))
+	for _, se := range servers.srvCipher {
 		Logger.Println("available remote server", se.server)
 	}
 	return
 }
 
 func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn, err error) {
-	se := servers.srvCryptor[serverId]
-	remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cryptor)
+	se := servers.srvCipher[serverId]
+	remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher)
 	if err != nil {
 		Logger.Fields(ss.LogFields{
 			"rawaddr": rawaddr,
@@ -263,7 +268,7 @@ func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn
 // servers.
 func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) {
 	const baseFailCnt = 20
-	n := len(servers.srvCryptor)
+	n := len(servers.srvCipher)
 	skipped := make([]int, 0)
 	for i := 0; i < n; i++ {
 		// skip failed server, but try it with some probability
@@ -320,7 +325,7 @@ func handleConnection(conn net.Conn) {
 		Logger.Fields(ss.LogFields{
 			"err": err,
 		}).Warn("check createServerConn error")
-		if len(servers.srvCryptor) > 1 {
+		if len(servers.srvCipher) > 1 {
 			Logger.Fields(ss.LogFields{
 				"rawaddr": rawaddr,
 				"addr": addr,
@@ -336,7 +341,7 @@ func handleConnection(conn net.Conn) {
 		}
 	}()
 
-	ss.Pipe(conn, remote, remote.Buffer)
+	ss.PipeStream(conn, remote, remote.Buffer)
 	Logger.Infof("closed connection to %s", addr)
 }
 
@@ -378,6 +383,9 @@ func main() {
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.BoolVar((*bool)(&ss.DebugLog), "d", false, "print debug message")
+	//flag.BoolVar(&udp, "u", false, "UDP Relay")
+	flag.StringVar(&UDPTun, "udptun", "", "(client-only) UDP tunnel (laddr1=raddr1,laddr2=raddr2,...)")
+	flag.DurationVar(&UDPTimeout, "udptimeout", 5*time.Minute, "UDP tunnel timeout")
 
 	flag.Parse()
 
@@ -436,6 +444,148 @@ func main() {
 	//	http.Handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
 	//}()
 
+	//ss.Logger.Infof("going to run udp: %s", UDPTun)
+	if UDPTun != "" {
+		ss.Logger.Info("going to run udp")
+		for _, tun := range strings.Split(UDPTun, ",") {
+			p := strings.Split(tun, "=")
+			go RunUDP(p[0], p[1])
+		}
+	}
 	run(cmdLocal + ":" + strconv.Itoa(config.LocalPort))
+}
+//////////////////////////////////////////////////////////////////////////////////////
 
+func RunUDP(laddr, target string) {
+	var err error
+	//srvAddr, err := net.ResolveUDPAddr("udp", server)
+	//if err != nil {
+	//	Logger.Warnf("UDP server address error: %v", err)
+	//	return
+	//}
+
+	// parse target
+	tgt := ss.ParseAddr(target)
+	if tgt == nil {
+		err = fmt.Errorf("invalid target address: %q", target)
+		ss.Logger.Warnf("UDP target address error: %v", err)
+		return
+	}
+
+	// local listening
+	c, err := net.ListenPacket("udp", laddr)
+	if err != nil {
+		ss.Logger.Warnf("UDP local listen error: %v", err)
+		return
+	}
+	defer c.Close()
+
+	// get ss server addr
+	srvAddr, cipher, err := createUDPServerConn() // connect to ss server and send request from local
+	if err != nil {
+		if len(servers.srvCipher) > 1 {
+			ss.Logger.Fields(ss.LogFields{
+				"err": err,
+			}).Error("Failed connect to all avaiable shadowsocks server")
+		}
+		return
+	}
+	// pack packet listener with cipher
+	SecurePacketConn := ss.NewSecurePacketConn(c, cipher)
+
+	nm := ss.NewNATmap(UDPTimeout)
+	//buf := make([]byte, 1024)
+	buf := SecurePacketConn.Buffer
+	copy(buf, tgt)
+
+	ss.Logger.Infof("UDP tunnel %s <-> %s <-> %s", laddr, srvAddr.String(), target)
+	//ss.PipePacket(conn, SecurePacketConn, SecurePacketConn.Buffer)
+	for {
+		// read plaintext request from client
+		n, raddr, err := c.ReadFrom(buf[len(tgt):])
+		if err != nil {
+			ss.Logger.Warnf("UDP local read error: %v", err)
+			continue
+		}
+		ss.Logger.Fields(ss.LogFields{
+			"buf": buf[:len(tgt)+n],
+			"buf_str": string(buf[:len(tgt)+n]),
+			"tgt": tgt,
+		}).Info("check data begin")
+
+		// try to get data from cache
+		pc := nm.Get(raddr.String())
+		if pc == nil {
+			pc, err = net.ListenPacket("udp", "")
+			if err != nil {
+				ss.Logger.Warnf("UDP local listen error: %v", err)
+				continue
+			}
+
+			//pc = shadow(pc)
+			pc = ss.NewSecurePacketConn(pc, cipher)
+			nm.Add(raddr, c, pc, false)
+		}
+		//pc = ss.NewSecurePacketConn(pc, cipher)
+
+		_, err = pc.WriteTo(buf[:len(tgt)+n], srvAddr)
+		if err != nil {
+			ss.Logger.Warnf("UDP local write error: %v", err)
+			continue
+		}
+	}
+}
+
+func connectToUDPServer(serverId int) (srvAddr *net.UDPAddr, err error) {
+	se := servers.srvCipher[serverId]
+	srvAddr, err = net.ResolveUDPAddr("udp", se.server)
+	if err != nil {
+		ss.Logger.Warnf("UDP server address error: %v", err)
+		const maxFailCnt = 30
+		if servers.failCnt[serverId] < maxFailCnt {
+			servers.failCnt[serverId]++
+		}
+		return nil, err
+	}
+
+	servers.failCnt[serverId] = 0
+	return
+}
+
+// Connection to the server in the order specified in the config. On
+// connection failure, try the next server. A failed server will be tried with
+// some probability according to its fail count, so we can discover recovered
+// servers.
+func createUDPServerConn() (srvAddr *net.UDPAddr, cipher ss.Cipher, err error) {
+	const baseFailCnt = 20
+	n := len(servers.srvCipher)
+	skipped := make([]int, 0)
+	for i := 0; i < n; i++ {
+		// skip failed server, but try it with some probability
+		if servers.failCnt[i] > 0 && rand.Intn(servers.failCnt[i]+baseFailCnt) != 0 {
+			skipped = append(skipped, i)
+			continue
+		}
+		//////////////////////////
+		//se := servers.srvCipher[i]
+		//srvAddr, err := net.ResolveUDPAddr("udp", se.server)
+		//if err == nil {
+		//	//Logger.Warnf("UDP server address error: %v", err)
+		//	return
+		//}
+		//////////////////////////
+		srvAddr, err = connectToUDPServer(i)
+		if err == nil {
+			cipher = servers.srvCipher[i].cipher
+			return
+		}
+	}
+	// last resort, try skipped servers, not likely to succeed
+	//for _, i := range skipped {
+	//	remote, err = connectToUDPServer(i, rawaddr, addr)
+	//	if err == nil {
+	//		return
+	//	}
+	//}
+	return
 }

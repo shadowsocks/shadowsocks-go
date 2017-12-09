@@ -7,29 +7,35 @@ import (
 	"errors"
 )
 
-type AeadCryptor struct {
+type TCPAeadCryptor struct {
 	Cryptor
 	cipher Cipher
 }
 
-func (this *AeadCryptor) initCryptor(doe DecOrEnc) interface{} {
+func (this *TCPAeadCryptor) init(cipher Cipher) Cryptor {
+	this.cipher = cipher
+
+	return this
+}
+
+func (this *TCPAeadCryptor) initCryptor(doe DecOrEnc) interface{} {
 	if doe == Encrypt {
-		return new(AeadEnCryptor).Init(this.cipher, this.GetBuffer())
+		return new(TCPAeadEnCryptor).Init(this.cipher, this.GetBuffer())
 	} else {
-		return new(AeadDeCryptor).Init(this.cipher, this.GetBuffer())
+		return new(TCPAeadDeCryptor).Init(this.cipher, this.GetBuffer())
 	}
 }
 
-func (this *AeadCryptor) getPayloadSizeMask() int {
+func (this *TCPAeadCryptor) getPayloadSizeMask() int {
 	return 0x3FFF // 16*1024 - 1
 }
 
-func (this *AeadCryptor) GetBuffer() []byte {
+func (this *TCPAeadCryptor) GetBuffer() []byte {
 	return make([]byte, this.getPayloadSizeMask())
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
-type AeadEnCryptor struct {
+type TCPAeadEnCryptor struct {
 	EnCryptor
 	iv       []byte
 	cipher   Cipher
@@ -39,7 +45,7 @@ type AeadEnCryptor struct {
 	nonce    []byte
 }
 
-func (this *AeadEnCryptor) Init(c Cipher, b []byte) EnCryptor {
+func (this *TCPAeadEnCryptor) Init(c Cipher, b []byte) EnCryptor {
 	this.cipher = c
 	this.buffer = b
 	this.is_begin = true
@@ -47,7 +53,7 @@ func (this *AeadEnCryptor) Init(c Cipher, b []byte) EnCryptor {
 	return this
 }
 
-func (this *AeadEnCryptor) setNonce(increment bool) {
+func (this *TCPAeadEnCryptor) setNonce(increment bool) {
 	var size int
 	size = this.AEAD.NonceSize()
 	if !increment {
@@ -63,14 +69,14 @@ func (this *AeadEnCryptor) setNonce(increment bool) {
 	return
 }
 
-func (this *AeadEnCryptor) getNonce() []byte {
+func (this *TCPAeadEnCryptor) getNonce() []byte {
 	if this.nonce == nil {
 		this.setNonce(false)
 	};
 	return this.nonce
 }
 
-func (this *AeadEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) {
+func (this *TCPAeadEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) {
 	if this.is_begin {
 		if this.iv, err = this.cipher.NewIV(); err != nil {
 			return
@@ -121,12 +127,13 @@ func (this *AeadEnCryptor) WriteTo(b []byte, w io.Writer) (n int, err error) {
 		}
 		chunk_counter--
 		packet_len -= payload_len
+		b = b[payload_len:]
 	}
 
 	return
 }
 
-type AeadDeCryptor struct {
+type TCPAeadDeCryptor struct {
 	DeCryptor
 	iv       []byte
 	cipher   Cipher
@@ -136,7 +143,7 @@ type AeadDeCryptor struct {
 	buffer   []byte
 }
 
-func (this *AeadDeCryptor) Init(c Cipher, b []byte) DeCryptor {
+func (this *TCPAeadDeCryptor) Init(c Cipher, b []byte) DeCryptor {
 	this.cipher = c
 	this.is_begin = true
 	this.buffer = b
@@ -144,13 +151,13 @@ func (this *AeadDeCryptor) Init(c Cipher, b []byte) DeCryptor {
 	return this
 }
 
-func (this *AeadDeCryptor) getIV(r io.Reader) (iv []byte, err error) {
+func (this *TCPAeadDeCryptor) getIV(r io.Reader) (iv []byte, err error) {
 	iv = make([]byte, this.cipher.IVSize())
 	_, err = io.ReadFull(r, iv)
 	return
 }
 
-func (this *AeadDeCryptor) setNonce(increment bool) {
+func (this *TCPAeadDeCryptor) setNonce(increment bool) {
 	var size int
 	size = this.AEAD.NonceSize()
 	if !increment {
@@ -166,14 +173,14 @@ func (this *AeadDeCryptor) setNonce(increment bool) {
 	return
 }
 
-func (this *AeadDeCryptor) getNonce() []byte {
+func (this *TCPAeadDeCryptor) getNonce() []byte {
 	if this.nonce == nil {
 		this.setNonce(false)
 	}
 	return this.nonce
 }
 
-func (this *AeadDeCryptor) ReadTo(b []byte, r io.Reader) (n int, err error) {
+func (this *TCPAeadDeCryptor) ReadTo(b []byte, r io.Reader) (n int, err error) {
 	if this.is_begin {
 		if this.iv, err = this.getIV(r); err != nil {
 			return
@@ -222,12 +229,4 @@ func (this *AeadDeCryptor) ReadTo(b []byte, r io.Reader) (n int, err error) {
 	n = payload_size
 
 	return
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////
-
-func (this *AeadCryptor) init(cipher Cipher) Cryptor {
-	this.cipher = cipher
-
-	return this
 }

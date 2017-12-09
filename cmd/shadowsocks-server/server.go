@@ -16,6 +16,7 @@ import (
 
 	ss "github.com/qunxyz/shadowsocks-go/shadowsocks"
 	"log"
+	"time"
 )
 
 const (
@@ -35,6 +36,7 @@ const (
 
 var udp bool
 var Logger = ss.Logger
+var UDPTimeout time.Duration
 
 func getRequest(conn *ss.Conn) (host string, err error) {
 	//ss.SetReadTimeout(conn)
@@ -158,7 +160,7 @@ func handleConnection(conn *ss.Conn) {
 	}()
 	Logger.Infof("piping %s<->%s", conn.RemoteAddr(), host)
 
-	ss.Pipe(conn, remote, conn.Buffer)
+	ss.PipeStream(conn, remote, conn.Buffer)
 
 	return
 }
@@ -170,7 +172,7 @@ type PortListener struct {
 
 type UDPListener struct {
 	password string
-	listener *net.UDPConn
+	listener net.PacketConn
 }
 
 type PasswdManager struct {
@@ -185,7 +187,7 @@ func (pm *PasswdManager) add(port, password string, listener net.Listener) {
 	pm.Unlock()
 }
 
-func (pm *PasswdManager) addUDP(port, password string, listener *net.UDPConn) {
+func (pm *PasswdManager) addUDP(port, password string, listener net.PacketConn) {
 	pm.Lock()
 	pm.udpListener[port] = &UDPListener{password, listener}
 	pm.Unlock()
@@ -244,11 +246,11 @@ func (pm *PasswdManager) updatePortPasswd(port, password string) {
 	// run will add the new port listener to passwdManager.
 	// So there maybe concurrent access to passwdManager and we need lock to protect it.
 	go run(port, password)
-	//if udp {
-	//	pl, _ := pm.getUDP(port)
-	//	pl.listener.Close()
-	//	go runUDP(port, password)
-	//}
+	if udp {
+		pl, _ := pm.getUDP(port)
+		pl.listener.Close()
+		go runUDP(port, password)
+	}
 }
 
 var passwdManager = PasswdManager{portListener: map[string]*PortListener{}, udpListener: map[string]*UDPListener{}}
@@ -307,7 +309,7 @@ func run(port, password string) {
 		os.Exit(1)
 	}
 	passwdManager.add(port, password, ln)
-	var cryptor ss.Cryptor
+	var cipher ss.Cipher
 	Logger.Fields(ss.LogFields{"port": port}).Info("server listening ...")
 	for {
 		conn, err := ln.Accept()
@@ -316,25 +318,115 @@ func run(port, password string) {
 			// listener maybe closed to update password
 			return
 		}
-		// Creating cryptor upon first connection.
-		if cryptor == nil {
-			Logger.Info("creating cryptor for port:", port)
-			cryptor, err = ss.NewCryptor(config.Method, password)
+		// Creating cipher upon first connection.
+		if cipher == nil {
+			Logger.Info("creating cipher for port:", port)
+			cipher, err = ss.NewCipher(config.Method, password)
 			if err != nil {
 				Logger.Fields(ss.LogFields{
 					"port": port,
 					"err": err,
-				}).Error("Error generating cryptor for port")
+				}).Error("Error generating cipher for port")
 				conn.Close()
 				continue
 			}
 		}
-		go handleConnection(ss.NewConn(conn, cryptor))
+		go handleConnection(ss.NewConn(conn, cipher))
 	}
 }
 
+func runUDP(port, password string) {
+	var cipher ss.Cipher
+	port_i, _ := strconv.Atoi(port)
+	addr := &net.UDPAddr{
+		IP:   net.IPv6zero,
+		Port: port_i,
+	}
+	ss.Logger.Fields(ss.LogFields{
+		"addr_str": addr.String(),
+	}).Info("check addr")
+	log.Printf("listening udp port %v\n", port)
+	//c, err := net.ListenUDP("udp", addr)
+	//c, err := net.ListenPacket("udp", addr.String())
+	c, err := net.ListenPacket("udp", "127.0.0.1:8388")
+	passwdManager.addUDP(port, password, c)
+	if err != nil {
+		log.Printf("error listening udp port %v: %v\n", port, err)
+		return
+	}
+	defer c.Close()
+	cipher, err = ss.NewCipher(config.Method, password)
+	if err != nil {
+		log.Printf("Error generating cipher for udp port: %s %v\n", port, err)
+		c.Close()
+	}
+	SecurePacketConn := ss.NewSecurePacketConn(c, cipher)
+
+	nm := ss.NewNATmap(UDPTimeout)
+	buf := SecurePacketConn.Buffer
+	for {
+		n, raddr, err := SecurePacketConn.ReadFrom(buf)
+		if err != nil {
+			ss.Logger.Warnf("UDP remote read error: %v", err)
+			continue
+		}
+		ss.Logger.Fields(ss.LogFields{
+			"raddr": raddr.String(),
+		}).Info("check raddr")
+
+		tgtAddr := ss.SplitAddr(buf[:n])
+		if tgtAddr == nil {
+			ss.Logger.Warnf("failed to split target address from packet: %q", buf[:n])
+			continue
+		}
+		ss.Logger.Fields(ss.LogFields{
+			"tgtAddr": tgtAddr.String(),
+		}).Info("check tgtAddr")
+
+		tgtUDPAddr, err := net.ResolveUDPAddr("udp", tgtAddr.String())
+		if err != nil {
+			ss.Logger.Warnf("failed to resolve target UDP address: %v", err)
+			continue
+		}
+		ss.Logger.Fields(ss.LogFields{
+			"tgtUDPAddr": tgtUDPAddr.String(),
+		}).Info("check udp addr")
+
+		payload := buf[len(tgtAddr):n]
+
+		pc := nm.Get(raddr.String())
+		if pc == nil {
+			pc, err = net.ListenPacket("udp", "")
+			if err != nil {
+				ss.Logger.Warnf("UDP remote listen error: %v", err)
+				continue
+			}
+
+			nm.Add(raddr, SecurePacketConn, pc, true)
+		}
+		ss.Logger.Fields(ss.LogFields{
+			"payload": payload,
+			"payload_str": string(payload),
+		}).Info("check payload")
+
+		_, err = pc.WriteTo(payload, tgtUDPAddr) // accept only UDPAddr despite the signature
+		if err != nil {
+			ss.Logger.Warnf("UDP remote write error: %v", err)
+			continue
+		}
+	}
+	//for {
+	//	ss.PipePacket(conn, SecurePacketConn, SecurePacketConn.Buffer)
+	//	//if err := ss.ReadAndHandleUDPReq(SecurePacketConn); err != nil {
+	//	//	Logger.Fields(ss.LogFields{
+	//	//		"err": err,
+	//	//	}).Error("Error ReadAndHandleUDPReq")
+	//	//}
+	//}
+}
+//
 //func runUDP(port, password string) {
-//	var cryptor *ss.Cryptor
+//	var cipher ss.Cipher
 //	port_i, _ := strconv.Atoi(port)
 //	log.Printf("listening udp port %v\n", port)
 //	conn, err := net.ListenUDP("udp", &net.UDPAddr{
@@ -347,16 +439,19 @@ func run(port, password string) {
 //		return
 //	}
 //	defer conn.Close()
-//	cryptor, err = ss.NewCryptor(config.Method, password)
+//	cipher, err = ss.NewCipher(config.Method, password)
 //	if err != nil {
-//		log.Printf("Error generating cryptor for udp port: %s %v\n", port, err)
+//		log.Printf("Error generating cipher for udp port: %s %v\n", port, err)
 //		conn.Close()
 //	}
-//	SecurePacketConn := ss.NewSecurePacketConn(conn, cryptor.Copy())
+//	SecurePacketConn := ss.NewSecurePacketConn(conn, cipher)
 //	for {
-//		if err := ss.ReadAndHandleUDPReq(SecurePacketConn); err != nil {
-//			debug.Println(err)
-//		}
+//		ss.PipePacket(conn, SecurePacketConn, SecurePacketConn.Buffer)
+//		//if err := ss.ReadAndHandleUDPReq(SecurePacketConn); err != nil {
+//		//	Logger.Fields(ss.LogFields{
+//		//		"err": err,
+//		//	}).Error("Error ReadAndHandleUDPReq")
+//		//}
 //	}
 //}
 
@@ -424,7 +519,7 @@ func main() {
 		ss.Logger.Fields(ss.LogFields{
 			"method": config.Method,
 			"err": err,
-		}).Error("check cryptor method error")
+		}).Error("check cipher method error")
 		os.Exit(1)
 	}
 	if err = unifyPortPassword(config); err != nil {
@@ -435,9 +530,9 @@ func main() {
 	}
 	for port, password := range config.PortPassword {
 		go run(port, password)
-		//if udp {
-		//	go runUDP(port, password)
-		//}
+		if udp {
+			go runUDP(port, password)
+		}
 	}
 
 	waitSignal()

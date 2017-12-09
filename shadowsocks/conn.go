@@ -13,7 +13,8 @@ type Conn struct {
 	DeCryptor DeCryptor
 }
 
-func NewConn(c net.Conn, cryptor Cryptor) (conn *Conn) {
+func NewConn(c net.Conn, cipher Cipher) (conn *Conn) {
+	cryptor := NewCryptor(cipher, false)
 	conn = &Conn{
 		Conn:      c,
 		Encryptor: cryptor.initCryptor(Encrypt).(EnCryptor),
@@ -53,12 +54,12 @@ func RawAddr(addr string) (buf []byte, err error) {
 	binary.BigEndian.PutUint16(buf[2+hostLen:2+hostLen+2], uint16(port))
 	return
 }
-func DialWithRawAddr(rawaddr []byte, server string, cryptor Cryptor) (c *Conn, err error) {
+func DialWithRawAddr(rawaddr []byte, server string, cipher Cipher) (c *Conn, err error) {
 	conn, err := net.Dial("tcp", server)
 	if err != nil {
 		return
 	}
-	c = NewConn(conn, cryptor)
+	c = NewConn(conn, cipher)
 	if _, err = c.Write(rawaddr); err != nil {
 		c.Close()
 	}
@@ -66,10 +67,10 @@ func DialWithRawAddr(rawaddr []byte, server string, cryptor Cryptor) (c *Conn, e
 }
 
 // addr should be in the form of host:port
-func Dial(addr, server string, cryptor Cryptor) (c *Conn, err error) {
+func Dial(addr, server string, cipher Cipher) (c *Conn, err error) {
 	ra, err := RawAddr(addr)
 	if err != nil {
 		return
 	}
-	return DialWithRawAddr(ra, server, cryptor)
+	return DialWithRawAddr(ra, server, cipher)
 }
