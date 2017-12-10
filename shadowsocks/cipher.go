@@ -6,7 +6,6 @@ import (
 )
 
 type DecOrEnc int
-type CipherType int
 
 const (
 	Decrypt DecOrEnc = iota
@@ -42,8 +41,6 @@ type Cipher interface {
 	NewIV() (iv []byte, err error)
 	KeySize() int
 	IVSize() int
-	//Encrypt(dst, src []byte) error
-	//Decrypt(dst, src []byte) error
 }
 
 var cipherMethod = map[string]*cipherInfo{

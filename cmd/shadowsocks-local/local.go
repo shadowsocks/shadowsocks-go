@@ -31,7 +31,6 @@ const (
 	socksCmdConnect = 1
 )
 
-var udp bool
 var UDPTun string
 var UDPTimeout time.Duration
 
@@ -433,14 +432,6 @@ func main() {
 	}
 
 	parseServerConfig(config)
-	//go func() {
-	//	http.ListenAndServe("localhost:6060", nil)
-	//	http.Handle("/debug/pprof/", http.HandlerFunc(pprof.Index))
-	//	http.Handle("/debug/pprof/cmdline", http.HandlerFunc(pprof.Cmdline))
-	//	http.Handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
-	//	http.Handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
-	//	http.Handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
-	//}()
 
 	if UDPTun != "" {
 		for _, tun := range strings.Split(UDPTun, ",") {
@@ -496,11 +487,6 @@ func RunUDP(laddr, target string) {
 			ss.Logger.Warnf("UDP local read error: %v", err)
 			continue
 		}
-		ss.Logger.Fields(ss.LogFields{
-			"buf": buf[:len(tgt)+n],
-			"buf_str": string(buf[:len(tgt)+n]),
-			"tgt": tgt,
-		}).Info("check data begin")
 
 		// try to get data from cache
 		pc := nm.Get(raddr.String())

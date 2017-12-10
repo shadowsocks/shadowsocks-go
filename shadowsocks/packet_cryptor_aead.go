@@ -100,7 +100,6 @@ func (this *PacketEnCryptorAead) WriteTo(b []byte, addr net.Addr) (n int, err er
 
 	copy(this.buffer, iv)
 
-	//this.Seal(this.buffer[iv_offset:iv_offset], this.getNonce(), b, nil)
 	this.Encrypt(this.buffer[iv_offset:iv_offset], b)
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	if DebugLog {
@@ -223,7 +222,6 @@ func (this *PacketDeCryptorAead) ReadTo(b []byte) (n int, addr net.Addr, err err
 		copy(payload_ct, b[iv_offset:n])
 	}
 
-	//_, err = this.Open(this.buffer[:0], this.getNonce(), b[iv_offset:n], nil)
 	err = this.Decrypt(this.buffer[:0], b[iv_offset:n])
 	if err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\

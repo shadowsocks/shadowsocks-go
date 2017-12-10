@@ -36,7 +36,6 @@ func (this *PacketCryptorStream) init(cipher Cipher) Cryptor {
 /////////////////////////////////////////////////////////////////////////////////////////
 type PacketEnCryptorStream struct {
 	PacketEnCryptor
-	//iv     []byte
 	cipher Cipher
 	buffer []byte
 	*CryptorStream
@@ -119,7 +118,6 @@ func (this *PacketEnCryptorStream) WriteTo(b []byte, addr net.Addr) (n int, err 
 
 type PacketDeCryptorStream struct {
 	PacketDeCryptor
-	//iv     []byte
 	cipher Cipher
 	buffer []byte
 	*CryptorStream

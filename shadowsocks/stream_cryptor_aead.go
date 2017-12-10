@@ -80,7 +80,6 @@ func (this *StreamEnCryptorAead) WriteTo(b []byte, w io.Writer) (n int, err erro
 			return
 		}
 		this.CryptorAead = cryptor.(*CryptorAead)
-		this.nonce = nil
 		this.is_begin = false
 		if _, err = w.Write(this.iv); err != nil { // important to keep it at last
 			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -121,8 +120,6 @@ func (this *StreamEnCryptorAead) WriteTo(b []byte, w io.Writer) (n int, err erro
 		///////////////////////////////////////////////
 		// pack header
 		this.Encrypt(packet_buf[:0], packet_buf[:2])
-		//this.Seal(packet_buf[:0], this.getNonce(), packet_buf[:2], nil)
-		//this.setNonce(true)
 
 		// get payload
 		payload := b[:payload_len]
@@ -135,8 +132,6 @@ func (this *StreamEnCryptorAead) WriteTo(b []byte, w io.Writer) (n int, err erro
 		///////////////////////////////////////////////
 		// pack payload
 		this.Encrypt(payload_buf[:0], payload)
-		//this.Seal(payload_buf[:0], this.getNonce(), payload, nil)
-		//this.setNonce(true)
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
@@ -222,7 +217,6 @@ func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error
 		}
 		this.CryptorAead = cryptor.(*CryptorAead)
 		this.is_begin = false
-		this.nonce = nil
 	}
 
 	buffer_size := len(this.buffer)
@@ -251,7 +245,6 @@ func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error
 	///////////////////////////////////////////////
 
 	/// unpack header
-	//if _, err = this.Open(header[:0], this.getNonce(), header, nil); err != nil {
 	if err = this.Decrypt(header[:0], header); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
@@ -265,7 +258,6 @@ func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error
 		////////////////////////////////////////////////
 		return
 	}
-	//this.setNonce(true)
 
 	/// get payload size
 	payload_size := int(header[0])<<8 + int(header[1])&buffer_size
@@ -315,7 +307,6 @@ func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error
 	///////////////////////////////////////////////
 
 	/// unpack payload
-	//if _, err = this.Open(payload[:0], this.getNonce(), payload, nil); err != nil {
 	if err = this.Decrypt(payload[:0], payload); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
@@ -330,7 +321,6 @@ func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error
 		///////////////////////////////////////////////
 		return
 	}
-	//this.setNonce(true)
 
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	if DebugLog {
