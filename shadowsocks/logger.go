@@ -17,7 +17,7 @@ const caller_level = 6
 const stack_len = 3
 const debug_level = logrus.DebugLevel
 const begin_len = 64
-const last_len = 16
+const last_len = 64
 var middle_bytes = []byte{0, 0, 0}
 
 type LogFields map[string]interface{}
@@ -282,11 +282,9 @@ func (this *LogType) Println(args ...interface{}) (*LogType) {
 	}
 	this.formatOutput(caller_level)
 	if this.fields != nil {
-		fmt.Println("fields are not nil")
 		this.fields.Println(args...)
 		this.fields = nil
 	} else {
-		fmt.Println("fields is nil")
 		this.logger.Println(args...)
 	}
 

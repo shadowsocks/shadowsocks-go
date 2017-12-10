@@ -193,6 +193,7 @@ func (this *StreamDeCryptorStream) ReadTo(b []byte, r io.Reader) (n int, err err
 			"b": b,
 			"n": n,
 			"payload": payload,
+			"payload_str": string(payload),
 		}).Debug("check decrypted data")
 	}
 	///////////////////////////////////////////////

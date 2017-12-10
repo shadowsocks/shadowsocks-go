@@ -337,6 +337,7 @@ func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error
 		Logger.Fields(LogFields{
 			"header_src": header_src,
 			"payload_src": payload_src,
+			"payload_src_str": string(payload_src),
 			"payload_ct": payload_ct,
 			"b": b[:payload_size],
 			"iv": this.iv,
