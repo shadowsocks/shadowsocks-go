@@ -339,7 +339,8 @@ func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error
 			"payload_src": payload_src,
 			"payload_src_str": string(payload_src),
 			"payload_ct": payload_ct,
-			"b": b[:payload_size],
+			"b": b,
+			"b_len": len(b),
 			"iv": this.iv,
 			"nonce": this.getNonce(),
 		}).Debug("check data after decrypt")

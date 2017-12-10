@@ -1,16 +1,13 @@
 package main
 
 import (
-	"encoding/binary"
 	"errors"
 	"flag"
-	"fmt"
 	"net"
 	"os"
 	"os/signal"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 
@@ -18,71 +15,9 @@ import (
 	"time"
 )
 
-const (
-	idType  = 0 // address type index
-	idIP0   = 1 // ip addres start index
-	idDmLen = 1 // domain address length index
-	idDm0   = 2 // domain address start index
-
-	typeIPv4 = 1 // type is ipv4 address
-	typeDm   = 3 // type is domain address
-	typeIPv6 = 4 // type is ipv6 address
-
-	lenIPv4   = net.IPv4len + 2 // ipv4 + 2port
-	lenIPv6   = net.IPv6len + 2 // ipv6 + 2port
-	lenDmBase = 2               // 1addrLen + 2port, plus addrLen
-)
-
 var udp bool
 var Logger = ss.Logger
 var UDPTimeout time.Duration
-
-func getRequest(conn *ss.Conn) (host string, err error) {
-	//ss.SetReadTimeout(conn)
-	//var n int
-	// buf size should at least have the same size with the largest possible
-	// request size (when addrType is 3, domain name has at most 256 bytes)
-	// 1(addrType) + 1(lenByte) + 255(max length address) + 2(port) + 10(hmac-sha1)
-	buf := make([]byte, 269)
-	// read till we get possible domain length field
-	_, err = conn.Read(buf)
-	if err != nil {
-		return
-	}
-	//buf = buf[:n]
-
-	//var reqStart, reqEnd int
-	var reqEnd int
-	addrType := buf[idType]
-	switch addrType & ss.AddrMask {
-	case typeIPv4:
-		reqEnd = idIP0+lenIPv4
-	case typeIPv6:
-		reqEnd = idIP0+lenIPv6
-	case typeDm:
-		reqEnd = idDm0+int(buf[idDmLen])+lenDmBase
-	default:
-		err = fmt.Errorf("addr type %d not supported", addrType&ss.AddrMask)
-		return
-	}
-
-	// Return string for typeIP is not most efficient, but browsers (Chrome,
-	// Safari, Firefox) all seems using typeDm exclusively. So this is not a
-	// big problem.
-	switch addrType & ss.AddrMask {
-	case typeIPv4:
-		host = net.IP(buf[idIP0 : idIP0+net.IPv4len]).String()
-	case typeIPv6:
-		host = net.IP(buf[idIP0 : idIP0+net.IPv6len]).String()
-	case typeDm:
-		host = string(buf[idDm0 : idDm0+int(buf[idDmLen])])
-	}
-
-	// parse port
-	port := binary.BigEndian.Uint16(buf[reqEnd-2 : reqEnd])
-	host = net.JoinHostPort(host, strconv.Itoa(int(port)))
-	return
-}
 
 const logCntDelta = 100
 
@@ -90,7 +25,7 @@ var connCnt int
 var nextLogConnCnt = logCntDelta
 
 func handleConnection(conn *ss.Conn) {
-	var host string
+	var host ss.Addr
 
 	connCnt++ // this maybe not accurate, but should be enough
 	if connCnt-nextLogConnCnt >= 0 {
@@ -113,24 +48,14 @@ func handleConnection(conn *ss.Conn) {
 		}
 	}()
 
-	host, err := getRequest(conn)
+	host, err := ss.ReadAddr(conn)
 	if err != nil {
-		Logger.Fields(ss.LogFields{
-			"RemoteAddr": conn.RemoteAddr(),
-			"LocalAddr": conn.LocalAddr(),
-			"err": err,
-		}).Warn("error getting request")
-		closed = true
+		ss.Logger.Println("socks read addr error:", err)
 		return
 	}
-	// ensure the host does not contain some illegal characters, NUL may panic on Win32
-	if strings.ContainsRune(host, 0x00) {
-		Logger.Fields(ss.LogFields{"host": host}).Warn("invalid domain name.")
-		closed = true
-		return
-	}
+
 	Logger.Info("connecting ", host)
-	remote, err := net.Dial("tcp", host)
+	remote, err := net.Dial("tcp", host.String())
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
