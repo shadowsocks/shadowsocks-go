@@ -52,7 +52,6 @@ func (this *StreamEnCryptorStream) Init(c Cipher, b []byte) StreamEnCryptor {
 }
 
 func (this *StreamEnCryptorStream) WriteTo(b []byte, w io.Writer) (n int, err error) {
-	cryptor := this.Stream
 	if this.is_begin {
 		if this.iv, err = this.cipher.NewIV(); err != nil {
 			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -64,7 +63,8 @@ func (this *StreamEnCryptorStream) WriteTo(b []byte, w io.Writer) (n int, err er
 			///////////////////////////////////////////////
 			return
 		}
-		if err = this.cipher.Init(this.iv, Encrypt); err != nil {
+		var cryptor interface{}
+		if cryptor, err = this.cipher.Init(this.iv, Encrypt); err != nil {
 			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 			if DebugLog {
 				Logger.Fields(LogFields{
@@ -75,8 +75,7 @@ func (this *StreamEnCryptorStream) WriteTo(b []byte, w io.Writer) (n int, err er
 			///////////////////////////////////////////////
 			return
 		}
-		this.Stream = this.cipher.GetCryptor(Encrypt).(cipher.Stream)
-		cryptor = this.Stream
+		this.Stream = cryptor.(cipher.Stream)
 		this.is_begin = false
 		if _, err = w.Write(this.iv); err != nil { // important to keep it at last
 			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -93,7 +92,7 @@ func (this *StreamEnCryptorStream) WriteTo(b []byte, w io.Writer) (n int, err er
 
 	payload_len := len(b)
 	payload := this.buffer[:payload_len]
-	cryptor.XORKeyStream(payload, b)
+	this.XORKeyStream(payload, b)
 
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	if DebugLog {
@@ -148,7 +147,6 @@ func (this *StreamDeCryptorStream) getIV(r io.Reader) (iv []byte, err error) {
 
 func (this *StreamDeCryptorStream) ReadTo(b []byte, r io.Reader) (n int, err error) {
 	var payload []byte
-	cryptor := this.Stream
 	if this.is_begin {
 		if this.iv, err = this.getIV(r); err != nil {
 			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -160,7 +158,8 @@ func (this *StreamDeCryptorStream) ReadTo(b []byte, r io.Reader) (n int, err err
 			///////////////////////////////////////////////
 			return
 		}
-		if err = this.cipher.Init(this.iv, Decrypt); err != nil {
+		var cryptor interface{}
+		if cryptor, err = this.cipher.Init(this.iv, Decrypt); err != nil {
 			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 			if DebugLog {
 				Logger.Fields(LogFields{
@@ -171,8 +170,7 @@ func (this *StreamDeCryptorStream) ReadTo(b []byte, r io.Reader) (n int, err err
 			///////////////////////////////////////////////
 			return
 		}
-		this.Stream = this.cipher.GetCryptor(Decrypt).(cipher.Stream)
-		cryptor = this.Stream
+		this.Stream = cryptor.(cipher.Stream)
 		this.is_begin = false
 	}
 	if n, err = r.Read(b); err != nil {
@@ -188,7 +186,7 @@ func (this *StreamDeCryptorStream) ReadTo(b []byte, r io.Reader) (n int, err err
 	}
 	if n > 0 {
 		payload = b[:n]
-		cryptor.XORKeyStream(payload, payload)
+		this.XORKeyStream(payload, payload)
 	}
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	if DebugLog {

@@ -70,7 +70,8 @@ func (this *PacketEnCryptorStream) WriteTo(b []byte, addr net.Addr) (n int, err 
 		///////////////////////////////////////////////
 		return
 	}
-	if err = this.cipher.Init(this.iv, Encrypt); err != nil {
+	var cryptor interface{}
+	if cryptor, err = this.cipher.Init(this.iv, Encrypt); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
@@ -81,14 +82,14 @@ func (this *PacketEnCryptorStream) WriteTo(b []byte, addr net.Addr) (n int, err 
 		///////////////////////////////////////////////
 		return
 	}
-	this.Stream = this.cipher.GetCryptor(Encrypt).(cipher.Stream)
+	this.Stream = cryptor.(cipher.Stream)
 
 	copy(this.buffer, this.iv)
 
 	payload_len := len(b)
 	payload := this.buffer[iv_offset:iv_offset+payload_len]
 
-	this.Stream.XORKeyStream(payload, b)
+	this.XORKeyStream(payload, b)
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	if DebugLog {
 		Logger.Fields(LogFields{
@@ -169,7 +170,8 @@ func (this *PacketDeCryptorStream) ReadTo(b []byte) (n int, addr net.Addr, err e
 
 	this.iv = b[:iv_offset]
 
-	if err = this.cipher.Init(this.iv, Decrypt); err != nil {
+	var cryptor interface{}
+	if cryptor, err = this.cipher.Init(this.iv, Decrypt); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
@@ -180,7 +182,7 @@ func (this *PacketDeCryptorStream) ReadTo(b []byte) (n int, addr net.Addr, err e
 		///////////////////////////////////////////////
 		return
 	}
-	this.Stream = this.cipher.GetCryptor(Decrypt).(cipher.Stream)
+	this.Stream = cryptor.(cipher.Stream)
 
 	payload := b[iv_offset:n]
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\

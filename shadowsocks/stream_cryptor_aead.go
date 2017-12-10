@@ -81,7 +81,6 @@ func (this *StreamEnCryptorAead) WriteTo(b []byte, w io.Writer) (n int, err erro
 	// for debug
 	var header_src, payload_src []byte
 	///////////////////////////////////////////////
-	cryptor := this.AEAD
 	if this.is_begin {
 		if this.iv, err = this.cipher.NewIV(); err != nil {
 			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -93,7 +92,8 @@ func (this *StreamEnCryptorAead) WriteTo(b []byte, w io.Writer) (n int, err erro
 			///////////////////////////////////////////////
 			return
 		}
-		if err = this.cipher.Init(this.iv, Encrypt); err != nil {
+		var cryptor interface{}
+		if cryptor, err = this.cipher.Init(this.iv, Encrypt); err != nil {
 			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 			if DebugLog {
 				Logger.Fields(LogFields{
@@ -104,8 +104,7 @@ func (this *StreamEnCryptorAead) WriteTo(b []byte, w io.Writer) (n int, err erro
 			///////////////////////////////////////////////
 			return
 		}
-		this.AEAD = this.cipher.GetCryptor(Encrypt).(cipher.AEAD)
-		cryptor = this.AEAD
+		this.AEAD = cryptor.(cipher.AEAD)
 		this.nonce = nil
 		this.is_begin = false
 		if _, err = w.Write(this.iv); err != nil { // important to keep it at last
@@ -124,7 +123,7 @@ func (this *StreamEnCryptorAead) WriteTo(b []byte, w io.Writer) (n int, err erro
 	size := len(this.buffer)
 	packet_len := len(b)
 	chunk_num := math.Ceil(float64(packet_len) / float64(size))
-	overhead := cryptor.Overhead()
+	overhead := this.Overhead()
 	header_offset := 2 + overhead
 
 	for chunk_counter := chunk_num; chunk_counter > 0; {
@@ -146,7 +145,7 @@ func (this *StreamEnCryptorAead) WriteTo(b []byte, w io.Writer) (n int, err erro
 		}
 		///////////////////////////////////////////////
 		// pack header
-		cryptor.Seal(packet_buf[:0], this.getNonce(), packet_buf[:2], nil)
+		this.Seal(packet_buf[:0], this.getNonce(), packet_buf[:2], nil)
 		this.setNonce(true)
 
 		// get payload
@@ -159,7 +158,7 @@ func (this *StreamEnCryptorAead) WriteTo(b []byte, w io.Writer) (n int, err erro
 		}
 		///////////////////////////////////////////////
 		// pack payload
-		cryptor.Seal(payload_buf[:0], this.getNonce(), payload, nil)
+		this.Seal(payload_buf[:0], this.getNonce(), payload, nil)
 		this.setNonce(true)
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
@@ -245,7 +244,6 @@ func (this *StreamDeCryptorAead) getNonce() []byte {
 
 func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error) {
 	var header_ct, header_src, payload_ct, payload_src []byte
-	cryptor := this.AEAD
 	if this.is_begin {
 		if this.iv, err = this.getIV(r); err != nil {
 			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -257,7 +255,8 @@ func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error
 			///////////////////////////////////////////////
 			return
 		}
-		if err = this.cipher.Init(this.iv, Decrypt); err != nil {
+		var cryptor interface{}
+		if cryptor, err = this.cipher.Init(this.iv, Decrypt); err != nil {
 			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 			if DebugLog {
 				Logger.Fields(LogFields{
@@ -268,14 +267,13 @@ func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error
 			///////////////////////////////////////////////
 			return
 		}
-		this.AEAD = this.cipher.GetCryptor(Decrypt).(cipher.AEAD)
-		cryptor = this.AEAD
+		this.AEAD = cryptor.(cipher.AEAD)
 		this.is_begin = false
 		this.nonce = nil
 	}
 
 	buffer_size := len(this.buffer)
-	overhead := cryptor.Overhead()
+	overhead := this.Overhead()
 	/// read header
 	header_offset := 2 + overhead
 	header := b[:header_offset]
@@ -300,7 +298,7 @@ func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error
 	///////////////////////////////////////////////
 
 	/// unpack header
-	if _, err = cryptor.Open(header[:0], this.getNonce(), header, nil); err != nil {
+	if _, err = this.Open(header[:0], this.getNonce(), header, nil); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
@@ -363,7 +361,7 @@ func (this *StreamDeCryptorAead) ReadTo(b []byte, r io.Reader) (n int, err error
 	///////////////////////////////////////////////
 
 	/// unpack payload
-	if _, err = cryptor.Open(payload[:0], this.getNonce(), payload, nil); err != nil {
+	if _, err = this.Open(payload[:0], this.getNonce(), payload, nil); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{

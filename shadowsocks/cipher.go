@@ -25,26 +25,15 @@ type cipherInfo struct {
 type Cryptor interface {
 	init(c Cipher) Cryptor
 	initCryptor(doe DecOrEnc) interface{}
-	//InitEncrypt(w io.Writer) (err error)
-	//InitDecrypt(r io.Reader) (err error)
-	//Pack(b []byte, w io.Writer) (n int, err error)
-	//UnPack(b []byte, r io.Reader) (n int, err error)
-	//WriteTo(b []byte) (n int, err error)
-	//Read(b []byte) (n int, err error)
-	////GetBuffer() (buffer *LeakyBufType, err error)
 	GetBuffer() ([]byte)
 }
 
 type Cipher interface {
 	isStream() bool
-	Init(iv []byte, doe DecOrEnc) (err error)
+	Init(iv []byte, doe DecOrEnc) (cryptor interface{}, err error)
 	SetKey(key []byte)
 	SetInfo(info *cipherInfo)
-	SetCryptor(cryptor interface{}, doe DecOrEnc)
-	GetCryptor(doe DecOrEnc) interface{}
 	NewIV() (iv []byte, err error)
-	//Key() []byte
-	//IV(doe DecOrEnc) []byte
 	KeySize() int
 	IVSize() int
 	//Encrypt(dst, src []byte) error

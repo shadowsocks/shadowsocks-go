@@ -18,8 +18,6 @@ import (
 
 type CipherStream struct {
 	Cipher
-	EnCryptor cipher.Stream
-	DeCryptor cipher.Stream
 	Info      *cipherInfo
 	key       []byte
 	ivSize    int
@@ -28,31 +26,13 @@ type CipherStream struct {
 
 /////////////////////////////////////////////////////////
 func (this *CipherStream) isStream() bool { return true }
-func (this *CipherStream) Init(iv []byte, doe DecOrEnc) (err error) {
-	var cryptor interface{}
-	if cryptor, err = this.Info.makeCryptor(this.key, iv, doe); err != nil {
-		return
-	}
+func (this *CipherStream) Init(iv []byte, doe DecOrEnc) (cryptor interface{}, err error) {
+	cryptor, err = this.Info.makeCryptor(this.key, iv, doe)
 
-	this.SetCryptor(cryptor, doe)
 	return
 }
 func (this *CipherStream) SetKey(key []byte)        { this.key = key }
 func (this *CipherStream) SetInfo(info *cipherInfo) { this.Info = info }
-func (this *CipherStream) SetCryptor(cryptor interface{}, doe DecOrEnc) {
-	if doe == Decrypt {
-		this.DeCryptor = cryptor.(cipher.Stream)
-	} else {
-		this.EnCryptor = cryptor.(cipher.Stream)
-	}
-}
-func (this *CipherStream) GetCryptor(doe DecOrEnc) interface{} {
-	if doe == Decrypt {
-		return this.DeCryptor
-	} else {
-		return this.EnCryptor
-	}
-}
 func (this *CipherStream) NewIV() (iv []byte, err error) {
 	iv = make([]byte, this.IVSize())
 	if _, err = io.ReadFull(rand.Reader, iv); err != nil {

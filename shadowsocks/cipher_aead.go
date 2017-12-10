@@ -12,8 +12,6 @@ import (
 
 type CipherAead struct {
 	Cipher
-	EnCryptor cipher.AEAD
-	DeCryptor cipher.AEAD
 	Info      *cipherInfo
 	key       []byte
 	ivSize    int
@@ -21,35 +19,16 @@ type CipherAead struct {
 }
 
 func (this *CipherAead) isStream() bool { return false }
-func (this *CipherAead) Init(iv []byte, doe DecOrEnc) (err error) {
+func (this *CipherAead) Init(iv []byte, doe DecOrEnc) (cryptor interface{}, err error) {
 	subkey := make([]byte, this.KeySize())
 	hkdfSHA1(this.key, iv, []byte("ss-subkey"), subkey)
 
-	var cryptor interface{}
-	if cryptor, err = this.Info.makeCryptor(subkey, iv, doe); err != nil {
-		return
-	}
-
-	this.SetCryptor(cryptor, doe)
+	cryptor, err = this.Info.makeCryptor(subkey, iv, doe)
 
 	return
 }
 func (this *CipherAead) SetKey(key []byte)        { this.key = key }
 func (this *CipherAead) SetInfo(info *cipherInfo) { this.Info = info }
-func (this *CipherAead) SetCryptor(cryptor interface{}, doe DecOrEnc) {
-	if doe == Decrypt {
-		this.DeCryptor = cryptor.(cipher.AEAD)
-	} else {
-		this.EnCryptor = cryptor.(cipher.AEAD)
-	}
-}
-func (this *CipherAead) GetCryptor(doe DecOrEnc) interface{} {
-	if doe == Decrypt {
-		return this.DeCryptor
-	} else {
-		return this.EnCryptor
-	}
-}
 func (this *CipherAead) NewIV() (iv []byte, err error) {
 	iv = make([]byte, this.IVSize())
 	_, err = io.ReadFull(rand.Reader, iv)

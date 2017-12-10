@@ -94,7 +94,8 @@ func (this *PacketEnCryptorAead) WriteTo(b []byte, addr net.Addr) (n int, err er
 		///////////////////////////////////////////////
 		return
 	}
-	if err = this.cipher.Init(this.iv, Encrypt); err != nil {
+	var cryptor interface{}
+	if cryptor, err = this.cipher.Init(this.iv, Encrypt); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
@@ -105,17 +106,16 @@ func (this *PacketEnCryptorAead) WriteTo(b []byte, addr net.Addr) (n int, err er
 		///////////////////////////////////////////////
 		return
 	}
-
-	this.AEAD = this.cipher.GetCryptor(Encrypt).(cipher.AEAD)
+	this.AEAD = cryptor.(cipher.AEAD)
 	this.nonce = nil
 
-	if len(this.buffer) < iv_offset+len(b)+this.AEAD.Overhead() {
+	if len(this.buffer) < iv_offset+len(b)+this.Overhead() {
 		err = errors.New("buffer size too small")
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
 				"buffer_size": len(this.buffer),
-				"size_atleast": iv_offset+len(b)+this.AEAD.Overhead(),
+				"size_atleast": iv_offset+len(b)+this.Overhead(),
 				"err": err,
 			}).Warn("buffer size error")
 		}
@@ -125,7 +125,7 @@ func (this *PacketEnCryptorAead) WriteTo(b []byte, addr net.Addr) (n int, err er
 
 	copy(this.buffer, this.iv)
 
-	this.AEAD.Seal(this.buffer[iv_offset:iv_offset], this.getNonce(), b, nil)
+	this.Seal(this.buffer[iv_offset:iv_offset], this.getNonce(), b, nil)
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	if DebugLog {
 		Logger.Fields(LogFields{
@@ -137,12 +137,12 @@ func (this *PacketEnCryptorAead) WriteTo(b []byte, addr net.Addr) (n int, err er
 	}
 	///////////////////////////////////////////////
 
-	n, err = this.PacketConn.WriteTo(this.buffer[:iv_offset+len(b)+this.AEAD.Overhead()], addr)
+	n, err = this.PacketConn.WriteTo(this.buffer[:iv_offset+len(b)+this.Overhead()], addr)
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	if DebugLog {
 		if err != nil {
 			Logger.Fields(LogFields{
-				"data": this.buffer[:iv_offset+len(b)+this.AEAD.Overhead()],
+				"data": this.buffer[:iv_offset+len(b)+this.Overhead()],
 				"addr": addr.String(),
 				"err": err,
 			}).Warn("write encrypted data to connection error")
@@ -222,9 +222,9 @@ func (this *PacketDeCryptorAead) ReadTo(b []byte) (n int, addr net.Addr, err err
 	}
 
 	iv_offset := this.cipher.IVSize()
-
 	this.iv = b[:iv_offset]
-	if err = this.cipher.Init(this.iv, Decrypt); err != nil {
+	var cryptor interface{}
+	if cryptor, err = this.cipher.Init(this.iv, Decrypt); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
@@ -235,15 +235,15 @@ func (this *PacketDeCryptorAead) ReadTo(b []byte) (n int, addr net.Addr, err err
 		///////////////////////////////////////////////
 		return
 	}
-	this.AEAD = this.cipher.GetCryptor(Decrypt).(cipher.AEAD)
+	this.AEAD = cryptor.(cipher.AEAD)
 	this.nonce = nil
 
-	if len(b) < iv_offset+this.AEAD.Overhead() {
+	if len(b) < iv_offset+this.Overhead() {
 		err = errors.New("packet size too small")
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
-				"size_atleast": iv_offset+this.AEAD.Overhead(),
+				"size_atleast": iv_offset+this.Overhead(),
 				"packet_size": len(b),
 				"err": err,
 			}).Warn("packet size error")
@@ -252,12 +252,12 @@ func (this *PacketDeCryptorAead) ReadTo(b []byte) (n int, addr net.Addr, err err
 		return
 	}
 
-	if len(this.buffer) < n+this.AEAD.Overhead() {
+	if len(this.buffer) < n+this.Overhead() {
 		err = errors.New("buffer size too small")
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
-				"size_atleast": n+this.AEAD.Overhead(),
+				"size_atleast": n+this.Overhead(),
 				"buffer_size": len(this.buffer),
 				"err": err,
 			}).Warn("buffer size error")
@@ -271,13 +271,13 @@ func (this *PacketDeCryptorAead) ReadTo(b []byte) (n int, addr net.Addr, err err
 		copy(payload_ct, b[iv_offset:n])
 	}
 
-	_, err = this.AEAD.Open(this.buffer[:0], this.getNonce(), b[iv_offset:n], nil)
+	_, err = this.Open(this.buffer[:0], this.getNonce(), b[iv_offset:n], nil)
 	if err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
 				"buffer_size": len(this.buffer),
-				"buffer_size_atleast": n-iv_offset+this.AEAD.Overhead(),
+				"buffer_size_atleast": n-iv_offset+this.Overhead(),
 				"payload_ct": b[iv_offset:n],
 				"iv": this.iv,
 				"nonce": this.getNonce(),
@@ -287,7 +287,7 @@ func (this *PacketDeCryptorAead) ReadTo(b []byte) (n int, addr net.Addr, err err
 		///////////////////////////////////////////////
 		return
 	}
-	n -= iv_offset + this.AEAD.Overhead()
+	n -= iv_offset + this.Overhead()
 	copy(b, this.buffer[:n])
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	if DebugLog {
