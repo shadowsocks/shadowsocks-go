@@ -36,7 +36,7 @@ type Cryptor interface {
 
 type Cipher interface {
 	isStream() bool
-	Init(iv []byte, doe DecOrEnc) (cryptor interface{}, err error)
+	Init(iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error)
 	SetKey(key []byte)
 	SetInfo(info *cipherInfo)
 	NewIV() (iv []byte, err error)

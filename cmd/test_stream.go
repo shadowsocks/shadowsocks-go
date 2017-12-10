@@ -36,7 +36,6 @@ func main() {
 			"err": err,
 		}).Fatal("new cipher error")
 	}
-	fmt.Println(c.Key())
 	dst := make([]byte, len(src))
 	////iv := []byte{52,77,100,24,104,25,223,99,52,173,12,137}
 	////iv := []byte{70,130,254,49,31,189,120,185,43,243,226,85}
@@ -47,13 +46,32 @@ func main() {
 	//iv := []byte{223,75,150,223,117,72,200,211,56,186,218,134}
 	iv := []byte{183,103,32,160,64,186,136,26,60,14,29,109}
 	////c.Init(iv, ss.Decrypt)
-	c.Init(iv, ss.Encrypt)
-	c.Encrypt(dst, src)
-
-	//c.Init(iv, ss.Decrypt)
-	//c.Decrypt(src, src)
-
+	cryptor, err := c.Init(iv, ss.Encrypt)
+	if err != nil {
+		ss.Logger.Fields(ss.LogFields{
+			"iv":iv,
+			"err": err,
+		}).Fatal("init encrypt error")
+	}
+	cryptor.Encrypt(dst, src)
 	fmt.Printf("dst: %d\n", dst)
+
+	cryptor, err = c.Init(iv, ss.Decrypt)
+	if err != nil {
+		ss.Logger.Fields(ss.LogFields{
+			"iv":iv,
+			"err": err,
+		}).Fatal("init decrypt error")
+	}
+	err = cryptor.Decrypt(dst, dst)
+	if err != nil {
+		ss.Logger.Fields(ss.LogFields{
+			"iv":iv,
+			"err": err,
+		}).Fatal("decrypt error")
+	}
+	fmt.Printf("src: %s\n", dst)
+
 	//fmt.Printf("iv: %d\n", iv)
 	//fmt.Printf("src_len: %d\n", len(src))
 }

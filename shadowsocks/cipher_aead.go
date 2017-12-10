@@ -59,7 +59,7 @@ type CipherAead struct {
 }
 
 func (this *CipherAead) isStream() bool { return false }
-func (this *CipherAead) Init(iv []byte, doe DecOrEnc) (cryptor interface{}, err error) {
+func (this *CipherAead) Init(iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error) {
 	subkey := make([]byte, this.KeySize())
 	hkdfSHA1(this.key, iv, []byte("ss-subkey"), subkey)
 

@@ -15,10 +15,25 @@ func testCipher(t *testing.T, c Cipher, msg string) {
 	cipherBuf := make([]byte, n)
 	originTxt := make([]byte, n)
 
-	if err = c.Encrypt(cipherBuf, []byte(text)); err != nil {
+	iv, err := c.NewIV()
+	if err != nil {
+		t.Fatal("NewIV:", err)
+	}
+
+	cryptor, err := c.Init(iv, Encrypt)
+	if err != nil {
+		t.Fatal("init encrypt:", err)
+	}
+
+	if err = cryptor.Encrypt(cipherBuf, []byte(text)); err != nil {
 		t.Fatal("Encrypt:", err)
 	}
-	if err = c.Decrypt(originTxt, cipherBuf); err != nil {
+
+	cryptor, err = c.Init(iv, Decrypt)
+	if err != nil {
+		t.Fatal("init encrypt:", err)
+	}
+	if err = cryptor.Decrypt(originTxt, cipherBuf); err != nil {
 		t.Fatal("Decrypt:", err)
 	}
 	if string(originTxt) != text {
@@ -51,10 +66,10 @@ func testBlockCipher(t *testing.T, method string) {
 		if iv, err = cipher.NewIV(); err != nil {
 			t.Fatal(method, "iv:", err)
 		}
-		if err = cipher.Init(iv, Encrypt); err != nil {
+		if _, err = cipher.Init(iv, Encrypt); err != nil {
 			t.Fatal(method, "init for encrypt:", err)
 		}
-		if err = cipher.Init(iv, Decrypt); err != nil {
+		if _, err = cipher.Init(iv, Decrypt); err != nil {
 			t.Fatal(method, "init for decrypt:", err)
 		}
 		testCipher(t, cipher, method)
@@ -62,10 +77,10 @@ func testBlockCipher(t *testing.T, method string) {
 		if iv, err = cipher.NewIV(); err != nil {
 			t.Fatal(method, "iv:", err)
 		}
-		if err = cipher.Init(iv, Encrypt); err != nil {
+		if _, err = cipher.Init(iv, Encrypt); err != nil {
 			t.Fatal(method, "init for encrypt:", err)
 		}
-		if err = cipher.Init(iv, Decrypt); err != nil {
+		if _, err = cipher.Init(iv, Decrypt); err != nil {
 			t.Fatal(method, "init for decrypt:", err)
 		}
 		testCipher(t, cipher, method)
@@ -136,7 +151,7 @@ func benchmarkCipherInit(b *testing.B, method string) {
 		b.Error(err)
 	}
 	for i := 0; i < b.N; i++ {
-		if err = cipher.Init(iv, Encrypt); err != nil {
+		if _, err = cipher.Init(iv, Encrypt); err != nil {
 			b.Error(err)
 		}
 	}
@@ -198,6 +213,7 @@ func benchmarkCipherEncrypt(b *testing.B, method string) {
 	var err error
 	var iv []byte
 	var cipher Cipher
+	var cryptor CryptorCipher
 
 	if cipher, err = NewCipher(method, "foobar"); err != nil {
 		b.Error(err)
@@ -205,7 +221,7 @@ func benchmarkCipherEncrypt(b *testing.B, method string) {
 	if iv, err = cipher.NewIV(); err != nil {
 		b.Error(err)
 	}
-	if err = cipher.Init(iv, Encrypt); err != nil {
+	if cryptor, err = cipher.Init(iv, Encrypt); err != nil {
 		b.Error(err)
 	}
 
@@ -217,7 +233,7 @@ func benchmarkCipherEncrypt(b *testing.B, method string) {
 	}
 
 	for i := 0; i < b.N; i++ {
-		if err = cipher.Encrypt(dst, src); err != nil {
+		if err = cryptor.Encrypt(dst, src); err != nil {
 			b.Error(err)
 		}
 
@@ -280,6 +296,7 @@ func benchmarkCipherDecrypt(b *testing.B, method string) {
 	var err error
 	var iv []byte
 	var cipher Cipher
+	var cryptor CryptorCipher
 
 	if cipher, err = NewCipher(method, "foobar"); err != nil {
 		b.Error(err)
@@ -287,7 +304,7 @@ func benchmarkCipherDecrypt(b *testing.B, method string) {
 	if iv, err = cipher.NewIV(); err != nil {
 		b.Error(err)
 	}
-	if err = cipher.Init(iv, Encrypt); err != nil {
+	if cryptor, err = cipher.Init(iv, Encrypt); err != nil {
 		b.Error(err)
 	}
 
@@ -297,14 +314,14 @@ func benchmarkCipherDecrypt(b *testing.B, method string) {
 	if _, err = io.ReadFull(rand.Reader, src); err != nil {
 		b.Error(err)
 	}
-	if err = cipher.Encrypt(dst, src); err != nil {
+	if err = cryptor.Encrypt(dst, src); err != nil {
 		b.Error(err)
 	}
-	if err = cipher.Init(iv, Decrypt); err != nil {
+	if cryptor, err = cipher.Init(iv, Decrypt); err != nil {
 		b.Error(err)
 	}
 	for i := 0; i < b.N; i++ {
-		if err = cipher.Decrypt(src, dst); err != nil {
+		if err = cryptor.Decrypt(src, dst); err != nil {
 			b.Error(err)
 		}
 

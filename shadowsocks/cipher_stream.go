@@ -46,7 +46,7 @@ type CipherStream struct {
 
 /////////////////////////////////////////////////////////
 func (this *CipherStream) isStream() bool { return true }
-func (this *CipherStream) Init(iv []byte, doe DecOrEnc) (cryptor interface{}, err error) {
+func (this *CipherStream) Init(iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error) {
 	cryptor, err = this.Info.makeCryptor(this.key, iv, doe)
 
 	return
