@@ -2,7 +2,6 @@ package shadowsocks
 
 import (
 	"io"
-	"crypto/cipher"
 	"net"
 	"errors"
 )
@@ -37,11 +36,9 @@ func (this *PacketCryptorAead) GetBuffer() []byte {
 /////////////////////////////////////////////////////////////////////////////////////////
 type PacketEnCryptorAead struct {
 	PacketEnCryptor
-	iv     []byte
 	cipher Cipher
 	buffer []byte
-	cipher.AEAD
-	nonce  []byte
+	*CryptorAead
 	net.PacketConn
 }
 
@@ -58,33 +55,11 @@ func (this *PacketEnCryptorAead) initPacket(p net.PacketConn) PacketEnCryptor {
 	return this
 }
 
-func (this *PacketEnCryptorAead) setNonce(increment bool) {
-	var size int
-	size = this.AEAD.NonceSize()
-	if !increment {
-		this.nonce = make([]byte, size)
-		return
-	}
-	for i := range this.nonce {
-		this.nonce[i]++
-		if this.nonce[i] != 0 {
-			return
-		}
-	}
-	return
-}
-
-func (this *PacketEnCryptorAead) getNonce() []byte {
-	if this.nonce == nil {
-		this.setNonce(false)
-	}
-	return this.nonce
-}
-
 func (this *PacketEnCryptorAead) WriteTo(b []byte, addr net.Addr) (n int, err error) {
+	var iv []byte
 	iv_offset := this.cipher.IVSize()
 
-	if this.iv, err = this.cipher.NewIV(); err != nil {
+	if iv, err = this.cipher.NewIV(); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
@@ -95,18 +70,18 @@ func (this *PacketEnCryptorAead) WriteTo(b []byte, addr net.Addr) (n int, err er
 		return
 	}
 	var cryptor interface{}
-	if cryptor, err = this.cipher.Init(this.iv, Encrypt); err != nil {
+	if cryptor, err = this.cipher.Init(iv, Encrypt); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
-				"iv": this.iv,
+				"iv": iv,
 				"err": err,
 			}).Warn("init encrypt cryptor error")
 		}
 		///////////////////////////////////////////////
 		return
 	}
-	this.AEAD = cryptor.(cipher.AEAD)
+	this.CryptorAead = cryptor.(*CryptorAead)
 	this.nonce = nil
 
 	if len(this.buffer) < iv_offset+len(b)+this.Overhead() {
@@ -123,15 +98,16 @@ func (this *PacketEnCryptorAead) WriteTo(b []byte, addr net.Addr) (n int, err er
 		return
 	}
 
-	copy(this.buffer, this.iv)
+	copy(this.buffer, iv)
 
-	this.Seal(this.buffer[iv_offset:iv_offset], this.getNonce(), b, nil)
+	//this.Seal(this.buffer[iv_offset:iv_offset], this.getNonce(), b, nil)
+	this.Encrypt(this.buffer[iv_offset:iv_offset], b)
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	if DebugLog {
 		Logger.Fields(LogFields{
 			"payload_src": b,
 			"payload_ct": this.buffer,
-			"iv": this.iv,
+			"iv": iv,
 			"nonce": this.getNonce(),
 		}).Debug("check encrypted data")
 	}
@@ -155,10 +131,8 @@ func (this *PacketEnCryptorAead) WriteTo(b []byte, addr net.Addr) (n int, err er
 
 type PacketDeCryptorAead struct {
 	PacketDeCryptor
-	iv     []byte
 	cipher Cipher
-	cipher.AEAD
-	nonce  []byte
+	*CryptorAead
 	buffer []byte
 	net.PacketConn
 }
@@ -182,30 +156,8 @@ func (this *PacketDeCryptorAead) getIV(r io.Reader) (iv []byte, err error) {
 	return
 }
 
-func (this *PacketDeCryptorAead) setNonce(increment bool) {
-	var size int
-	size = this.AEAD.NonceSize()
-	if !increment {
-		this.nonce = make([]byte, size)
-		return
-	}
-	for i := range this.nonce {
-		this.nonce[i]++
-		if this.nonce[i] != 0 {
-			return
-		}
-	}
-	return
-}
-
-func (this *PacketDeCryptorAead) getNonce() []byte {
-	if this.nonce == nil {
-		this.setNonce(false)
-	}
-	return this.nonce
-}
-
 func (this *PacketDeCryptorAead) ReadTo(b []byte) (n int, addr net.Addr, err error) {
+	var iv []byte
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	var payload_ct []byte
 	///////////////////////////////////////////////
@@ -222,20 +174,20 @@ func (this *PacketDeCryptorAead) ReadTo(b []byte) (n int, addr net.Addr, err err
 	}
 
 	iv_offset := this.cipher.IVSize()
-	this.iv = b[:iv_offset]
+	iv = b[:iv_offset]
 	var cryptor interface{}
-	if cryptor, err = this.cipher.Init(this.iv, Decrypt); err != nil {
+	if cryptor, err = this.cipher.Init(iv, Decrypt); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
-				"iv": this.iv,
+				"iv": iv,
 				"err": err,
 			}).Warn("init decrypt cryptor error")
 		}
 		///////////////////////////////////////////////
 		return
 	}
-	this.AEAD = cryptor.(cipher.AEAD)
+	this.CryptorAead = cryptor.(*CryptorAead)
 	this.nonce = nil
 
 	if len(b) < iv_offset+this.Overhead() {
@@ -271,7 +223,8 @@ func (this *PacketDeCryptorAead) ReadTo(b []byte) (n int, addr net.Addr, err err
 		copy(payload_ct, b[iv_offset:n])
 	}
 
-	_, err = this.Open(this.buffer[:0], this.getNonce(), b[iv_offset:n], nil)
+	//_, err = this.Open(this.buffer[:0], this.getNonce(), b[iv_offset:n], nil)
+	err = this.Decrypt(this.buffer[:0], b[iv_offset:n])
 	if err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
@@ -279,7 +232,7 @@ func (this *PacketDeCryptorAead) ReadTo(b []byte) (n int, addr net.Addr, err err
 				"buffer_size": len(this.buffer),
 				"buffer_size_atleast": n-iv_offset+this.Overhead(),
 				"payload_ct": b[iv_offset:n],
-				"iv": this.iv,
+				"iv": iv,
 				"nonce": this.getNonce(),
 				"err": err,
 			}).Warn("decrypt data error")
@@ -295,7 +248,7 @@ func (this *PacketDeCryptorAead) ReadTo(b []byte) (n int, addr net.Addr, err err
 			"payload_src": b[:n],
 			"n": n,
 			"payload_ct": payload_ct,
-			"iv": this.iv,
+			"iv": iv,
 			"nonce": this.getNonce(),
 		}).Debug("check decrypted data")
 	}

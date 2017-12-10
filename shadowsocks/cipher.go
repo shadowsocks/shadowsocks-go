@@ -19,7 +19,13 @@ type cipherInfo struct {
 	IVSize      int
 	makeCipher  func(password string, info *cipherInfo) (Cipher, error)            // make general cipher
 	makeKey     func(password string, keySize int) (key []byte)                    // make key by password
-	makeCryptor func(key []byte, iv []byte, doe DecOrEnc) (interface{}, error) // make stream for stream cipher with key or make aead for aead cipher with subkey which is made by key and iv
+	makeCryptor func(key []byte, iv []byte, doe DecOrEnc) (CryptorCipher, error) // make stream for stream cipher with key or make aead for aead cipher with subkey which is made by key and iv
+}
+
+type CryptorCipher interface {
+	init(cryptor interface{})
+	Encrypt(dst, src []byte) (err error)
+	Decrypt(dst, src []byte) (err error)
 }
 
 type Cryptor interface {

@@ -16,6 +16,26 @@ import (
 	"crypto/rand"
 )
 
+type CryptorStream struct {
+	CryptorCipher
+	cipher.Stream
+}
+
+func (this *CryptorStream) init(cryptor interface{}) {
+	this.Stream = cryptor.(cipher.Stream)
+}
+
+func (this *CryptorStream) Encrypt(dst, src []byte) (err error) {
+	this.XORKeyStream(dst, src)
+	return
+}
+
+func (this *CryptorStream) Decrypt(dst, src []byte) (err error) {
+	this.XORKeyStream(dst, src)
+	return
+}
+///////////////////////////////////////
+
 type CipherStream struct {
 	Cipher
 	Info      *cipherInfo
@@ -52,55 +72,79 @@ func cfbCryptor(block cipher.Block, iv []byte, doe DecOrEnc) cipher.Stream {
 	}
 	return cipher.NewCFBDecrypter(block, iv)
 }
-func newAESCFBStream(key, iv []byte, doe DecOrEnc) (cryptor interface{}, err error) {
+func newAESCFBStream(key, iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error) {
 	var block cipher.Block;
 	if block, err = aes.NewCipher(key); err != nil {
 		return
 	}
-	cryptor = cfbCryptor(block, iv, doe)
+
+	cryptor = new(CryptorStream)
+	cryptor.init(cfbCryptor(block, iv, doe))
 	return
 }
-func newAESCTRStream(key, iv []byte, doe DecOrEnc) (cryptor interface{}, err error) {
+func newAESCTRStream(key, iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error) {
 	var block cipher.Block
 	if block, err = aes.NewCipher(key); err != nil {
 		return
 	}
-	cryptor = cipher.NewCTR(block, iv)
+	cryptor = new(CryptorStream)
+	cryptor.init(cipher.NewCTR(block, iv))
 	return
 }
-func newDESStream(key, iv []byte, doe DecOrEnc) (cryptor interface{}, err error) {
+func newDESStream(key, iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error) {
 	var block cipher.Block
 	if block, err = des.NewCipher(key); err != nil {
 		return
 	}
-	cryptor = cfbCryptor(block, iv, doe)
+	cryptor = new(CryptorStream)
+	cryptor.init(cfbCryptor(block, iv, doe))
 	return
 }
-func newBlowFishStream(key, iv []byte, doe DecOrEnc) (cryptor interface{}, err error) {
+func newBlowFishStream(key, iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error) {
 	var block cipher.Block
 	if block, err = blowfish.NewCipher(key); err != nil {
 		return
 	}
-	cryptor = cfbCryptor(block, iv, doe)
+	cryptor = new(CryptorStream)
+	cryptor.init(cfbCryptor(block, iv, doe))
 	return
 }
-func newCast5Stream(key, iv []byte, doe DecOrEnc) (cryptor interface{}, err error) {
+func newCast5Stream(key, iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error) {
 	var block cipher.Block
 	if block, err = cast5.NewCipher(key); err != nil {
 		return
 	}
-	cryptor = cfbCryptor(block, iv, doe)
+	cryptor = new(CryptorStream)
+	cryptor.init(cfbCryptor(block, iv, doe))
 	return
 }
-func newRC4MD5Stream(key, iv []byte, doe DecOrEnc) (cryptor interface{}, err error) {
+func newRC4MD5Stream(key, iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error) {
 	h := md5.New()
 	h.Write(key)
 	h.Write(iv)
 	rc4key := h.Sum(nil)
-	return rc4.NewCipher(rc4key)
+
+	var stream cipher.Stream
+	stream, err = rc4.NewCipher(rc4key)
+	if err != nil { return }
+	cryptor = new(CryptorStream)
+	cryptor.init(stream)
+	return
 }
-func newChaCha20Stream(key, iv []byte, doe DecOrEnc) (interface{}, error)     { return chacha20.NewCipher(key, iv) }
-func newChaCha20IETFStream(key, iv []byte, doe DecOrEnc) (interface{}, error) { return chacha20.NewCipher(key, iv) }
+func newChaCha20Stream(key, iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error)     {
+	var stream cipher.Stream
+	stream, err = chacha20.NewCipher(key, iv)
+	cryptor = new(CryptorStream)
+	cryptor.init(stream)
+	return
+}
+func newChaCha20IETFStream(key, iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error) {
+	var stream cipher.Stream
+	stream, err = chacha20.NewCipher(key, iv)
+	cryptor = new(CryptorStream)
+	cryptor.init(stream)
+	return
+}
 
 /////////////////////////////////////////////////////////
 type salsaStreamCipher struct {
@@ -131,11 +175,15 @@ func (c *salsaStreamCipher) XORKeyStream(dst, src []byte) {
 
 	c.counter += len(src)
 }
-func newSalsa20Stream(key, iv []byte, doe DecOrEnc) (interface{}, error) {
+func newSalsa20Stream(key, iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error) {
 	var c salsaStreamCipher
 	copy(c.nonce[:], iv[:8])
 	copy(c.key[:], key[:32])
-	return &c, nil
+
+	cryptor = new(CryptorStream)
+	cryptor.init(&c)
+
+	return
 }
 
 /////////////////////////////////////////////////////////

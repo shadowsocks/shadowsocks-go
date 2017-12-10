@@ -1,7 +1,6 @@
 package shadowsocks
 
 import (
-	"crypto/cipher"
 	"net"
 	"errors"
 )
@@ -37,10 +36,10 @@ func (this *PacketCryptorStream) init(cipher Cipher) Cryptor {
 /////////////////////////////////////////////////////////////////////////////////////////
 type PacketEnCryptorStream struct {
 	PacketEnCryptor
-	iv     []byte
+	//iv     []byte
 	cipher Cipher
 	buffer []byte
-	cipher.Stream
+	*CryptorStream
 	net.PacketConn
 }
 
@@ -58,9 +57,10 @@ func (this *PacketEnCryptorStream) initPacket(p net.PacketConn) PacketEnCryptor 
 }
 
 func (this *PacketEnCryptorStream) WriteTo(b []byte, addr net.Addr) (n int, err error) {
+	var iv []byte
 	iv_offset := this.cipher.IVSize()
 
-	if this.iv, err = this.cipher.NewIV(); err != nil {
+	if iv, err = this.cipher.NewIV(); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
@@ -71,32 +71,32 @@ func (this *PacketEnCryptorStream) WriteTo(b []byte, addr net.Addr) (n int, err 
 		return
 	}
 	var cryptor interface{}
-	if cryptor, err = this.cipher.Init(this.iv, Encrypt); err != nil {
+	if cryptor, err = this.cipher.Init(iv, Encrypt); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
-				"iv": this.iv,
+				"iv": iv,
 				"err": err,
 			}).Warn("init encrypt cryptor error")
 		}
 		///////////////////////////////////////////////
 		return
 	}
-	this.Stream = cryptor.(cipher.Stream)
+	this.CryptorStream = cryptor.(*CryptorStream)
 
-	copy(this.buffer, this.iv)
+	copy(this.buffer, iv)
 
 	payload_len := len(b)
 	payload := this.buffer[iv_offset:iv_offset+payload_len]
 
-	this.XORKeyStream(payload, b)
+	this.Encrypt(payload, b)
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	if DebugLog {
 		Logger.Fields(LogFields{
 			"payload_ct": payload,
 			"payload_src": b,
 			"payload_src_str": string(b),
-			"iv": this.iv,
+			"iv": iv,
 		}).Debug("check encrypted data")
 	}
 	///////////////////////////////////////////////
@@ -119,10 +119,10 @@ func (this *PacketEnCryptorStream) WriteTo(b []byte, addr net.Addr) (n int, err 
 
 type PacketDeCryptorStream struct {
 	PacketDeCryptor
-	iv     []byte
+	//iv     []byte
 	cipher Cipher
 	buffer []byte
-	cipher.Stream
+	*CryptorStream
 	net.PacketConn
 }
 
@@ -140,6 +140,7 @@ func (this *PacketDeCryptorStream) initPacket(p net.PacketConn) PacketDeCryptor 
 }
 
 func (this *PacketDeCryptorStream) ReadTo(b []byte) (n int, addr net.Addr, err error) {
+	var iv []byte
 	var payload_ct []byte // for debug
 	n, addr, err = this.PacketConn.ReadFrom(b)
 	if err != nil {
@@ -168,21 +169,21 @@ func (this *PacketDeCryptorStream) ReadTo(b []byte) (n int, addr net.Addr, err e
 		return
 	}
 
-	this.iv = b[:iv_offset]
+	iv = b[:iv_offset]
 
 	var cryptor interface{}
-	if cryptor, err = this.cipher.Init(this.iv, Decrypt); err != nil {
+	if cryptor, err = this.cipher.Init(iv, Decrypt); err != nil {
 		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 		if DebugLog {
 			Logger.Fields(LogFields{
-				"iv": this.iv,
+				"iv": iv,
 				"err": err,
 			}).Warn("init decrypt cryptor error")
 		}
 		///////////////////////////////////////////////
 		return
 	}
-	this.Stream = cryptor.(cipher.Stream)
+	this.CryptorStream = cryptor.(*CryptorStream)
 
 	payload := b[iv_offset:n]
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -192,7 +193,7 @@ func (this *PacketDeCryptorStream) ReadTo(b []byte) (n int, addr net.Addr, err e
 	}
 	///////////////////////////////////////////////
 
-	this.Stream.XORKeyStream(payload, payload)
+	this.Decrypt(payload, payload)
 	copy(b, payload)
 	n -= iv_offset
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -201,7 +202,7 @@ func (this *PacketDeCryptorStream) ReadTo(b []byte) (n int, addr net.Addr, err e
 			"payload_ct": payload_ct,
 			"payload_src": payload,
 			"payload_src_str": string(payload),
-			"iv": this.iv,
+			"iv": iv,
 		}).Debug("check decrypted data")
 	}
 	///////////////////////////////////////////////

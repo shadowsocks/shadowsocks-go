@@ -10,6 +10,46 @@ import (
 	"crypto/aes"
 )
 
+type CryptorAead struct {
+	CryptorCipher
+	cipher.AEAD
+
+	nonce []byte
+}
+
+func (this *CryptorAead) init(cryptor interface{}) {
+	this.AEAD = cryptor.(cipher.AEAD)
+}
+
+func (this *CryptorAead) getNonce() []byte {
+	if this.nonce == nil {
+		this.nonce = make([]byte, this.NonceSize())
+	}
+
+	return this.nonce
+}
+
+func (this *CryptorAead) incrNonce() {
+	for i := range this.nonce {
+		this.nonce[i]++
+		if this.nonce[i] != 0 {
+			return
+		}
+	}
+}
+
+func (this *CryptorAead) Encrypt(dst, src []byte) (err error) {
+	this.Seal(dst[:0], this.getNonce(), src, nil)
+	this.incrNonce()
+	return
+}
+
+func (this *CryptorAead) Decrypt(dst, src []byte) (err error) {
+	_, err = this.Open(dst[:0], this.getNonce(), src, nil)
+	this.incrNonce()
+	return
+}
+///////////////////////////////////////////
 type CipherAead struct {
 	Cipher
 	Info      *cipherInfo
@@ -42,14 +82,24 @@ func (this *CipherAead) IVSize() int {
 	return this.Info.IVSize
 }
 
-func newAesGCMAead(key, iv []byte, doe DecOrEnc) (interface{}, error) {
+func newAesGCMAead(key, iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
-	return cipher.NewGCM(block)
+	var aead cipher.AEAD
+	aead, err = cipher.NewGCM(block)
+	cryptor = new(CryptorAead)
+	cryptor.init(aead)
+	return
 }
-func newChaCha20IETFPoly1305Aead(key, iv []byte, doe DecOrEnc) (interface{}, error) { return chacha20poly1305.New(key) }
+func newChaCha20IETFPoly1305Aead(key, iv []byte, doe DecOrEnc) (cryptor CryptorCipher, err error) {
+	var aead cipher.AEAD
+	aead, err = chacha20poly1305.New(key)
+	cryptor = new(CryptorAead)
+	cryptor.init(aead)
+	return
+}
 func newAead(password string, info *cipherInfo) (c Cipher, err error) {
 	key := info.makeKey(password, info.KeySize)
 	c = new(CipherAead)

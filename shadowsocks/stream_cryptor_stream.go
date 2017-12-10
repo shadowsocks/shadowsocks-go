@@ -2,7 +2,6 @@ package shadowsocks
 
 import (
 	"io"
-	"crypto/cipher"
 )
 
 type StreamCryptorStream struct {
@@ -40,7 +39,7 @@ type StreamEnCryptorStream struct {
 	cipher   Cipher
 	buffer   []byte
 	is_begin bool
-	cipher.Stream
+	*CryptorStream
 }
 
 func (this *StreamEnCryptorStream) Init(c Cipher, b []byte) StreamEnCryptor {
@@ -75,7 +74,7 @@ func (this *StreamEnCryptorStream) WriteTo(b []byte, w io.Writer) (n int, err er
 			///////////////////////////////////////////////
 			return
 		}
-		this.Stream = cryptor.(cipher.Stream)
+		this.CryptorStream = cryptor.(*CryptorStream)
 		this.is_begin = false
 		if _, err = w.Write(this.iv); err != nil { // important to keep it at last
 			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -92,7 +91,7 @@ func (this *StreamEnCryptorStream) WriteTo(b []byte, w io.Writer) (n int, err er
 
 	payload_len := len(b)
 	payload := this.buffer[:payload_len]
-	this.XORKeyStream(payload, b)
+	this.Encrypt(payload, b)
 
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	if DebugLog {
@@ -128,7 +127,7 @@ type StreamDeCryptorStream struct {
 	cipher   Cipher
 	buffer   []byte
 	is_begin bool
-	cipher.Stream
+	*CryptorStream
 }
 
 func (this *StreamDeCryptorStream) Init(c Cipher, b []byte) StreamDeCryptor {
@@ -170,7 +169,7 @@ func (this *StreamDeCryptorStream) ReadTo(b []byte, r io.Reader) (n int, err err
 			///////////////////////////////////////////////
 			return
 		}
-		this.Stream = cryptor.(cipher.Stream)
+		this.CryptorStream = cryptor.(*CryptorStream)
 		this.is_begin = false
 	}
 	if n, err = r.Read(b); err != nil {
@@ -186,7 +185,7 @@ func (this *StreamDeCryptorStream) ReadTo(b []byte, r io.Reader) (n int, err err
 	}
 	if n > 0 {
 		payload = b[:n]
-		this.XORKeyStream(payload, payload)
+		this.Decrypt(payload, payload)
 	}
 	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 	if DebugLog {
