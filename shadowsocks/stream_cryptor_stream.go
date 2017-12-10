@@ -32,12 +32,13 @@ func (this *StreamCryptorStream) init(cipher Cipher) Cryptor {
 
 	return this
 }
+
 /////////////////////////////////////////////////////////////////////////////////////////
 type StreamEnCryptorStream struct {
 	StreamEnCryptor
-	iv []byte
-	cipher Cipher
-	buffer []byte
+	iv       []byte
+	cipher   Cipher
+	buffer   []byte
 	is_begin bool
 	cipher.Stream
 }
@@ -51,26 +52,82 @@ func (this *StreamEnCryptorStream) Init(c Cipher, b []byte) StreamEnCryptor {
 }
 
 func (this *StreamEnCryptorStream) WriteTo(b []byte, w io.Writer) (n int, err error) {
+	cryptor := this.Stream
 	if this.is_begin {
-		if this.iv, err = this.cipher.NewIV(); err != nil { return }
-		if err = this.cipher.Init(this.iv, Encrypt); err != nil { return }
-		if _, err = w.Write(this.iv); err != nil { return }
+		if this.iv, err = this.cipher.NewIV(); err != nil {
+			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+			if DebugLog {
+				Logger.Fields(LogFields{
+					"err": err,
+				}).Warn("get new iv error")
+			}
+			///////////////////////////////////////////////
+			return
+		}
+		if err = this.cipher.Init(this.iv, Encrypt); err != nil {
+			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+			if DebugLog {
+				Logger.Fields(LogFields{
+					"iv": this.iv,
+					"err": err,
+				}).Warn("init encrypt cryptor error")
+			}
+			///////////////////////////////////////////////
+			return
+		}
 		this.Stream = this.cipher.GetCryptor(Encrypt).(cipher.Stream)
+		cryptor = this.Stream
 		this.is_begin = false
+		if _, err = w.Write(this.iv); err != nil { // important to keep it at last
+			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+			if DebugLog {
+				Logger.Fields(LogFields{
+					"iv": this.iv,
+					"err": err,
+				}).Warn("write iv to connection error")
+			}
+			///////////////////////////////////////////////
+			return
+		}
 	}
 
 	payload_len := len(b)
 	payload := this.buffer[:payload_len]
-	this.Stream.XORKeyStream(payload, b)
+	cryptor.XORKeyStream(payload, b)
 
-	return w.Write(payload)
+	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+	if DebugLog {
+		Logger.Fields(LogFields{
+			"iv": this.iv,
+			"b": b,
+			"b_str": string(b),
+			"payload": payload,
+			"payload_len": payload_len,
+		}).Info("check encrypted data")
+	}
+	///////////////////////////////////////////////
+
+	n, err = w.Write(payload)
+	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+	if DebugLog {
+		if err != nil {
+			Logger.Fields(LogFields{
+				"iv": this.iv,
+				"payload": payload,
+				"payload_len": payload_len,
+			}).Warn("write encrypted data to connection error")
+		}
+	}
+	///////////////////////////////////////////////
+
+	return
 }
 
 type StreamDeCryptorStream struct {
 	StreamDeCryptor
-	iv []byte
-	cipher Cipher
-	buffer []byte
+	iv       []byte
+	cipher   Cipher
+	buffer   []byte
 	is_begin bool
 	cipher.Stream
 }
@@ -90,16 +147,57 @@ func (this *StreamDeCryptorStream) getIV(r io.Reader) (iv []byte, err error) {
 }
 
 func (this *StreamDeCryptorStream) ReadTo(b []byte, r io.Reader) (n int, err error) {
+	var payload []byte
+	cryptor := this.Stream
 	if this.is_begin {
-		if this.iv, err = this.getIV(r); err != nil { return }
-		if err = this.cipher.Init(this.iv, Decrypt); err != nil { return }
+		if this.iv, err = this.getIV(r); err != nil {
+			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+			if DebugLog {
+				Logger.Fields(LogFields{
+					"err": err,
+				}).Warn("get iv error")
+			}
+			///////////////////////////////////////////////
+			return
+		}
+		if err = this.cipher.Init(this.iv, Decrypt); err != nil {
+			//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+			if DebugLog {
+				Logger.Fields(LogFields{
+					"iv": this.iv,
+					"err": err,
+				}).Warn("init decrypt cryptor error")
+			}
+			///////////////////////////////////////////////
+			return
+		}
 		this.Stream = this.cipher.GetCryptor(Decrypt).(cipher.Stream)
+		cryptor = this.Stream
 		this.is_begin = false
 	}
-	if n, err = r.Read(b); err != nil { return }
-	if n > 0 {
-		payload := b[:n]
-		this.Stream.XORKeyStream(payload, payload)
+	if n, err = r.Read(b); err != nil {
+		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+		if DebugLog {
+			Logger.Fields(LogFields{
+				"b": b,
+				"err": err,
+			}).Warn("read data from connection error")
+		}
+		///////////////////////////////////////////////
+		return
 	}
+	if n > 0 {
+		payload = b[:n]
+		cryptor.XORKeyStream(payload, payload)
+	}
+	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+	if DebugLog {
+		Logger.Fields(LogFields{
+			"b": b,
+			"n": n,
+			"payload": payload,
+		}).Debug("check decrypted data")
+	}
+	///////////////////////////////////////////////
 	return
 }

@@ -30,8 +30,6 @@ const (
 	socksVer5       = 5
 	socksCmdConnect = 1
 )
-//var leakyBuf *ss.LeakyBufType
-var Logger = ss.Logger
 
 var udp bool
 var UDPTun string
@@ -180,7 +178,7 @@ func parseServerConfig(config *ss.Config) {
 		// only one encryption table
 		cipher, err := ss.NewCipher(method, config.Password)
 		if err != nil {
-			Logger.Fatal("Failed generating ciphers:", err)
+			ss.Logger.Fatal("Failed generating ciphers:", err)
 		}
 		srvPort := strconv.Itoa(config.ServerPort)
 		srvArr := config.GetServerArray()
@@ -189,7 +187,7 @@ func parseServerConfig(config *ss.Config) {
 
 		for i, s := range srvArr {
 			if hasPort(s) {
-				Logger.Println("ignore server_port option for server", s)
+				ss.Logger.Println("ignore server_port option for server", s)
 				servers.srvCipher[i] = &ServerCipher{s, cipher}
 			} else {
 				servers.srvCipher[i] = &ServerCipher{net.JoinHostPort(s, srvPort), cipher}
@@ -204,7 +202,7 @@ func parseServerConfig(config *ss.Config) {
 		i := 0
 		for _, serverInfo := range config.ServerPassword {
 			if len(serverInfo) < 2 || len(serverInfo) > 3 {
-				Logger.Fatalf("server %v syntax error\n", serverInfo)
+				ss.Logger.Fatalf("server %v syntax error\n", serverInfo)
 			}
 			server := serverInfo[0]
 			passwd := serverInfo[1]
@@ -213,7 +211,7 @@ func parseServerConfig(config *ss.Config) {
 				encmethod = serverInfo[2]
 			}
 			if !hasPort(server) {
-				Logger.Fatalf("no port for server %s\n", server)
+				ss.Logger.Fatalf("no port for server %s\n", server)
 			}
 			// Using "|" as delimiter is safe here, since no encryption
 			// method contains it in the name.
@@ -223,7 +221,7 @@ func parseServerConfig(config *ss.Config) {
 				var err error
 				cipher, err = ss.NewCipher(encmethod, passwd)
 				if err != nil {
-					Logger.Fatal("Failed generating ciphers:", err)
+					ss.Logger.Fatal("Failed generating ciphers:", err)
 				}
 				cipherCache[cacheKey] = cipher
 			}
@@ -233,7 +231,7 @@ func parseServerConfig(config *ss.Config) {
 	}
 	servers.failCnt = make([]int, len(servers.srvCipher))
 	for _, se := range servers.srvCipher {
-		Logger.Println("available remote server", se.server)
+		ss.Logger.Println("available remote server", se.server)
 	}
 	return
 }
@@ -242,7 +240,7 @@ func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn
 	se := servers.srvCipher[serverId]
 	remote, err = ss.DialWithRawAddr(rawaddr, se.server, se.cipher)
 	if err != nil {
-		Logger.Fields(ss.LogFields{
+		ss.Logger.Fields(ss.LogFields{
 			"rawaddr": rawaddr,
 			"rawaddr_str": string(rawaddr),
 			"server": se.server,
@@ -254,7 +252,7 @@ func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn
 		}
 		return nil, err
 	}
-	Logger.Fields(ss.LogFields{
+	ss.Logger.Fields(ss.LogFields{
 		"addr": addr,
 		"server": se.server,
 	}).Info("connected to server")
@@ -292,23 +290,23 @@ func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) 
 }
 
 func handleConnection(conn net.Conn) {
-	Logger.Info("socks connect from ", conn.RemoteAddr().String())
+	ss.Logger.Info("socks connect from ", conn.RemoteAddr().String())
 	closed := false
 	defer func() {
 		if !closed {
-			Logger.Info("close socks connect from ", conn.RemoteAddr().String())
+			ss.Logger.Info("close socks connect from ", conn.RemoteAddr().String())
 			conn.Close()
 		}
 	}()
 
 	var err error = nil
 	if err = handShake(conn); err != nil {
-		Logger.Println("socks handshake:", err)
+		ss.Logger.Println("socks handshake:", err)
 		return
 	}
 	rawaddr, addr, err := getRequest(conn) // get request from local, parse request to raw and host that will be provided to ss server
 	if err != nil {
-		Logger.Println("error getting request:", err)
+		ss.Logger.Println("error getting request:", err)
 		return
 	}
 	// Sending connection established message immediately to client.
@@ -316,17 +314,17 @@ func handleConnection(conn net.Conn) {
 	// But if connection failed, the client will get connection reset error.
 	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
 	if err != nil {
-		Logger.Fields(ss.LogFields{"err": err}).Error("send connection confirmation")
+		ss.Logger.Fields(ss.LogFields{"err": err}).Error("send connection confirmation")
 		return
 	}
 
 	remote, err := createServerConn(rawaddr, addr) // connect to ss server and send request from local
 	if err != nil {
-		Logger.Fields(ss.LogFields{
+		ss.Logger.Fields(ss.LogFields{
 			"err": err,
 		}).Warn("check createServerConn error")
 		if len(servers.srvCipher) > 1 {
-			Logger.Fields(ss.LogFields{
+			ss.Logger.Fields(ss.LogFields{
 				"rawaddr": rawaddr,
 				"addr": addr,
 				"err": err,
@@ -336,25 +334,25 @@ func handleConnection(conn net.Conn) {
 	}
 	defer func() {
 		if !closed {
-			Logger.Info("close socks connect from ", remote.RemoteAddr().String())
+			ss.Logger.Info("close socks connect from ", remote.RemoteAddr().String())
 			remote.Close()
 		}
 	}()
 
 	ss.PipeStream(conn, remote, remote.Buffer)
-	Logger.Infof("closed connection to %s", addr)
+	ss.Logger.Infof("closed connection to %s", addr)
 }
 
 func run(listenAddr string) { // listening from local request
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		Logger.Fatal(err)
+		ss.Logger.Fatal(err)
 	}
-	Logger.Fields(ss.LogFields{"listenAddr": listenAddr}).Info("starting local socks5 server ...")
+	ss.Logger.Fields(ss.LogFields{"listenAddr": listenAddr}).Info("starting local socks5 server ...")
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			Logger.Fields(ss.LogFields{"err": err}).Warn("accept error")
+			ss.Logger.Fields(ss.LogFields{"err": err}).Warn("accept error")
 			continue
 		}
 		go handleConnection(conn)
@@ -382,7 +380,7 @@ func main() {
 	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
-	flag.BoolVar((*bool)(&ss.DebugLog), "d", false, "print debug message")
+	flag.BoolVar((*bool)(&ss.DebugLog), "debug", false, "print debug message")
 	//flag.BoolVar(&udp, "u", false, "UDP Relay")
 	flag.StringVar(&UDPTun, "udptun", "", "(client-only) UDP tunnel (laddr1=raddr1,laddr2=raddr2,...)")
 	flag.DurationVar(&UDPTimeout, "udptimeout", 5*time.Minute, "UDP tunnel timeout")
@@ -403,7 +401,7 @@ func main() {
 	if (!exists || err != nil) && binDir != "" && binDir != "." {
 		oldConfig := configFile
 		configFile = path.Join(binDir, "config.json")
-		Logger.Printf("%s not found, try config file %s\n", oldConfig, configFile)
+		ss.Logger.Printf("%s not found, try config file %s\n", oldConfig, configFile)
 	}
 
 	config, err := ss.ParseConfig(configFile)

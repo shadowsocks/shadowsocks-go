@@ -61,9 +61,24 @@ func (this *PacketEnCryptorStream) WriteTo(b []byte, addr net.Addr) (n int, err 
 	iv_offset := this.cipher.IVSize()
 
 	if this.iv, err = this.cipher.NewIV(); err != nil {
+		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+		if DebugLog {
+			Logger.Fields(LogFields{
+				"err": err,
+			}).Warn("get new iv error")
+		}
+		///////////////////////////////////////////////
 		return
 	}
 	if err = this.cipher.Init(this.iv, Encrypt); err != nil {
+		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+		if DebugLog {
+			Logger.Fields(LogFields{
+				"iv": this.iv,
+				"err": err,
+			}).Warn("init encrypt cryptor error")
+		}
+		///////////////////////////////////////////////
 		return
 	}
 	this.Stream = this.cipher.GetCryptor(Encrypt).(cipher.Stream)
@@ -74,8 +89,31 @@ func (this *PacketEnCryptorStream) WriteTo(b []byte, addr net.Addr) (n int, err 
 	payload := this.buffer[iv_offset:iv_offset+payload_len]
 
 	this.Stream.XORKeyStream(payload, b)
+	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+	if DebugLog {
+		Logger.Fields(LogFields{
+			"payload_ct": payload,
+			"payload_src": b,
+			"payload_src_str": string(b),
+			"iv": this.iv,
+		}).Debug("check encrypted data")
+	}
+	///////////////////////////////////////////////
 
-	return this.PacketConn.WriteTo(this.buffer[:iv_offset+payload_len], addr)
+	n, err = this.PacketConn.WriteTo(this.buffer[:iv_offset+payload_len], addr)
+	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+	if DebugLog {
+		if err != nil {
+			Logger.Fields(LogFields{
+				"data": this.buffer[:iv_offset+payload_len],
+				"addr": addr.String(),
+				"err": err,
+			}).Warn("write encrypted data to connection error")
+		}
+	}
+	///////////////////////////////////////////////
+
+	return
 }
 
 type PacketDeCryptorStream struct {
@@ -101,29 +139,70 @@ func (this *PacketDeCryptorStream) initPacket(p net.PacketConn) PacketDeCryptor 
 }
 
 func (this *PacketDeCryptorStream) ReadTo(b []byte) (n int, addr net.Addr, err error) {
+	var payload_ct []byte // for debug
 	n, addr, err = this.PacketConn.ReadFrom(b)
 	if err != nil {
+		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+		if DebugLog {
+			Logger.Fields(LogFields{
+				"err": err,
+			}).Warn("read data from connection error")
+		}
+		///////////////////////////////////////////////
 		return
 	}
 
 	iv_offset := this.cipher.IVSize()
 	if n < iv_offset {
 		err = errors.New("data seems no need to unpack")
+		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+		if DebugLog {
+			Logger.Fields(LogFields{
+				"data_size": n,
+				"size_atleast": iv_offset,
+				"err": err,
+			}).Warn("data size too small error")
+		}
+		///////////////////////////////////////////////
 		return
 	}
 
 	this.iv = b[:iv_offset]
 
 	if err = this.cipher.Init(this.iv, Decrypt); err != nil {
+		//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+		if DebugLog {
+			Logger.Fields(LogFields{
+				"iv": this.iv,
+				"err": err,
+			}).Warn("init decrypt cryptor error")
+		}
+		///////////////////////////////////////////////
 		return
 	}
 	this.Stream = this.cipher.GetCryptor(Decrypt).(cipher.Stream)
 
 	payload := b[iv_offset:n]
+	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+	if DebugLog {
+		payload_ct = make([]byte, len(payload))
+		copy(payload_ct, payload)
+	}
+	///////////////////////////////////////////////
 
 	this.Stream.XORKeyStream(payload, payload)
 	copy(b, payload)
 	n -= iv_offset
+	//\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+	if DebugLog {
+		Logger.Fields(LogFields{
+			"payload_ct": payload_ct,
+			"payload_src": payload,
+			"payload_src_str": string(payload),
+			"iv": this.iv,
+		}).Debug("check decrypted data")
+	}
+	///////////////////////////////////////////////
 
 	return
 }

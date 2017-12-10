@@ -15,7 +15,6 @@ import (
 	"syscall"
 
 	ss "github.com/qunxyz/shadowsocks-go/shadowsocks"
-	"log"
 	"time"
 )
 
@@ -40,17 +39,17 @@ var UDPTimeout time.Duration
 
 func getRequest(conn *ss.Conn) (host string, err error) {
 	//ss.SetReadTimeout(conn)
-	var n int
+	//var n int
 	// buf size should at least have the same size with the largest possible
 	// request size (when addrType is 3, domain name has at most 256 bytes)
 	// 1(addrType) + 1(lenByte) + 255(max length address) + 2(port) + 10(hmac-sha1)
 	buf := make([]byte, 269)
 	// read till we get possible domain length field
-	n, err = conn.Read(buf)
+	_, err = conn.Read(buf)
 	if err != nil {
 		return
 	}
-	buf = buf[:n]
+	//buf = buf[:n]
 
 	//var reqStart, reqEnd int
 	var reqEnd int
@@ -98,16 +97,16 @@ func handleConnection(conn *ss.Conn) {
 		// XXX There's no xadd in the atomic package, so it's difficult to log
 		// the message only once with low cost. Also note nextLogConnCnt maybe
 		// added twice for current peak connection number level.
-		Logger.Infof("Number of client connections reaches %d\n", nextLogConnCnt)
+		Logger.Infof("Number of client connections reaches %d", nextLogConnCnt)
 		nextLogConnCnt += logCntDelta
 	}
 
 	// function arguments are always evaluated, so surround debug statement
 	// with if statement
-	Logger.Infof("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
+	Logger.Infof("new client %s->%s", conn.RemoteAddr().String(), conn.LocalAddr())
 	closed := false
 	defer func() {
-		Logger.Infof("closed pipe %s<->%s\n", conn.RemoteAddr(), host)
+		Logger.Infof("closed pipe %s<->%s", conn.RemoteAddr(), host)
 		connCnt--
 		if !closed {
 			conn.Close()
@@ -305,7 +304,7 @@ func run(port, password string) {
 	}
 	passwdManager.add(port, password, ln)
 	var cipher ss.Cipher
-	Logger.Fields(ss.LogFields{"port": port}).Info("server listening ...")
+	ss.Logger.Printf("listening tcp port %v", port)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -337,17 +336,17 @@ func runUDP(port, password string) {
 		IP:   net.IPv6zero,
 		Port: port_i,
 	}
-	log.Printf("listening udp port %v\n", port)
+	ss.Logger.Printf("listening udp port %v", port)
 	c, err := net.ListenPacket("udp", addr.String())
 	passwdManager.addUDP(port, password, c)
 	if err != nil {
-		log.Printf("error listening udp port %v: %v\n", port, err)
+		ss.Logger.Printf("error listening udp port %v: %v\n", port, err)
 		return
 	}
 	defer c.Close()
 	cipher, err = ss.NewCipher(config.Method, password)
 	if err != nil {
-		log.Printf("Error generating cipher for udp port: %s %v\n", port, err)
+		ss.Logger.Printf("Error generating cipher for udp port: %s %v\n", port, err)
 		c.Close()
 	}
 	SecurePacketConn := ss.NewSecurePacketConn(c, cipher)
@@ -418,7 +417,7 @@ var configFile string
 var config *ss.Config
 
 func main() {
-	log.SetOutput(os.Stdout)
+	//log.SetOutput(os.Stdout)
 
 	var cmdConfig ss.Config
 	var printVer bool
@@ -431,8 +430,8 @@ func main() {
 	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
-	flag.BoolVar((*bool)(&ss.DebugLog), "d", false, "print debug message")
-	flag.BoolVar(&udp, "u", false, "UDP Relay")
+	flag.BoolVar(&udp, "udp", false, "UDP Relay")
+	flag.BoolVar((*bool)(&ss.DebugLog), "debug", false, "print debug message")
 	flag.Parse()
 
 	if printVer {
@@ -454,7 +453,7 @@ func main() {
 		ss.Logger.Warn("use aes-256-cfb method, cause not specify method")
 	}
 	if err = ss.CheckCipherMethod(config.Method); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		//fmt.Fprintln(os.Stderr, err)
 		ss.Logger.Fields(ss.LogFields{
 			"method": config.Method,
 			"err": err,

@@ -19,9 +19,11 @@ func chanFromConn(conn net.Conn, b []byte) chan []byte {
 			}
 			if err != nil {
 				c <- nil
-				Logger.Fields(LogFields{
-					"err": err,
-				}).Warn("Read data error")
+				if DebugLog {
+					Logger.Fields(LogFields{
+						"err": err,
+					}).Warn("Read data error")
+				}
 				break
 			}
 		}
@@ -41,7 +43,8 @@ func PipeStream(conn1 net.Conn, conn2 net.Conn, buffer []byte) {
 			if b1 == nil {
 				return
 			} else {
-				if _, err := conn2.Write(b1); err != nil {
+				_, err := conn2.Write(b1)
+				if DebugLog && err != nil {
 					Logger.Fields(LogFields{
 						"err": err,
 					}).Warn("Write data error")
@@ -51,7 +54,8 @@ func PipeStream(conn1 net.Conn, conn2 net.Conn, buffer []byte) {
 			if b2 == nil {
 				return
 			} else {
-				if _, err := conn1.Write(b2); err != nil {
+				_, err := conn1.Write(b2)
+				if DebugLog && err != nil {
 					Logger.Fields(LogFields{
 						"err": err,
 					}).Warn("Write data error")

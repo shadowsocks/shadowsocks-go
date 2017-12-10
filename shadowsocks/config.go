@@ -18,7 +18,7 @@ import (
 
 const AddrMask        byte = 0xf
 
-var DebugLog = true
+var DebugLog bool
 
 type Config struct {
 	Server     interface{} `json:"server"`
