@@ -66,6 +66,9 @@ var cipherMethod = map[string]*cipherInfo{
 	"chacha20-ietf":          {"chacha20-ietf", 32, 12, newStream, genKey, newChaCha20IETFStream},
 	"chacha20-ietf-poly1305": {"chacha20-ietf-poly1305", 32, 32, newAead, genKey, newChaCha20IETFPoly1305Aead},
 	"salsa20":                {"salsa20", 32, 8, newStream, genKey, newSalsa20Stream},
+	"aes-256-gcm":                {"aes-256-gcm", 32, 12, newAead, genKey, newAesGCMAead},
+	"aes-192-gcm":                {"aes-192-gcm", 24, 12, newAead, genKey, newAesGCMAead},
+	"aes-128-gcm":                {"aes-128-gcm", 16, 12, newAead, genKey, newAesGCMAead},
 }
 ////////////////////////////////////////////////////////////////////////////////////////
 func CheckCipherMethod(method string) error {

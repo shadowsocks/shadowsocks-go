@@ -7,6 +7,7 @@ import (
 	"crypto/sha1"
 	"io"
 	"crypto/rand"
+	"crypto/aes"
 )
 
 type CipherAead struct {
@@ -62,6 +63,13 @@ func (this *CipherAead) IVSize() int {
 	return this.Info.IVSize
 }
 
+func newAesGCMAead(key, iv []byte, doe DecOrEnc) (interface{}, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
+}
 func newChaCha20IETFPoly1305Aead(key, iv []byte, doe DecOrEnc) (interface{}, error) { return chacha20poly1305.New(key) }
 func newAead(password string, info *cipherInfo) (c Cipher, err error) {
 	key := info.makeKey(password, info.KeySize)
