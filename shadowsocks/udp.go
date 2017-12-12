@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"time"
+	"sync"
 )
 
 const (
@@ -18,13 +19,19 @@ var (
 
 type SecurePacketConn struct {
 	net.PacketConn
-	*Cipher
+	Buffer    []byte
+	Encryptor PacketEnCryptor
+	DeCryptor PacketDeCryptor
+	sync.Mutex // write lock
 }
 
-func NewSecurePacketConn(c net.PacketConn, cipher *Cipher) *SecurePacketConn {
+func NewSecurePacketConn(c net.PacketConn, cipher Cipher) *SecurePacketConn {
+	cryptor := NewPacketCryptor(cipher)
 	return &SecurePacketConn{
 		PacketConn: c,
-		Cipher:     cipher,
+		Encryptor: cryptor.initCryptor(Encrypt).(PacketEnCryptor).initPacket(c),
+		DeCryptor: cryptor.initCryptor(Decrypt).(PacketDeCryptor).initPacket(c),
+		Buffer:    cryptor.GetBuffer(),
 	}
 }
 
@@ -32,48 +39,15 @@ func (c *SecurePacketConn) Close() error {
 	return c.PacketConn.Close()
 }
 
-func (c *SecurePacketConn) ReadFrom(b []byte) (n int, src net.Addr, err error) {
-	cipher := c.Copy()
-	buf := make([]byte, 4096)
-	n, src, err = c.PacketConn.ReadFrom(buf)
-	if err != nil {
-		return
-	}
 
-	if n < c.info.ivLen {
-		return 0, nil, errPacketTooSmall
-	}
-
-	if len(b) < n-c.info.ivLen {
-		err = errBufferTooSmall // just a warning
-	}
-
-	iv := make([]byte, c.info.ivLen)
-	copy(iv, buf[:c.info.ivLen])
-
-	if err = cipher.initDecrypt(iv); err != nil {
-		return
-	}
-
-	cipher.decrypt(b[0:], buf[c.info.ivLen:n])
-	n -= c.info.ivLen
-
-	return
+func (c *SecurePacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	c.Lock()
+	defer c.Unlock()
+	return c.Encryptor.WriteTo(b, addr)
 }
 
-func (c *SecurePacketConn) WriteTo(b []byte, dst net.Addr) (n int, err error) {
-	cipher := c.Copy()
-	iv, err := cipher.initEncrypt()
-	if err != nil {
-		return
-	}
-	packetLen := len(b) + len(iv)
-	cipherData := make([]byte, packetLen)
-	copy(cipherData, iv)
-
-	cipher.encrypt(cipherData[len(iv):], b)
-	n, err = c.PacketConn.WriteTo(cipherData, dst)
-	return
+func (c *SecurePacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
+	return c.DeCryptor.ReadTo(b)
 }
 
 func (c *SecurePacketConn) LocalAddr() net.Addr {

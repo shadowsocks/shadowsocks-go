@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/shadowsocks/go-shadowsocks2/core"
 )
 
 var config struct {

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"net"
+	"time"
 )
 
 func PrintVersion() {
@@ -14,14 +16,10 @@ func PrintVersion() {
 func IsFileExists(path string) (bool, error) {
 	stat, err := os.Stat(path)
 	if err == nil {
-		if stat.Mode()&os.ModeType == 0 {
-			return true, nil
-		}
+		if stat.Mode()&os.ModeType == 0 { return true, nil }
 		return false, errors.New(path + " exists but is not regular file")
 	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
+	if os.IsNotExist(err) { return false, nil }
 	return false, err
 }
 
@@ -29,10 +27,7 @@ type ClosedFlag struct {
 	flag bool
 }
 
-func (flag *ClosedFlag) SetClosed() {
-	flag.flag = true
-}
+func (flag *ClosedFlag) SetClosed() { flag.flag = true }
+func (flag *ClosedFlag) IsClosed() bool { return flag.flag }
 
-func (flag *ClosedFlag) IsClosed() bool {
-	return flag.flag
-}
+func SetReadTimeout(c net.Conn) { if readTimeout != 0 { c.SetReadDeadline(time.Now().Add(readTimeout)) } }

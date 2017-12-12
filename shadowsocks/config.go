@@ -11,11 +11,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	// "log"
 	"os"
 	"reflect"
 	"time"
 )
+
+var DebugLog bool
 
 type Config struct {
 	Server     interface{} `json:"server"`
@@ -23,12 +24,14 @@ type Config struct {
 	LocalPort  int         `json:"local_port"`
 	Password   string      `json:"password"`
 	Method     string      `json:"method"` // encryption method
+	UDPTimeout	time.Duration	`json:"udp_timeout"`
 
 	// following options are only used by server
 	PortPassword map[string]string `json:"port_password"`
 	Timeout      int               `json:"timeout"`
 
 	// following options are only used by client
+	UDPTun	string	`json:"udp_tun"`
 
 	// The order of servers in the client config is significant, so use array
 	// instead of map to preserve the order.
@@ -59,37 +62,43 @@ func (config *Config) GetServerArray() []string {
 		for i, s := range arr {
 			serverArr[i], ok = s.(string)
 			if !ok {
-				goto typeError
+				Logger.Fields(LogFields{
+					"config.Server": config.Server,
+					"type": reflect.TypeOf(config.Server)}).Panic("Config.Server type error")
 			}
 		}
 		return serverArr
 	}
-typeError:
-	panic(fmt.Sprintf("Config.Server type error %v", reflect.TypeOf(config.Server)))
+	return nil
 }
 
 func ParseConfig(path string) (config *Config, err error) {
 	file, err := os.Open(path) // For read access.
 	if err != nil {
+		Logger.Fields(LogFields{"path": path}).Error(err)
 		return
 	}
 	defer file.Close()
 
 	data, err := ioutil.ReadAll(file)
 	if err != nil {
+		Logger.Fields(LogFields{
+			"path": path,
+			"err": err,
+		}).Error("ReadAll data from config file.")
 		return
 	}
 
 	config = &Config{}
 	if err = json.Unmarshal(data, config); err != nil {
+		Logger.Fields(LogFields{
+			"data": data,
+			"err": err,
+		}).Error("Unmarshal data from config file.")
 		return nil, err
 	}
 	readTimeout = time.Duration(config.Timeout) * time.Second
 	return
-}
-
-func SetDebug(d DebugLog) {
-	Debug = d
 }
 
 // Useful for command line to override options specified in config file
@@ -117,7 +126,7 @@ func UpdateConfig(old, new *Config) {
 			if s != "" {
 				oldField.SetString(s)
 			}
-		case reflect.Int:
+		case reflect.Int, reflect.Int64:
 			i := newField.Int()
 			if i != 0 {
 				oldField.SetInt(i)

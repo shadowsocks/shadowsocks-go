@@ -1,3 +1,8 @@
 *.deb
 script/http
 bin
+local
+server
+shadowsocks-go.iml
+*.sh
+.idea

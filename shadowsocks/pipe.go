@@ -2,42 +2,65 @@ package shadowsocks
 
 import (
 	"net"
-	"time"
 )
+// chanFromConn creates a channel from a Conn object, and sends everything it
+//  Read()s from the socket to the channel.
+func chanFromConn(conn net.Conn, b []byte) chan []byte {
+	c := make(chan []byte)
 
-func SetReadTimeout(c net.Conn) {
-	if readTimeout != 0 {
-		c.SetReadDeadline(time.Now().Add(readTimeout))
-	}
-}
-
-// PipeThenClose copies data from src to dst, closes dst when done.
-func PipeThenClose(src, dst net.Conn) {
-	defer dst.Close()
-	buf := leakyBuf.Get()
-	defer leakyBuf.Put(buf)
-	for {
-		SetReadTimeout(src)
-		n, err := src.Read(buf)
-		// read may return EOF with n > 0
-		// should always process n > 0 bytes before handling error
-		if n > 0 {
-			// Note: avoid overwrite err returned by Read.
-			if _, err := dst.Write(buf[0:n]); err != nil {
-				Debug.Println("write:", err)
+	go func() {
+		for {
+			n, err := conn.Read(b)
+			if n > 0 {
+				res := make([]byte, n)
+				// Copy the buffer so it doesn't get changed while read by the recipient.
+				copy(res, b[:n])
+				c <- res
+			}
+			if err != nil {
+				c <- nil
+				if DebugLog {
+					Logger.Fields(LogFields{
+						"err": err,
+					}).Warn("Read data error")
+				}
 				break
 			}
 		}
-		if err != nil {
-			// Always "use of closed network connection", but no easy way to
-			// identify this specific error. So just leave the error along for now.
-			// More info here: https://code.google.com/p/go/issues/detail?id=4373
-			/*
-				if bool(Debug) && err != io.EOF {
-					Debug.Println("read:", err)
+	}()
+
+	return c
+}
+
+// Pipe creates a full-duplex pipe between the two sockets and transfers data from one to the other.
+func PipeStream(conn1 net.Conn, conn2 net.Conn, buffer []byte) {
+	chan1 := chanFromConn(conn1, buffer)
+	chan2 := chanFromConn(conn2, buffer)
+
+	for {
+		select {
+		case b1 := <-chan1:
+			if b1 == nil {
+				return
+			} else {
+				_, err := conn2.Write(b1)
+				if DebugLog && err != nil {
+					Logger.Fields(LogFields{
+						"err": err,
+					}).Warn("Write data error")
 				}
-			*/
-			break
+			}
+		case b2 := <-chan2:
+			if b2 == nil {
+				return
+			} else {
+				_, err := conn1.Write(b2)
+				if DebugLog && err != nil {
+					Logger.Fields(LogFields{
+						"err": err,
+					}).Warn("Write data error")
+				}
+			}
 		}
 	}
 }
