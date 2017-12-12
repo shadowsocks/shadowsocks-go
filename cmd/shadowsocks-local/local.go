@@ -14,9 +14,6 @@ import (
 	"strings"
 )
 
-var UDPTun string
-var UDPTimeout time.Duration
-
 func init() {
 	rand.Seed(time.Now().Unix())
 }
@@ -219,7 +216,7 @@ func enoughOptions(config *ss.Config) bool {
 }
 
 func main() {
-	//Logger.SetOutput(os.Stdout)
+	ss.Logger.SetOutput(os.Stdout)
 
 	var configFile, cmdServer, cmdLocal string
 	var cmdConfig ss.Config
@@ -236,8 +233,8 @@ func main() {
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.BoolVar((*bool)(&ss.DebugLog), "debug", false, "print debug message")
 	//flag.BoolVar(&udp, "u", false, "UDP Relay")
-	flag.StringVar(&UDPTun, "udptun", "", "(client-only) UDP tunnel (laddr1=raddr1,laddr2=raddr2,...)")
-	flag.DurationVar(&UDPTimeout, "udptimeout", 5*time.Minute, "UDP tunnel timeout")
+	flag.StringVar(&cmdConfig.UDPTun, "udp_tun", "", "UDP tunnel (laddr1=raddr1,laddr2=raddr2,...)")
+	flag.DurationVar(&cmdConfig.UDPTimeout, "udp_timeout", 5*time.Minute, "UDP tunnel timeout")
 
 	flag.Parse()
 
@@ -288,17 +285,17 @@ func main() {
 
 	parseServerConfig(config)
 
-	if UDPTun != "" {
-		for _, tun := range strings.Split(UDPTun, ",") {
+	if config.UDPTun != "" {
+		for _, tun := range strings.Split(config.UDPTun, ",") {
 			p := strings.Split(tun, "=")
-			go RunUDP(p[0], p[1])
+			go RunUDP(config, p[0], p[1])
 		}
 	}
 	run(cmdLocal + ":" + strconv.Itoa(config.LocalPort))
 }
 //////////////////////////////////////////////////////////////////////////////////////
 
-func RunUDP(laddr, target string) {
+func RunUDP(config *ss.Config, laddr, target string) {
 	var err error
 
 	// parse target
@@ -330,7 +327,7 @@ func RunUDP(laddr, target string) {
 	// pack packet listener with cipher
 	SecurePacketConn := ss.NewSecurePacketConn(c, cipher)
 
-	nm := ss.NewNATmap(UDPTimeout)
+	nm := ss.NewNATmap(config.UDPTimeout)
 	buf := SecurePacketConn.Buffer
 	copy(buf, tgt)
 

@@ -16,8 +16,6 @@ import (
 	"time"
 )
 
-const AddrMask        byte = 0xf
-
 var DebugLog bool
 
 type Config struct {
@@ -26,12 +24,14 @@ type Config struct {
 	LocalPort  int         `json:"local_port"`
 	Password   string      `json:"password"`
 	Method     string      `json:"method"` // encryption method
+	UDPTimeout	time.Duration	`json:"udp_timeout"`
 
 	// following options are only used by server
 	PortPassword map[string]string `json:"port_password"`
 	Timeout      int               `json:"timeout"`
 
 	// following options are only used by client
+	UDPTun	string	`json:"udp_tun"`
 
 	// The order of servers in the client config is significant, so use array
 	// instead of map to preserve the order.
@@ -126,7 +126,7 @@ func UpdateConfig(old, new *Config) {
 			if s != "" {
 				oldField.SetString(s)
 			}
-		case reflect.Int:
+		case reflect.Int, reflect.Int64:
 			i := newField.Int()
 			if i != 0 {
 				oldField.SetInt(i)

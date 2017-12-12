@@ -16,8 +16,6 @@ import (
 )
 
 var udp bool
-var Logger = ss.Logger
-var UDPTimeout time.Duration
 
 const logCntDelta = 100
 
@@ -32,16 +30,16 @@ func handleConnection(conn *ss.Conn) {
 		// XXX There's no xadd in the atomic package, so it's difficult to log
 		// the message only once with low cost. Also note nextLogConnCnt maybe
 		// added twice for current peak connection number level.
-		Logger.Infof("Number of client connections reaches %d", nextLogConnCnt)
+		ss.Logger.Infof("Number of client connections reaches %d", nextLogConnCnt)
 		nextLogConnCnt += logCntDelta
 	}
 
 	// function arguments are always evaluated, so surround debug statement
 	// with if statement
-	Logger.Infof("new client %s->%s", conn.RemoteAddr().String(), conn.LocalAddr())
+	ss.Logger.Infof("new client %s->%s", conn.RemoteAddr().String(), conn.LocalAddr())
 	closed := false
 	defer func() {
-		Logger.Infof("closed pipe %s<->%s", conn.RemoteAddr(), host)
+		ss.Logger.Infof("closed pipe %s<->%s", conn.RemoteAddr(), host)
 		connCnt--
 		if !closed {
 			conn.Close()
@@ -54,18 +52,18 @@ func handleConnection(conn *ss.Conn) {
 		return
 	}
 
-	Logger.Info("connecting ", host)
+	ss.Logger.Info("connecting ", host)
 	remote, err := net.Dial("tcp", host.String())
 	if err != nil {
 		if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
 			// log too many open file error
 			// EMFILE is process reaches open file limits, ENFILE is system limit
-			Logger.Fields(ss.LogFields{
+			ss.Logger.Fields(ss.LogFields{
 				"host": host,
 				"err": err,
 			}).Error("dial error")
 		} else {
-			Logger.Fields(ss.LogFields{
+			ss.Logger.Fields(ss.LogFields{
 				"host": host,
 				"err": err,
 			}).Error("error connecting")
@@ -77,7 +75,7 @@ func handleConnection(conn *ss.Conn) {
 			remote.Close()
 		}
 	}()
-	Logger.Infof("piping %s<->%s", conn.RemoteAddr(), host)
+	ss.Logger.Infof("piping %s<->%s", conn.RemoteAddr(), host)
 
 	ss.PipeStream(conn, remote, conn.Buffer)
 
@@ -151,15 +149,15 @@ func (pm *PasswdManager) del(port string) {
 // port. A different approach would be directly change the password used by
 // that port, but that requires **sharing** password between the port listener
 // and password manager.
-func (pm *PasswdManager) updatePortPasswd(port, password string) {
+func (pm *PasswdManager) updatePortPasswd(config *ss.Config, port, password string) {
 	pl, ok := pm.get(port)
 	if !ok {
-		Logger.Fields(ss.LogFields{"port": port}).Warn("new port added")
+		ss.Logger.Fields(ss.LogFields{"port": port}).Warn("new port added")
 	} else {
 		if pl.password == password {
 			return
 		}
-		Logger.Warnf("closing port %s to update password\n", port)
+		ss.Logger.Warnf("closing port %s to update password\n", port)
 		pl.listener.Close()
 	}
 	// run will add the new port listener to passwdManager.
@@ -168,17 +166,17 @@ func (pm *PasswdManager) updatePortPasswd(port, password string) {
 	if udp {
 		pl, _ := pm.getUDP(port)
 		pl.listener.Close()
-		go runUDP(port, password)
+		go runUDP(config, port, password)
 	}
 }
 
 var passwdManager = PasswdManager{portListener: map[string]*PortListener{}, udpListener: map[string]*UDPListener{}}
 
 func updatePasswd() {
-	Logger.Info("updating password")
+	ss.Logger.Info("updating password")
 	newconfig, err := ss.ParseConfig(configFile)
 	if err != nil {
-		Logger.Fields(ss.LogFields{
+		ss.Logger.Fields(ss.LogFields{
 			"configFile": configFile,
 			"err": err,
 		}).Error("error parsing config file to update password")
@@ -191,17 +189,17 @@ func updatePasswd() {
 		return
 	}
 	for port, passwd := range config.PortPassword {
-		passwdManager.updatePortPasswd(port, passwd)
+		passwdManager.updatePortPasswd(config, port, passwd)
 		if oldconfig.PortPassword != nil {
 			delete(oldconfig.PortPassword, port)
 		}
 	}
 	// port password still left in the old config should be closed
 	for port := range oldconfig.PortPassword {
-		Logger.Infof("closing port %s as it's deleted\n", port)
+		ss.Logger.Infof("closing port %s as it's deleted\n", port)
 		passwdManager.del(port)
 	}
-	Logger.Info("password updated")
+	ss.Logger.Info("password updated")
 }
 
 func waitSignal() {
@@ -212,7 +210,7 @@ func waitSignal() {
 			updatePasswd()
 		} else {
 			// is this going to happen?
-			Logger.Warnf("caught signal %v, exit", sig)
+			ss.Logger.Warnf("caught signal %v, exit", sig)
 			os.Exit(0)
 		}
 	}
@@ -221,7 +219,7 @@ func waitSignal() {
 func run(port, password string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		Logger.Fields(ss.LogFields{
+		ss.Logger.Fields(ss.LogFields{
 			"port": port,
 			"err": err,
 		}).Error("error listening port")
@@ -233,16 +231,16 @@ func run(port, password string) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			Logger.Fields(ss.LogFields{"err": err}).Error("accept error")
+			ss.Logger.Fields(ss.LogFields{"err": err}).Error("accept error")
 			// listener maybe closed to update password
 			return
 		}
 		// Creating cipher upon first connection.
 		if cipher == nil {
-			Logger.Info("creating cipher for port:", port)
+			ss.Logger.Info("creating cipher for port:", port)
 			cipher, err = ss.NewCipher(config.Method, password)
 			if err != nil {
-				Logger.Fields(ss.LogFields{
+				ss.Logger.Fields(ss.LogFields{
 					"port": port,
 					"err": err,
 				}).Error("Error generating cipher for port")
@@ -254,7 +252,7 @@ func run(port, password string) {
 	}
 }
 
-func runUDP(port, password string) {
+func runUDP(config *ss.Config, port, password string) {
 	var cipher ss.Cipher
 	port_i, _ := strconv.Atoi(port)
 	addr := &net.UDPAddr{
@@ -276,7 +274,7 @@ func runUDP(port, password string) {
 	}
 	SecurePacketConn := ss.NewSecurePacketConn(c, cipher)
 
-	nm := ss.NewNATmap(UDPTimeout)
+	nm := ss.NewNATmap(config.UDPTimeout)
 	buf := SecurePacketConn.Buffer
 	for {
 		n, raddr, err := SecurePacketConn.ReadFrom(buf)
@@ -342,7 +340,7 @@ var configFile string
 var config *ss.Config
 
 func main() {
-	//log.SetOutput(os.Stdout)
+	ss.Logger.SetOutput(os.Stdout)
 
 	var cmdConfig ss.Config
 	var printVer bool
@@ -357,6 +355,7 @@ func main() {
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.BoolVar(&udp, "udp", false, "UDP Relay")
 	flag.BoolVar((*bool)(&ss.DebugLog), "debug", false, "print debug message")
+	flag.DurationVar(&cmdConfig.UDPTimeout, "udp_timeout", 5*time.Minute, "UDP tunnel timeout")
 	flag.Parse()
 
 	if printVer {
@@ -394,7 +393,7 @@ func main() {
 	for port, password := range config.PortPassword {
 		go run(port, password)
 		if udp {
-			go runUDP(port, password)
+			go runUDP(config, port, password)
 		}
 	}
 

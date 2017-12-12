@@ -24,7 +24,7 @@ type LogFields map[string]interface{}
 
 func New() (*LogType) {
 	logger := logrus.New()
-	logger.Out = os.Stdout
+	//logger.Out = os.Stdout
 	logger.Formatter = &TextFormatter{}
 	logger.SetLevel(debug_level)
 
@@ -35,6 +35,10 @@ func New() (*LogType) {
 }
 
 var Logger = New()
+
+func (this *LogType) SetOutput(output *os.File) {
+	this.logger.Out = output
+}
 
 func (this *LogType) Fields(fields LogFields) (*LogType) {
 	for index, item := range fields {

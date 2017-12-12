@@ -64,7 +64,7 @@ func timedCopy(dst net.PacketConn, target net.Addr, src net.PacketConn, timeout 
 	buf := make([]byte, udpBufSize)
 
 	for {
-		//src.SetReadDeadline(time.Now().Add(timeout))
+		src.SetReadDeadline(time.Now().Add(timeout))
 		n, raddr, err := src.ReadFrom(buf)
 		if err != nil {
 			Logger.Fields(LogFields{
