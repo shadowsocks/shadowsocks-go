@@ -355,14 +355,14 @@ func enoughOptions(config *ss.Config) bool {
 func main() {
 	log.SetOutput(os.Stdout)
 
-	var configFile, cmdServer, cmdLocal string
+	var configFile, cmdServer string
 	var cmdConfig ss.Config
 	var printVer bool
 
 	flag.BoolVar(&printVer, "version", false, "print version")
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
 	flag.StringVar(&cmdServer, "s", "", "server address")
-	flag.StringVar(&cmdLocal, "b", "", "local address, listen only to this address if specified")
+	flag.StringVar(&cmdConfig.LocalAddress, "b", "", "local address, listen only to this address if specified")
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
 	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
@@ -425,6 +425,5 @@ func main() {
 	}
 
 	parseServerConfig(config)
-
-	run(cmdLocal + ":" + strconv.Itoa(config.LocalPort))
+	run(config.LocalAddress + ":" + strconv.Itoa(config.LocalPort))
 }
