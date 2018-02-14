@@ -39,6 +39,7 @@ const (
 )
 
 var debug ss.DebugLog
+var sanitizeIps bool
 var udp bool
 var managerAddr string
 
@@ -111,6 +112,14 @@ const logCntDelta = 100
 var connCnt int
 var nextLogConnCnt int = logCntDelta
 
+func sanitizeAddr(addr net.Addr) string {
+  if sanitizeIps {
+    return "x.x.x.x:zzzz"
+  } else {
+    return addr.String()
+  }
+}
+
 func handleConnection(conn *ss.Conn, auth bool, port string) {
 	var host string
 
@@ -126,12 +135,12 @@ func handleConnection(conn *ss.Conn, auth bool, port string) {
 	// function arguments are always evaluated, so surround debug statement
 	// with if statement
 	if debug {
-		debug.Printf("new client %s->%s\n", conn.RemoteAddr().String(), conn.LocalAddr())
+		debug.Printf("new client %s->%s\n", sanitizeAddr(conn.RemoteAddr()), conn.LocalAddr())
 	}
 	closed := false
 	defer func() {
 		if debug {
-			debug.Printf("closed pipe %s<->%s\n", conn.RemoteAddr(), host)
+			debug.Printf("closed pipe %s<->%s\n", sanitizeAddr(conn.RemoteAddr()), host)
 		}
 		connCnt--
 		if !closed {
@@ -141,7 +150,7 @@ func handleConnection(conn *ss.Conn, auth bool, port string) {
 
 	host, ota, err := getRequest(conn, auth)
 	if err != nil {
-		log.Println("error getting request", conn.RemoteAddr(), conn.LocalAddr(), err)
+		log.Println("error getting request", sanitizeAddr(conn.RemoteAddr()), conn.LocalAddr(), err)
 		closed = true
 		return
 	}
@@ -169,7 +178,7 @@ func handleConnection(conn *ss.Conn, auth bool, port string) {
 		}
 	}()
 	if debug {
-		debug.Printf("piping %s<->%s ota=%v connOta=%v", conn.RemoteAddr(), host, ota, conn.IsOta())
+		debug.Printf("piping %s<->%s ota=%v connOta=%v", sanitizeAddr(conn.RemoteAddr()), host, ota, conn.IsOta())
 	}
 	if ota {
 		go func() {
@@ -453,6 +462,7 @@ func main() {
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
+	flag.BoolVar((*bool)(&sanitizeIps), "noip-log", false, "suppress client ip addresses in all output")
 	flag.BoolVar(&udp, "u", false, "UDP Relay")
 	flag.StringVar(&managerAddr, "manager-address", "", "shadowsocks manager listening address")
 	flag.Parse()
