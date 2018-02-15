@@ -95,6 +95,10 @@ func TestRC4MD5(t *testing.T) {
 	testBlockCipher(t, "rc4-md5")
 }
 
+func TestRC4MD56(t *testing.T) {
+	testBlockCipher(t, "rc4-md5-6")
+}
+
 func TestChaCha20(t *testing.T) {
 	testBlockCipher(t, "chacha20")
 }
@@ -164,6 +168,10 @@ func BenchmarkRC4MD5Init(b *testing.B) {
 	benchmarkCipherInit(b, "rc4-md5")
 }
 
+func BenchmarkRC4MD56Init(b *testing.B) {
+	benchmarkCipherInit(b, "rc4-md5-5")
+}
+
 func BenchmarkChaCha20Init(b *testing.B) {
 	benchmarkCipherInit(b, "chacha20")
 }
@@ -230,6 +238,10 @@ func BenchmarkDESEncrypt(b *testing.B) {
 
 func BenchmarkRC4MD5Encrypt(b *testing.B) {
 	benchmarkCipherEncrypt(b, "rc4-md5")
+}
+
+func BenchmarkRC4MD56Encrypt(b *testing.B) {
+	benchmarkCipherEncrypt(b, "rc4-md5-6")
 }
 
 func BenchmarkChacha20Encrypt(b *testing.B) {
@@ -303,6 +315,10 @@ func BenchmarkDESDecrypt(b *testing.B) {
 
 func BenchmarkRC4MD5Decrypt(b *testing.B) {
 	benchmarkCipherDecrypt(b, "rc4-md5")
+}
+
+func BenchmarkRC4MD56Decrypt(b *testing.B) {
+	benchmarkCipherDecrypt(b, "rc4-md5-6")
 }
 
 func BenchmarkChaCha20Decrypt(b *testing.B) {
