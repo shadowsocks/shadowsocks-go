@@ -585,12 +585,7 @@ func handleRemovePort(payload []byte) []byte {
 }
 
 func handlePing() []byte {
-	stats := passwdManager.getFlowStats()
-	var buf bytes.Buffer
-	buf.WriteString("stat: ")
-	ret, _ := json.Marshal(stats)
-	buf.Write(ret)
-	return buf.Bytes()
+	return []byte("pong")
 }
 
 func parsePortNum(in interface{}) string {
