@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	ss "github.com/shadowsocks/go-shadowsocks2/core"
+	ss "github.com/qunxyz/shadowsocks-go/shadowsocks"
 )
 
 var config struct {
@@ -28,8 +28,6 @@ var config struct {
 	// nsec   int
 }
 
-var debug ss.DebugLog
-
 func doOneRequest(client *http.Client, uri string, buf []byte) (err error) {
 	resp, err := client.Get(uri)
 	if err != nil {
@@ -38,9 +36,7 @@ func doOneRequest(client *http.Client, uri string, buf []byte) (err error) {
 	}
 	for err == nil {
 		_, err = resp.Body.Read(buf)
-		if debug {
-			debug.Println(string(buf))
-		}
+		ss.Logger.Println(string(buf))
 	}
 	if err != io.EOF {
 		fmt.Printf("Read %s response error: %v\n", uri, err)
@@ -50,7 +46,7 @@ func doOneRequest(client *http.Client, uri string, buf []byte) (err error) {
 	return
 }
 
-func get(connid int, uri, serverAddr string, rawAddr []byte, cipher *ss.Cipher, done chan []time.Duration) {
+func get(connid int, uri, serverAddr string, rawAddr []byte, cipher ss.Cipher, done chan []time.Duration) {
 	reqDone := 0
 	reqTime := make([]time.Duration, config.nreq)
 	defer func() {
@@ -58,7 +54,7 @@ func get(connid int, uri, serverAddr string, rawAddr []byte, cipher *ss.Cipher, 
 	}()
 	tr := &http.Transport{
 		Dial: func(_, _ string) (net.Conn, error) {
-			return ss.DialWithRawAddr(rawAddr, serverAddr, cipher.Copy())
+			return ss.DialWithRawAddr(rawAddr, serverAddr, cipher)
 		},
 	}
 
@@ -86,7 +82,7 @@ func main() {
 	flag.IntVar(&config.nconn, "nc", 1, "number of connection to server")
 	flag.IntVar(&config.nreq, "nr", 1, "number of request for each connection")
 	// flag.IntVar(&config.nsec, "ns", 0, "run how many seconds for each connection")
-	flag.BoolVar((*bool)(&debug), "d", false, "print http response body for debugging")
+	flag.BoolVar((*bool)(&ss.DebugLog), "debug", false, "print http response body for debugging")
 
 	flag.Parse()
 
