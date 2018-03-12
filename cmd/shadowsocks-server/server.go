@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
@@ -172,13 +173,13 @@ func handleConnection(conn *ss.Conn, auth bool, port string) {
 	}
 	if ota {
 		go func() {
-			ss.PipeThenCloseOta(conn, remote, func(flow int){
+			ss.PipeThenCloseOta(conn, remote, func(flow int) {
 				passwdManager.addFlow(port, flow)
 			})
 		}()
 	} else {
 		go func() {
-			ss.PipeThenClose(conn, remote, func(flow int){
+			ss.PipeThenClose(conn, remote, func(flow int) {
 				passwdManager.addFlow(port, flow)
 			})
 		}()
@@ -186,7 +187,7 @@ func handleConnection(conn *ss.Conn, auth bool, port string) {
 	ss.PipeThenClose(remote, conn, func(flow int) {
 		passwdManager.addFlow(port, flow)
 	})
-	
+
 	closed = true
 	return
 }
@@ -520,6 +521,30 @@ func main() {
 }
 
 func managerDaemon(conn *net.UDPConn) {
+	// add a report address set for ping response
+	// according to https://github.com/shadowsocks/shadowsocks/wiki/Manage-Multiple-Users#example-code
+	ctx := make(chan bool, 1)
+	defer close(ctx)
+	reportconnSet := make(map[string]*net.UDPAddr, 1024)
+	go func() {
+		timer := time.Tick(10 * time.Second)
+		for {
+			<-timer
+			switch {
+			case <-ctx:
+				return
+			default:
+				for _, addr := range reportconnSet {
+					res := reportStat()
+					if len(res) == 0 {
+						continue
+					}
+					conn.WriteToUDP(res, addr)
+				}
+			}
+		}
+	}()
+
 	for {
 		data := make([]byte, 300)
 		_, remote, err := conn.ReadFromUDP(data)
@@ -535,7 +560,11 @@ func managerDaemon(conn *net.UDPConn) {
 		case strings.HasPrefix(command, "remove:"):
 			res = handleRemovePort(bytes.Trim(data[7:], "\x00\r\n "))
 		case strings.HasPrefix(command, "ping"):
-			res = handlePing()
+			conn.WriteToUDP(handlePing(), remote)
+			reportconnSet[remote.String()] = remote // append the host into the report list
+		case strings.HasPrefix(command, "ping-stop"): // add the stop ping command
+			conn.WriteToUDP(handlePing(), remote)
+			delete(reportconnSet, remote.String())
 		}
 		if len(res) == 0 {
 			continue
@@ -586,6 +615,17 @@ func handleRemovePort(payload []byte) []byte {
 
 func handlePing() []byte {
 	return []byte("pong")
+}
+
+// reportStat get the stat:flowStat and return avery 10 sec as for the protocol
+// https://github.com/shadowsocks/shadowsocks/wiki/Manage-Multiple-Users
+func reportStat() []byte {
+	stats := passwdManager.getFlowStats()
+	var buf bytes.Buffer
+	buf.WriteString("stat: ")
+	ret, _ := json.Marshal(stats)
+	buf.Write(ret)
+	return buf.Bytes()
 }
 
 func parsePortNum(in interface{}) string {
