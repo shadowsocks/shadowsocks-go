@@ -282,6 +282,58 @@ func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) 
 	return nil, err
 }
 
+func getDstRedir(originAddr net.Addr) (rawaddr []byte, addr string, err error) {
+	addr = originAddr.String()
+	tcpaddr := originAddr.(*net.TCPAddr)
+
+	rawaddr = []byte{}
+
+	// ipv6
+	ip := tcpaddr.IP.To16()
+	addrtype := 4
+
+	if ip == nil {
+		// ipv4
+		ip = tcpaddr.IP.To4()
+		addrtype = 1
+	}
+
+	// addr type, 1 byte
+	rawaddr = append(rawaddr, byte(addrtype))
+
+	// ip, 4 or 16 bytes
+	rawaddr = append(rawaddr, []byte(ip)...)
+
+	port := make([]byte, 2)
+	binary.BigEndian.PutUint16(port, uint16(tcpaddr.Port))
+
+	// port, 2 bytes
+	rawaddr = append(rawaddr, port...)
+	return
+}
+
+func getDstSock5(conn net.Conn) (rawaddr []byte, addr string, err error) {
+	if err = handShake(conn); err != nil {
+		log.Println("socks handshake:", err)
+		return
+	}
+
+	rawaddr, addr, err = getRequest(conn)
+	if err != nil {
+		log.Println("error getting request:", err)
+		return
+	}
+	// Sending connection established message immediately to client.
+	// This some round trip time for creating socks connection with the client.
+	// But if connection failed, the client will get connection reset error.
+	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
+	if err != nil {
+		debug.Println("send connection confirmation:", err)
+		return
+	}
+	return
+}
+
 func handleConnection(conn net.Conn) {
 	if debug {
 		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
@@ -293,22 +345,30 @@ func handleConnection(conn net.Conn) {
 		}
 	}()
 
-	var err error = nil
-	if err = handShake(conn); err != nil {
-		log.Println("socks handshake:", err)
-		return
-	}
-	rawaddr, addr, err := getRequest(conn)
+	var err error
+	var rawaddr []byte
+	var addr string
+
+	originAddr, err := getOriginDst(conn)
 	if err != nil {
-		log.Println("error getting request:", err)
-		return
+		// sysctl SO_ORIGNAL_DST failed
+		// just ignore it
+		log.Printf("get original destination on %s failed: %s, ignore", conn.LocalAddr(), err)
+		originAddr = conn.LocalAddr()
 	}
-	// Sending connection established message immediately to client.
-	// This some round trip time for creating socks connection with the client.
-	// But if connection failed, the client will get connection reset error.
-	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
+
+	if originAddr.String() != conn.LocalAddr().String() {
+		// transparent proxy
+		// iptables redirect the packet to this port
+		if debug {
+			debug.Printf("transparent %s -> %s", conn.RemoteAddr(), originAddr)
+		}
+		rawaddr, addr, err = getDstRedir(originAddr)
+	} else {
+		rawaddr, addr, err = getDstSock5(conn)
+	}
+
 	if err != nil {
-		debug.Println("send connection confirmation:", err)
 		return
 	}
 
