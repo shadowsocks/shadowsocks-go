@@ -80,7 +80,7 @@ func getRequest(conn net.Conn) (rawaddr []byte, host string, err error) {
 		idVer   = 0
 		idCmd   = 1
 		idType  = 3 // address type index
-		idIP0   = 4 // ip addres start index
+		idIP0   = 4 // ip address start index
 		idDmLen = 4 // domain address length index
 		idDm0   = 5 // domain address start index
 
@@ -315,7 +315,7 @@ func handleConnection(conn net.Conn) {
 	remote, err := createServerConn(rawaddr, addr)
 	if err != nil {
 		if len(servers.srvCipher) > 1 {
-			log.Println("Failed connect to all avaiable shadowsocks server")
+			log.Println("Failed connect to all available shadowsocks server")
 		}
 		return
 	}
