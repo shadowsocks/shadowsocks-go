@@ -94,7 +94,7 @@ func PipeThenCloseOta(src *Conn, dst net.Conn, addFlow func(int)) {
 		binary.BigEndian.PutUint32(chunkIdBytes, chunkId)
 		actualHmacSha1 := HmacSha1(append(src.GetIv(), chunkIdBytes...), dataBuf)
 		if !bytes.Equal(expectedHmacSha1, actualHmacSha1) {
-			Debug.Printf("conn=%p #%v read data hmac-sha1 mismatch, iv=%v chunkId=%v src=%v dst=%v len=%v expeced=%v actual=%v", src, i, src.GetIv(), chunkId, src.RemoteAddr(), dst.RemoteAddr(), dataLen, expectedHmacSha1, actualHmacSha1)
+			Debug.Printf("conn=%p #%v read data hmac-sha1 mismatch, iv=%v chunkId=%v src=%v dst=%v len=%v expected=%v actual=%v", src, i, src.GetIv(), chunkId, src.RemoteAddr(), dst.RemoteAddr(), dataLen, expectedHmacSha1, actualHmacSha1)
 			break
 		}
 		if n, err := dst.Write(dataBuf); err != nil {

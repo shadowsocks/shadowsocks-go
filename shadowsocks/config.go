@@ -42,7 +42,7 @@ var readTimeout time.Duration
 
 func (config *Config) GetServerArray() []string {
 	// Specifying multiple servers in the "server" options is deprecated.
-	// But for backward compatiblity, keep this.
+	// But for backward compatibility, keep this.
 	if config.Server == nil {
 		return nil
 	}
