@@ -4,6 +4,6 @@
     "local_port":1080,
     "local_address":"127.0.0.1",
     "password":"barfoo!",
-    "method": "aes-128-cfb-auth",
+    "method": "aes-128-cfb",
     "timeout":600
 }

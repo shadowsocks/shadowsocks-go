@@ -1,3 +1,4 @@
 *.deb
 script/http
 bin
+.idea

@@ -74,7 +74,7 @@ test_shadowsocks() {
     server_pid=$!
     wait_server $SERVER_PORT
 
-    $LOCAL $OPTION -s 127.0.0.1 -l $LOCAL_PORT -m "$method" -A &
+    $LOCAL $OPTION -s 127.0.0.1 -l $LOCAL_PORT -m "$method" &
     local_pid=$!
     wait_server $LOCAL_PORT
 

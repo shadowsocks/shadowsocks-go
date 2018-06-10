@@ -56,6 +56,6 @@ build windows amd64 win64 server
 build windows 386 win32 server
 
 #script/createdeb.sh amd64
-#script/createdeb.sh 386
+#script/createdeb.sh i386
 #mv shadowsocks-go_$version-1-*.deb bin/
 #rm -rf shadowsocks-go_$version-1*

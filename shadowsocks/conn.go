@@ -9,7 +9,6 @@ import (
 )
 
 const (
-	OneTimeAuthMask byte = 0x10
 	AddrMask        byte = 0xf
 )
 
@@ -18,7 +17,6 @@ type Conn struct {
 	*Cipher
 	readBuf  []byte
 	writeBuf []byte
-	chunkId  uint32
 }
 
 func NewConn(c net.Conn, cipher *Cipher) *Conn {
@@ -64,18 +62,7 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, er
 		return
 	}
 	c = NewConn(conn, cipher)
-	if cipher.ota {
-		if c.enc == nil {
-			if _, err = c.initEncrypt(); err != nil {
-				return
-			}
-		}
-		// since we have initEncrypt, we must send iv manually
-		conn.Write(cipher.iv)
-		rawaddr[0] |= OneTimeAuthMask
-		rawaddr = otaConnectAuth(cipher.iv, cipher.key, rawaddr)
-	}
-	if _, err = c.write(rawaddr); err != nil {
+	if _, err = c.Write(rawaddr); err != nil {
 		c.Close()
 		return nil, err
 	}
@@ -100,16 +87,6 @@ func (c *Conn) GetIv() (iv []byte) {
 func (c *Conn) GetKey() (key []byte) {
 	key = make([]byte, len(c.key))
 	copy(key, c.key)
-	return
-}
-
-func (c *Conn) IsOta() bool {
-	return c.ota
-}
-
-func (c *Conn) GetAndIncrChunkId() (chunkId uint32) {
-	chunkId = c.chunkId
-	c.chunkId += 1
 	return
 }
 
@@ -142,22 +119,6 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 }
 
 func (c *Conn) Write(b []byte) (n int, err error) {
-	nn := len(b)
-	if c.ota {
-		chunkId := c.GetAndIncrChunkId()
-		b = otaReqChunkAuth(c.iv, chunkId, b)
-	}
-	headerLen := len(b) - nn
-
-	n, err = c.write(b)
-	// Make sure <= 0 <= len(b), where b is the slice passed in.
-	if n >= headerLen {
-		n -= headerLen
-	}
-	return
-}
-
-func (c *Conn) write(b []byte) (n int, err error) {
 	var iv []byte
 	if c.enc == nil {
 		iv, err = c.initEncrypt()
