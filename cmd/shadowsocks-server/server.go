@@ -96,7 +96,7 @@ func getRequest(conn *ss.Conn) (host string, err error) {
 const logCntDelta = 100
 
 var connCnt int
-var nextLogConnCnt int = logCntDelta
+var nextLogConnCnt = logCntDelta
 
 func sanitizeAddr(addr net.Addr) string {
   if sanitizeIps {
@@ -167,13 +167,13 @@ func handleConnection(conn *ss.Conn, port string) {
 		debug.Printf("piping %s<->%s", sanitizeAddr(conn.RemoteAddr()), host)
 	}
 	go func() {
-		ss.PipeThenClose(conn, remote, func(flow int) {
-			passwdManager.addFlow(port, flow)
+		ss.PipeThenClose(conn, remote, func(Traffic int) {
+			passwdManager.addTraffic(port, Traffic)
 		})
 	}()
 
-	ss.PipeThenClose(remote, conn, func(flow int) {
-		passwdManager.addFlow(port, flow)
+	ss.PipeThenClose(remote, conn, func(Traffic int) {
+		passwdManager.addTraffic(port, Traffic)
 	})
 
 	closed = true
@@ -194,13 +194,13 @@ type PasswdManager struct {
 	sync.Mutex
 	portListener map[string]*PortListener
 	udpListener  map[string]*UDPListener
-	flowStats    map[string]int64
+	trafficStats map[string]int64
 }
 
 func (pm *PasswdManager) add(port, password string, listener net.Listener) {
 	pm.Lock()
 	pm.portListener[port] = &PortListener{password, listener}
-	pm.flowStats[port] = 0
+	pm.trafficStats[port] = 0
 	pm.Unlock()
 }
 
@@ -239,24 +239,24 @@ func (pm *PasswdManager) del(port string) {
 	pl.listener.Close()
 	pm.Lock()
 	delete(pm.portListener, port)
-	delete(pm.flowStats, port)
+	delete(pm.trafficStats, port)
 	if udp {
 		delete(pm.udpListener, port)
 	}
 	pm.Unlock()
 }
 
-func (pm *PasswdManager) addFlow(port string, n int) {
+func (pm *PasswdManager) addTraffic(port string, n int) {
 	pm.Lock()
-	pm.flowStats[port] = pm.flowStats[port] + int64(n)
+	pm.trafficStats[port] = pm.trafficStats[port] + int64(n)
 	pm.Unlock()
 	return
 }
 
-func (pm *PasswdManager) getFlowStats() map[string]int64 {
+func (pm *PasswdManager) getTrafficStats() map[string]int64 {
 	pm.Lock()
 	copy := make(map[string]int64)
-	for k, v := range pm.flowStats {
+	for k, v := range pm.trafficStats {
 		copy[k] = v
 	}
 	pm.Unlock()
@@ -299,7 +299,7 @@ func (pm *PasswdManager) updatePortPasswd(port, password string) {
 var passwdManager = PasswdManager{
 	portListener: map[string]*PortListener{},
 	udpListener:  map[string]*UDPListener{},
-	flowStats:    map[string]int64{},
+	trafficStats: map[string]int64{},
 }
 
 func updatePasswd() {
@@ -394,8 +394,8 @@ func runUDP(port, password string) {
 	}
 	SecurePacketConn := ss.NewSecurePacketConn(conn, cipher.Copy())
 	for {
-		if err := ss.ReadAndHandleUDPReq(SecurePacketConn, func(flow int) {
-			passwdManager.addFlow(port, flow)
+		if err := ss.ReadAndHandleUDPReq(SecurePacketConn, func(traffic int) {
+			passwdManager.addTraffic(port, traffic)
 		}); err != nil {
 			debug.Printf("udp read error: %v\n", err)
 			return
@@ -601,10 +601,10 @@ func handlePing() []byte {
 	return []byte("pong")
 }
 
-// reportStat get the stat:flowStat and return avery 10 sec as for the protocol
+// reportStat get the stat:trafficStat and return avery 10 sec as for the protocol
 // https://github.com/shadowsocks/shadowsocks/wiki/Manage-Multiple-Users
 func reportStat() []byte {
-	stats := passwdManager.getFlowStats()
+	stats := passwdManager.getTrafficStats()
 	var buf bytes.Buffer
 	buf.WriteString("stat: ")
 	ret, _ := json.Marshal(stats)

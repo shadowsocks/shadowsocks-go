@@ -12,11 +12,11 @@ func merge(left, right []uint64, comparison func (uint64, uint64) int64) []uint6
 			r++
 		}
 	}
-	for (l < len(left)) {
+	for l < len(left) {
 		result[l + r] = left[l]
 		l++
 	}
-	for (r < len(right)) {
+	for r < len(right) {
 		result[l + r] = right[r]
 		r++
 	}
@@ -27,6 +27,6 @@ func Sort(arr []uint64, comparison func (uint64, uint64) int64) []uint64 {
 	if len(arr) < 2 {
 		return arr
 	}
-	var middle uint64 = uint64(len(arr)/2)
+	var middle = uint64(len(arr)/2)
 	return merge(Sort(arr[0:middle], comparison), Sort(arr[middle:], comparison), comparison)
 }
