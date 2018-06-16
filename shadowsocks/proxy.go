@@ -2,15 +2,15 @@ package shadowsocks
 
 import (
 	"errors"
-	"strings"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 )
 
 type Dialer struct {
-	cipher *Cipher
-	server string
+	cipher      *Cipher
+	server      string
 	support_udp bool
 }
 
@@ -31,9 +31,9 @@ func NewDialer(server string, cipher *Cipher) (dialer *Dialer, err error) {
 	if cipher == nil {
 		return nil, ErrNilCipher
 	}
-	return &Dialer {
-		cipher: cipher,
-		server: server,
+	return &Dialer{
+		cipher:      cipher,
+		server:      server,
 		support_udp: false,
 	}, nil
 }
@@ -44,9 +44,9 @@ func (d *Dialer) Dial(network, addr string) (c net.Conn, err error) {
 		if err != nil {
 			return nil, err
 		}
-		return &ProxyConn {
+		return &ProxyConn{
 			Conn: conn,
-			raddr: &ProxyAddr {
+			raddr: &ProxyAddr{
 				network: network,
 				address: addr,
 			},
