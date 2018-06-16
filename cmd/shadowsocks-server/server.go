@@ -113,11 +113,11 @@ var connCnt int
 var nextLogConnCnt int = logCntDelta
 
 func sanitizeAddr(addr net.Addr) string {
-  if sanitizeIps {
-    return "x.x.x.x:zzzz"
-  } else {
-    return addr.String()
-  }
+	if sanitizeIps {
+		return "x.x.x.x:zzzz"
+	} else {
+		return addr.String()
+	}
 }
 
 func handleConnection(conn *ss.Conn, auth bool, port string) {
