@@ -36,6 +36,10 @@ const (
 	lenIPv6     = net.IPv6len + 2 // ipv6 + 2port
 	lenDmBase   = 2               // 1addrLen + 2port, plus addrLen
 	lenHmacSha1 = 10
+
+	envServerPort = "SSR_SERVER_PORT"
+	envPassword = "SSR_PASSWORD"
+	envMethod = "SSR_METHOD"
 )
 
 var debug ss.DebugLog
@@ -447,6 +451,7 @@ func unifyPortPassword(config *ss.Config) (err error) {
 var configFile string
 var config *ss.Config
 
+
 func main() {
 	log.SetOutput(os.Stdout)
 
@@ -454,12 +459,13 @@ func main() {
 	var printVer bool
 	var core int
 
+	envServerPort, _ := strconv.Atoi(os.Getenv(envServerPort))
 	flag.BoolVar(&printVer, "version", false, "print version")
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
-	flag.StringVar(&cmdConfig.Password, "k", "", "password")
-	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
+	flag.StringVar(&cmdConfig.Password, "k", os.Getenv(envPassword), "password")
+	flag.IntVar(&cmdConfig.ServerPort, "p", envServerPort, "server port")
 	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
-	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
+	flag.StringVar(&cmdConfig.Method, "m", os.Getenv(envMethod), "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
 	flag.BoolVar((*bool)(&sanitizeIps), "A", false, "anonymize client ip addresses in all output")
