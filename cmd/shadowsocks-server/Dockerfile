@@ -7,4 +7,4 @@ ENV SSR_SERVER_PORT 80
 ENV SSR_PASSWORD password
 ENV SSR_METHOD aes-256-cfb
 EXPOSE $SSR_SERVER_PORT
-CMD ["/shadowsocks-server"]
+CMD ["/shadowsocks-server", "-u", "true"]
