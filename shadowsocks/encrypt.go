@@ -10,8 +10,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"strings"
-
 	"github.com/Yawning/chacha20"
 	"golang.org/x/crypto/blowfish"
 	"golang.org/x/crypto/cast5"
@@ -189,7 +187,6 @@ type Cipher struct {
 	dec  cipher.Stream
 	key  []byte
 	info *cipherInfo
-	ota  bool // one-time auth
 	iv   []byte
 }
 
@@ -199,13 +196,6 @@ type Cipher struct {
 func NewCipher(method, password string) (c *Cipher, err error) {
 	if password == "" {
 		return nil, errEmptyPassword
-	}
-	var ota bool
-	if strings.HasSuffix(strings.ToLower(method), "-auth") {
-		method = method[:len(method)-5] // len("-auth") = 5
-		ota = true
-	} else {
-		ota = false
 	}
 	mi, ok := cipherMethod[method]
 	if !ok {
@@ -219,7 +209,6 @@ func NewCipher(method, password string) (c *Cipher, err error) {
 	if err != nil {
 		return nil, err
 	}
-	c.ota = ota
 	return c, nil
 }
 
@@ -269,6 +258,5 @@ func (c *Cipher) Copy() *Cipher {
 	nc := *c
 	nc.enc = nil
 	nc.dec = nil
-	nc.ota = c.ota
 	return &nc
 }

@@ -9,7 +9,7 @@ import (
 
 const text = "Don't tell me the moon is shining; show me the glint of light on broken glass."
 
-func testCiphter(t *testing.T, c *Cipher, msg string) {
+func testCipher(t *testing.T, c *Cipher, msg string) {
 	n := len(text)
 	cipherBuf := make([]byte, n)
 	originTxt := make([]byte, n)
@@ -51,7 +51,7 @@ func testBlockCipher(t *testing.T, method string) {
 	if err = cipher.initDecrypt(iv); err != nil {
 		t.Error(method, "initDecrypt:", err)
 	}
-	testCiphter(t, cipher, method)
+	testCipher(t, cipher, method)
 
 	iv, err = cipherCopy.initEncrypt()
 	if err != nil {
@@ -60,7 +60,7 @@ func testBlockCipher(t *testing.T, method string) {
 	if err = cipherCopy.initDecrypt(iv); err != nil {
 		t.Error(method, "copy initDecrypt:", err)
 	}
-	testCiphter(t, cipherCopy, method+" copy")
+	testCipher(t, cipherCopy, method+" copy")
 }
 
 func TestAES128CFB(t *testing.T) {
