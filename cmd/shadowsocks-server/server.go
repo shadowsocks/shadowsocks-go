@@ -32,9 +32,9 @@ const (
 	typeDm   = 3 // type is domain address
 	typeIPv6 = 4 // type is ipv6 address
 
-	lenIPv4     = net.IPv4len + 2 // ipv4 + 2port
-	lenIPv6     = net.IPv6len + 2 // ipv6 + 2port
-	lenDmBase   = 2               // 1addrLen + 2port, plus addrLen
+	lenIPv4   = net.IPv4len + 2 // ipv4 + 2port
+	lenIPv6   = net.IPv6len + 2 // ipv6 + 2port
+	lenDmBase = 2               // 1addrLen + 2port, plus addrLen
 	// lenHmacSha1 = 10
 )
 
@@ -99,11 +99,11 @@ var connCnt int
 var nextLogConnCnt = logCntDelta
 
 func sanitizeAddr(addr net.Addr) string {
-  if sanitizeIps {
-    return "x.x.x.x:zzzz"
-  } else {
-    return addr.String()
-  }
+	if sanitizeIps {
+		return "x.x.x.x:zzzz"
+	} else {
+		return addr.String()
+	}
 }
 
 func handleConnection(conn *ss.Conn, port string) {
@@ -513,11 +513,10 @@ func managerDaemon(conn *net.UDPConn) {
 	go func() {
 		timer := time.Tick(10 * time.Second)
 		for {
-			<-timer
-			switch {
+			select {
 			case <-ctx:
 				return
-			default:
+			case <-timer:
 				for _, addr := range reportconnSet {
 					res := reportStat()
 					if len(res) == 0 {
