@@ -1,6 +1,7 @@
 language: go
 go:
-  - 1.7.4
+  - 1.8
+  - 1.9
 install:
   - go get golang.org/x/crypto/blowfish
   - go get golang.org/x/crypto/cast5
