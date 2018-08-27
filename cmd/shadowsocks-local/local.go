@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"flag"
@@ -12,6 +14,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
@@ -347,10 +350,61 @@ func enoughOptions(config *ss.Config) bool {
 		config.LocalPort != 0 && config.Password != ""
 }
 
+func parseURI(u string, cfg *ss.Config) (string, error) {
+	if u == "" {
+		return "", nil
+	}
+	invalidURI := errors.New("invalid URI")
+	// ss://base64(method:password)@host:port
+	// ss://base64(method:password@host:port)
+	u = strings.TrimLeft(u, "ss://")
+	i := strings.IndexRune(u, '@')
+	var headParts, tailParts [][]byte
+	if i == -1 {
+		dat, err := base64.StdEncoding.DecodeString(u)
+		if err != nil {
+			return "", err
+		}
+		parts := bytes.Split(dat, []byte("@"))
+		if len(parts) != 2 {
+			return "", invalidURI
+		}
+		headParts = bytes.SplitN(parts[0], []byte(":"), 2)
+		tailParts = bytes.SplitN(parts[1], []byte(":"), 2)
+
+	} else {
+		if i+1 >= len(u) {
+			return "", invalidURI
+		}
+		tailParts = bytes.SplitN([]byte(u[i+1:]), []byte(":"), 2)
+		dat, err := base64.StdEncoding.DecodeString(u[:i])
+		if err != nil {
+			return "", err
+		}
+		headParts = bytes.SplitN(dat, []byte(":"), 2)
+	}
+	if len(headParts) != 2 {
+		return "", invalidURI
+	}
+
+	if len(tailParts) != 2 {
+		return "", invalidURI
+	}
+	cfg.Method = string(headParts[0])
+	cfg.Password = string(headParts[1])
+	p, e := strconv.Atoi(string(tailParts[1]))
+	if e != nil {
+		return "", e
+	}
+	cfg.ServerPort = p
+	return string(tailParts[0]), nil
+
+}
+
 func main() {
 	log.SetOutput(os.Stdout)
 
-	var configFile, cmdServer string
+	var configFile, cmdServer, cmdURI string
 	var cmdConfig ss.Config
 	var printVer bool
 
@@ -364,8 +418,17 @@ func main() {
 	flag.IntVar(&cmdConfig.LocalPort, "l", 0, "local socks5 proxy port")
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
+	flag.StringVar(&cmdURI, "u", "", "shadowsocks URI")
 
 	flag.Parse()
+
+	if s, e := parseURI(cmdURI, &cmdConfig); e != nil {
+		log.Printf("invalid URI: %s\n", e.Error())
+		flag.Usage()
+		os.Exit(1)
+	} else if s != "" {
+		cmdServer = s
+	}
 
 	if printVer {
 		ss.PrintVersion()
