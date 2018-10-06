@@ -413,7 +413,7 @@ func parseURI(u string, cfg *ss.Config) (string, error) {
 
 }
 
-func logCount() {
+func logoForWindows() {
 	var count uint64 = 0
 	cur := 0
 	for {
@@ -431,7 +431,7 @@ func main() {
 	log.SetOutput(os.Stdout)
 	//for windows view
 	if os.DevNull == "NUL" {
-		go logCount()
+		go logoForWindows()
 	}
 	var configFile, cmdServer, cmdURI string
 	var cmdConfig ss.Config
