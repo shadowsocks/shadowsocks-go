@@ -320,7 +320,6 @@ func handleConnection(conn net.Conn) {
 	remote, err := createServerConn(rawaddr, addr)
 	buf = nil
 	rawaddr = nil
-	addr = ""
 	
 	if err != nil {
 		if len(servers.srvCipher) > 1 {
