@@ -17,6 +17,7 @@ type Conn struct {
 	*Cipher
 	readBuf  []byte
 	writeBuf []byte
+	Flags    int
 }
 
 func NewConn(c net.Conn, cipher *Cipher) *Conn {
@@ -114,6 +115,9 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 	n, err = c.Conn.Read(cipherData)
 	if n > 0 {
 		c.decrypt(b[0:n], cipherData[0:n])
+		if (c.Flags & 1) != 0 {
+			RecvCount += n
+		}
 	}
 	return
 }
