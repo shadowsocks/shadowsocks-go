@@ -309,8 +309,9 @@ func handleConnection(conn net.Conn) {
 		debug.Println("send connection confirmation:", err)
 		return
 	}
-
-	buf := make([]byte, 4096)
+	
+	//need some data for wirte
+	buf := make([]byte, 4096) 
 	copy(buf, rawaddr)
 	ss.SetReadTimeout(conn)
 	if n, err = conn.Read(buf[len(rawaddr):cap(buf)]); err != nil {
@@ -428,6 +429,7 @@ func logCount() {
 
 func main() {
 	log.SetOutput(os.Stdout)
+	//for windows view
 	if os.DevNull == "NUL" {
 		go logCount()
 	}
