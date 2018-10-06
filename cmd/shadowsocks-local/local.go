@@ -332,11 +332,12 @@ func handleConnection(conn net.Conn) {
 			remote.Close()
 		}
 	}()
-
+	
+	remote.Flags = 1
 	go ss.PipeThenClose(conn, remote, nil)
 	ss.PipeThenClose(remote, conn, nil)
 	closed = true
-	debug.Println("closed connection to", addr)
+	//debug.Println("closed connection to", addr)
 }
 
 func run(listenAddr string) {
