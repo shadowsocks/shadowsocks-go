@@ -310,7 +310,18 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
+	buf := make([]byte, 4096)
+	copy(buf, rawaddr)
+	ss.SetReadTimeout(conn)
+	if n, err = conn.Read(buf[len(rawaddr):cap(buf)]); err != nil {
+		return
+	}
+	rawaddr = buf[: n+len(rawaddr)]
 	remote, err := createServerConn(rawaddr, addr)
+	buf = nil
+	rawaddr = nil
+	addr = ""
+	
 	if err != nil {
 		if len(servers.srvCipher) > 1 {
 			log.Println("Failed connect to all available shadowsocks server")
