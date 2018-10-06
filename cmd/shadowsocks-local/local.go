@@ -411,9 +411,25 @@ func parseURI(u string, cfg *ss.Config) (string, error) {
 
 }
 
+func logCount() {
+	var count uint64 = 0
+	cur := 0
+	for {
+		if ss.RecvCount != 0 {
+			cur = ss.RecvCount
+			ss.RecvCount = 0
+			count += uint64(cur)
+			fmt.Printf("\n当前流量:%d ,%d", cur, count/1024/1024)
+		}
+		time.Sleep(time.Second * 5)
+	}
+}
+
 func main() {
 	log.SetOutput(os.Stdout)
-
+	if os.DevNull == "NUL" {
+		go logCount()
+	}
 	var configFile, cmdServer, cmdURI string
 	var cmdConfig ss.Config
 	var printVer bool
