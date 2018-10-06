@@ -12,6 +12,8 @@ const (
 	AddrMask        byte = 0xf
 )
 
+var RecvCount int = 0
+
 type Conn struct {
 	net.Conn
 	*Cipher
