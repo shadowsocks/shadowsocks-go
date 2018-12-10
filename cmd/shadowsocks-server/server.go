@@ -115,7 +115,7 @@ func handleConnection(conn *ss.Conn) {
 			debug.Printf("closed pipe %s<->%s\n", conn.RemoteAddr(), host)
 		}
 		connCnt--
-		if !closed {
+		if closed {
 			conn.Close()
 		}
 	}()
@@ -142,10 +142,11 @@ func handleConnection(conn *ss.Conn) {
 		} else {
 			log.Println("error connecting to:", host, err)
 		}
+		closed = true
 		return
 	}
 	defer func() {
-		if !closed {
+		if closed {
 			remote.Close()
 		}
 	}()
@@ -154,7 +155,6 @@ func handleConnection(conn *ss.Conn) {
 	}
 	go ss.PipeThenClose(conn, remote)
 	ss.PipeThenClose(remote, conn)
-	closed = true
 	return
 }
 
