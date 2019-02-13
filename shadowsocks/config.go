@@ -93,7 +93,7 @@ func SetDebug(d DebugLog) {
 	Debug = d
 }
 
-// Useful for command line to override options specified in config file
+// UpdateConfig: Useful for command line to override options specified in config file
 // Debug is not updated.
 func UpdateConfig(old, new *Config) {
 	// Using reflection here is not necessary, but it's a good exercise.
