@@ -2,3 +2,4 @@
 script/http
 bin
 .idea
+.vscode/
