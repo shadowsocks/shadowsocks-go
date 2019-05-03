@@ -542,12 +542,12 @@ func managerDaemon(conn *net.UDPConn) {
 			res = handleAddPort(bytes.Trim(data[4:], "\x00\r\n "))
 		case strings.HasPrefix(command, "remove:"):
 			res = handleRemovePort(bytes.Trim(data[7:], "\x00\r\n "))
-		case strings.HasPrefix(command, "ping"):
-			conn.WriteToUDP(handlePing(), remote)
-			reportconnSet[remote.String()] = remote // append the host into the report list
 		case strings.HasPrefix(command, "ping-stop"): // add the stop ping command
 			conn.WriteToUDP(handlePing(), remote)
 			delete(reportconnSet, remote.String())
+		case strings.HasPrefix(command, "ping"):
+			conn.WriteToUDP(handlePing(), remote)
+			reportconnSet[remote.String()] = remote // append the host into the report list
 		}
 		if len(res) == 0 {
 			continue
