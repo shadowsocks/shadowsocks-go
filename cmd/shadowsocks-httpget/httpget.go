@@ -4,7 +4,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"math"
 	"net"
@@ -15,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
 var config struct {

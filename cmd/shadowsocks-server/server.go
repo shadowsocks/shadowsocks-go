@@ -169,12 +169,12 @@ func handleConnection(conn *ss.Conn, port string) {
 	go func() {
 		ss.PipeThenClose(conn, remote, func(Traffic int) {
 			passwdManager.addTraffic(port, Traffic)
-		})
+		}, nil, 0)
 	}()
 
 	ss.PipeThenClose(remote, conn, func(Traffic int) {
 		passwdManager.addTraffic(port, Traffic)
-	})
+	}, nil, 0)
 
 	closed = true
 	return
