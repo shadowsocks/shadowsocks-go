@@ -9,9 +9,9 @@ install:
   - go get golang.org/x/crypto/cast5
   - go get golang.org/x/crypto/salsa20
   - go get github.com/aead/chacha20
-  - go get github.com/bonafideyan/shadowsocks-go
-  - go install ./cmd/shadowsocks-local
-  - go install ./cmd/shadowsocks-server
+  - go get github.com/bonafideyan/shadowsocks-go/cmd/shadowsocks-local
+  - go get github.com/bonafideyan/shadowsocks-go/cmd/shadowsocks-server
+  - go get github.com/bonafideyan/shadowsocks-go/cmd/shadowsocks-httpget
 script:
   - PATH=$PATH:$HOME/gopath/bin bash -x ./script/test.sh
 sudo: false
