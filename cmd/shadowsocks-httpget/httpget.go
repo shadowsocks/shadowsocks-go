@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/bonafideyan/shadowsocks-go/shadowsocks"
 )
 
 var config struct {
@@ -63,7 +62,7 @@ func get(connid int, uri, serverAddr string, rawAddr []byte, cipher *ss.Cipher, 
 				return ss.DialWithRawAddr(rawAddr, serverAddr, cipher.Copy())
 			}
 
-			return dialSocks5(string(rawAddr), serverAddr)
+			return ss.DialAsClient(string(rawAddr), serverAddr)
 		},
 	}
 
@@ -80,90 +79,6 @@ func get(connid int, uri, serverAddr string, rawAddr []byte, cipher *ss.Cipher, 
 			fmt.Printf("conn %d finished %d get requests\n", connid, reqDone+1)
 		}
 	}
-}
-
-func dialSocks5(targetAddr, proxy string) (conn net.Conn, err error) {
-	readAll := func(conn net.Conn) (resp []byte, err error) {
-		resp = make([]byte, 1024)
-		Timeout := 5 * time.Second
-		if err := conn.SetReadDeadline(time.Now().Add(Timeout)); err != nil {
-			return nil, err
-		}
-		n, err := conn.Read(resp)
-		resp = resp[:n]
-		return
-	}
-	sendReceive := func(conn net.Conn, req []byte) (resp []byte, err error) {
-		Timeout := 5 * time.Second
-		if err := conn.SetWriteDeadline(time.Now().Add(Timeout)); err != nil {
-			return nil, err
-		}
-		_, err = conn.Write(req)
-		if err != nil {
-			return
-		}
-		resp, err = readAll(conn)
-		return
-	}
-
-	conn, err = net.Dial("tcp", proxy)
-	if err != nil {
-		return
-	}
-
-	// version identifier/method selection request
-	req := []byte{
-		5, // version number
-		1, // number of methods
-		0, // method 0: no authentication (only anonymous access supported for now)
-	}
-	resp, err := sendReceive(conn, req)
-	if err != nil {
-		return
-	} else if len(resp) != 2 {
-		err = errors.New("server does not respond properly")
-		return
-	} else if resp[0] != 5 {
-		err = errors.New("server does not support Socks 5")
-		return
-	} else if resp[1] != 0 { // no auth
-		err = errors.New("socks method negotiation failed")
-		return
-	}
-
-	// detail request
-	host, portStr, err := net.SplitHostPort(targetAddr)
-	if err != nil {
-		return nil, err
-	}
-	portInt, err := strconv.ParseUint(portStr, 10, 16)
-	if err != nil {
-		return nil, err
-	}
-	port := uint16(portInt)
-
-	req = []byte{
-		5,               // version number
-		1,               // connect command
-		0,               // reserved, must be zero
-		3,               // address type, 3 means domain name
-		byte(len(host)), // address length
-	}
-	req = append(req, []byte(host)...)
-	req = append(req, []byte{
-		byte(port >> 8), // higher byte of destination port
-		byte(port),      // lower byte of destination port (big endian)
-	}...)
-	resp, err = sendReceive(conn, req)
-	if err != nil {
-		return
-	} else if len(resp) != 10 {
-		err = errors.New("server does not respond properly")
-	} else if resp[1] != 0 {
-		err = errors.New("can't complete SOCKS5 connection")
-	}
-
-	return
 }
 
 func main() {

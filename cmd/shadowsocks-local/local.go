@@ -15,13 +15,10 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	ss "github.com/bonafideyan/shadowsocks-go/shadowsocks"
 )
-
-const SO_ORIGINAL_DST = 80
 
 var (
 	debug ss.DebugLog
@@ -325,7 +322,7 @@ func handleConnection(conn net.Conn, redir bool) {
 			println(err.Error())
 		}
 
-		rawaddr, addr = getDestAddr(&conn, string(buf[:n]))
+		rawaddr, addr = ss.GetOriginalDst(&conn, string(buf[:n]))
 	}
 
 	remote, err := createServerConn(rawaddr, addr)
@@ -345,65 +342,6 @@ func handleConnection(conn net.Conn, redir bool) {
 	ss.PipeThenClose(remote, conn, nil, nil, 0)
 	closed = true
 	debug.Println("closed connection to", addr)
-}
-
-func getDestAddr(conn *net.Conn, buf string) (rawaddr []byte, addr string) {
-	tcpConn := (*conn).(*net.TCPConn)
-	// connection => file, will make a copy
-	tcpConnFile, err := tcpConn.File()
-	if err != nil {
-		panic(err)
-	} else {
-		tcpConn.Close()
-	}
-
-	defer func() {
-		// file => connection
-		(*conn), err = net.FileConn(tcpConnFile)
-		if err != nil {
-			panic(err)
-		}
-		tcpConnFile.Close()
-	}()
-
-	fd := int(tcpConnFile.Fd())
-	req, err := syscall.GetsockoptIPv6Mreq(fd, syscall.IPPROTO_IP, SO_ORIGINAL_DST)
-	if err != nil {
-		_, err := syscall.GetsockoptIPMreq(fd, syscall.SOL_IP, SO_ORIGINAL_DST)
-		if err != nil {
-			println(err.Error())
-		}
-		// TODO(me): I don't where the port is saved.
-		return nil, ""
-	}
-
-	ip := net.IPv4(req.Multiaddr[4], req.Multiaddr[5], req.Multiaddr[6], req.Multiaddr[7])
-	port := uint16(req.Multiaddr[2])<<8 + uint16(req.Multiaddr[3])
-	dstaddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", ip.String(), port))
-	if err != nil {
-		return nil, ""
-	}
-	addr = dstaddr.String()
-	var s string
-	if dstaddr.Port == DefaultPortForHttp {
-		s = parseHttpHeader(buf)
-	} else if dstaddr.Port == DefaultPortForTls {
-		s = parseTlsHeader(buf)
-	}
-
-	if s != "" {
-		addr = s
-		rawaddr = append(rawaddr, byte(3))
-		rawaddr = append(rawaddr, byte(len(s)))
-		rawaddr = append(rawaddr, []byte(s)...)
-		rawaddr = append(rawaddr, req.Multiaddr[2:4]...)
-		return
-	}
-
-	rawaddr = append(rawaddr, byte(1))
-	rawaddr = append(rawaddr, req.Multiaddr[4:8]...)
-	rawaddr = append(rawaddr, req.Multiaddr[2:4]...)
-	return
 }
 
 func run(listenAddr string, redir bool) {

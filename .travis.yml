@@ -9,6 +9,7 @@ install:
   - go get golang.org/x/crypto/cast5
   - go get golang.org/x/crypto/salsa20
   - go get github.com/aead/chacha20
+  - go get github.com/bonafideyan/shadowsocks-go
   - go install ./cmd/shadowsocks-local
   - go install ./cmd/shadowsocks-server
 script:
