@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
@@ -57,7 +58,11 @@ func get(connid int, uri, serverAddr string, rawAddr []byte, cipher *ss.Cipher, 
 	}()
 	tr := &http.Transport{
 		Dial: func(_, _ string) (net.Conn, error) {
-			return ss.DialWithRawAddr(rawAddr, serverAddr, cipher.Copy())
+			if cipher != nil {
+				return ss.DialWithRawAddr(rawAddr, serverAddr, cipher.Copy())
+			}
+
+			return dialSocks5(string(rawAddr), serverAddr)
 		},
 	}
 
@@ -76,9 +81,94 @@ func get(connid int, uri, serverAddr string, rawAddr []byte, cipher *ss.Cipher, 
 	}
 }
 
+func dialSocks5(targetAddr, proxy string) (conn net.Conn, err error) {
+	readAll := func(conn net.Conn) (resp []byte, err error) {
+		resp = make([]byte, 1024)
+		Timeout := 5 * time.Second
+		if err := conn.SetReadDeadline(time.Now().Add(Timeout)); err != nil {
+			return nil, err
+		}
+		n, err := conn.Read(resp)
+		resp = resp[:n]
+		return
+	}
+	sendReceive := func(conn net.Conn, req []byte) (resp []byte, err error) {
+		Timeout := 5 * time.Second
+		if err := conn.SetWriteDeadline(time.Now().Add(Timeout)); err != nil {
+			return nil, err
+		}
+		_, err = conn.Write(req)
+		if err != nil {
+			return
+		}
+		resp, err = readAll(conn)
+		return
+	}
+
+	conn, err = net.Dial("tcp", proxy)
+	if err != nil {
+		return
+	}
+
+	// version identifier/method selection request
+	req := []byte{
+		5, // version number
+		1, // number of methods
+		0, // method 0: no authentication (only anonymous access supported for now)
+	}
+	resp, err := sendReceive(conn, req)
+	if err != nil {
+		return
+	} else if len(resp) != 2 {
+		err = errors.New("server does not respond properly")
+		return
+	} else if resp[0] != 5 {
+		err = errors.New("server does not support Socks 5")
+		return
+	} else if resp[1] != 0 { // no auth
+		err = errors.New("socks method negotiation failed")
+		return
+	}
+
+	// detail request
+	host, portStr, err := net.SplitHostPort(targetAddr)
+	if err != nil {
+		return nil, err
+	}
+	portInt, err := strconv.ParseUint(portStr, 10, 16)
+	if err != nil {
+		return nil, err
+	}
+	port := uint16(portInt)
+
+	req = []byte{
+		5,               // version number
+		1,               // connect command
+		0,               // reserved, must be zero
+		3,               // address type, 3 means domain name
+		byte(len(host)), // address length
+	}
+	req = append(req, []byte(host)...)
+	req = append(req, []byte{
+		byte(port >> 8), // higher byte of destination port
+		byte(port),      // lower byte of destination port (big endian)
+	}...)
+	resp, err = sendReceive(conn, req)
+	if err != nil {
+		return
+	} else if len(resp) != 10 {
+		err = errors.New("server does not respond properly")
+	} else if resp[1] != 0 {
+		err = errors.New("can't complete SOCKS5 connection")
+	}
+
+	return
+}
+
 func main() {
-	flag.StringVar(&config.server, "s", "127.0.0.1", "server:port")
-	flag.IntVar(&config.port, "p", 0, "server:port")
+	server := flag.String("s", "127.0.0.1", "server:port")
+	proxy := flag.String("ss", "127.0.0.1", "proxy:port")
+	flag.IntVar(&config.port, "p", 0, "port")
 	flag.IntVar(&config.core, "core", 1, "number of CPU cores to use")
 	flag.StringVar(&config.passwd, "k", "", "password")
 	flag.StringVar(&config.method, "m", "", "encryption method, use empty string or rc4")
@@ -89,8 +179,17 @@ func main() {
 
 	flag.Parse()
 
-	if config.server == "" || config.port == 0 || config.passwd == "" || len(flag.Args()) != 1 {
-		fmt.Printf("Usage: %s -s <server> -p <port> -k <password> <url>\n", os.Args[0])
+	config.server = "127.0.0.1"
+	var connectProxy bool
+	if *server != config.server {
+		config.server = *server
+	} else {
+		config.server = *proxy
+		connectProxy = true
+	}
+
+	if config.port == 0 || !connectProxy && config.passwd == "" || len(flag.Args()) != 1 {
+		fmt.Printf("Usage: %s -s[s] <server> -p <port> -k <password> <url>\n", os.Args[0])
 		os.Exit(1)
 	}
 
@@ -104,11 +203,6 @@ func main() {
 		uri = "http://" + uri
 	}
 
-	cipher, err := ss.NewCipher(config.method, config.passwd)
-	if err != nil {
-		fmt.Println("Error creating cipher:", err)
-		os.Exit(1)
-	}
 	serverAddr := net.JoinHostPort(config.server, strconv.Itoa(config.port))
 
 	parsedURL, err := url.Parse(uri)
@@ -122,10 +216,23 @@ func main() {
 	} else {
 		host = parsedURL.Host
 	}
-	// fmt.Println(host)
-	rawAddr, err := ss.RawAddr(host)
-	if err != nil {
-		panic("Error getting raw address.")
+
+	rawAddr := []byte(host)
+	var cipher *ss.Cipher
+	if !connectProxy {
+		if config.method == "" {
+			config.method = "aes-256-cfb"
+		}
+
+		cipher, err = ss.NewCipher(config.method, config.passwd)
+		if err != nil {
+			fmt.Println("Error creating cipher:", err)
+			os.Exit(1)
+		}
+		rawAddr, err = ss.RawAddr(host)
+		if err != nil {
+			panic("Error getting raw address.")
+		}
 	}
 
 	done := make(chan []time.Duration)
