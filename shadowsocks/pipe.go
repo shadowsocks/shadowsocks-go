@@ -1,6 +1,7 @@
 package shadowsocks
 
 import (
+	"io"
 	"net"
 	"time"
 )
@@ -14,40 +15,17 @@ func SetReadTimeout(c net.Conn) {
 // PipeThenClose copies data from src to dst, closes dst when done.
 func PipeThenClose(src, dst net.Conn, addTraffic func(int), buf []byte, n int) {
 	defer dst.Close()
-	if buf == nil {
-		buf = leakyBuf.Get()
-	}
-	defer leakyBuf.Put(buf)
-
-	var err error
-	for {
-		// read may return EOF with n > 0
-		// should always process n > 0 bytes before handling error
+	if buf != nil {
 		if n > 0 {
-			// Note: avoid overwrite err returned by Read.
 			if _, err := dst.Write(buf[0:n]); err != nil {
 				Debug.Println("write:", err)
-				break
+				leakyBuf.Put(buf)
+				return
 			}
 		}
-
-		SetReadTimeout(src)
-		n, err = src.Read(buf)
-		if addTraffic != nil {
-			addTraffic(n)
-		}
-
-		if err != nil {
-			// Always "use of closed network connection", but no easy way to
-			// identify this specific error. So just leave the error along for now.
-			// More info here: https://code.google.com/p/go/issues/detail?id=4373
-			/*
-				if bool(Debug) && err != io.EOF {
-					Debug.Println("read:", err)
-				}
-			*/
-			break
-		}
+		leakyBuf.Put(buf)
 	}
+
+	io.Copy(src, dst)
 	return
 }
