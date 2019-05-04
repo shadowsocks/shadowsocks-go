@@ -20,6 +20,11 @@ func NewLeakyBuf(n, bufSize int) *LeakyBuf {
 	}
 }
 
+// GetLeakyBuf is invoked outside of the package.
+func GetLeakyBuf() []byte {
+	return leakyBuf.Get()
+}
+
 // Get returns a buffer from the leaky buffer or create a new buffer.
 func (lb *LeakyBuf) Get() (b []byte) {
 	select {

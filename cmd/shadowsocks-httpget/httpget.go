@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"math"
 	"net"
@@ -14,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	ss "github.com/bonafideyan/shadowsocks-go/shadowsocks"
 )
 
 var config struct {
@@ -57,7 +58,11 @@ func get(connid int, uri, serverAddr string, rawAddr []byte, cipher *ss.Cipher, 
 	}()
 	tr := &http.Transport{
 		Dial: func(_, _ string) (net.Conn, error) {
-			return ss.DialWithRawAddr(rawAddr, serverAddr, cipher.Copy())
+			if cipher != nil {
+				return ss.DialWithRawAddr(rawAddr, serverAddr, cipher.Copy())
+			}
+
+			return ss.DialAsClient(string(rawAddr), serverAddr)
 		},
 	}
 
@@ -77,8 +82,9 @@ func get(connid int, uri, serverAddr string, rawAddr []byte, cipher *ss.Cipher, 
 }
 
 func main() {
-	flag.StringVar(&config.server, "s", "127.0.0.1", "server:port")
-	flag.IntVar(&config.port, "p", 0, "server:port")
+	server := flag.String("s", "127.0.0.1", "server:port")
+	proxy := flag.String("ss", "127.0.0.1", "proxy:port")
+	flag.IntVar(&config.port, "p", 0, "port")
 	flag.IntVar(&config.core, "core", 1, "number of CPU cores to use")
 	flag.StringVar(&config.passwd, "k", "", "password")
 	flag.StringVar(&config.method, "m", "", "encryption method, use empty string or rc4")
@@ -89,8 +95,17 @@ func main() {
 
 	flag.Parse()
 
-	if config.server == "" || config.port == 0 || config.passwd == "" || len(flag.Args()) != 1 {
-		fmt.Printf("Usage: %s -s <server> -p <port> -k <password> <url>\n", os.Args[0])
+	config.server = "127.0.0.1"
+	var connectProxy bool
+	if *server != config.server {
+		config.server = *server
+	} else {
+		config.server = *proxy
+		connectProxy = true
+	}
+
+	if config.port == 0 || !connectProxy && config.passwd == "" || len(flag.Args()) != 1 {
+		fmt.Printf("Usage: %s -s[s] <server> -p <port> -k <password> <url>\n", os.Args[0])
 		os.Exit(1)
 	}
 
@@ -104,11 +119,6 @@ func main() {
 		uri = "http://" + uri
 	}
 
-	cipher, err := ss.NewCipher(config.method, config.passwd)
-	if err != nil {
-		fmt.Println("Error creating cipher:", err)
-		os.Exit(1)
-	}
 	serverAddr := net.JoinHostPort(config.server, strconv.Itoa(config.port))
 
 	parsedURL, err := url.Parse(uri)
@@ -122,10 +132,23 @@ func main() {
 	} else {
 		host = parsedURL.Host
 	}
-	// fmt.Println(host)
-	rawAddr, err := ss.RawAddr(host)
-	if err != nil {
-		panic("Error getting raw address.")
+
+	rawAddr := []byte(host)
+	var cipher *ss.Cipher
+	if !connectProxy {
+		if config.method == "" {
+			config.method = "aes-256-cfb"
+		}
+
+		cipher, err = ss.NewCipher(config.method, config.passwd)
+		if err != nil {
+			fmt.Println("Error creating cipher:", err)
+			os.Exit(1)
+		}
+		rawAddr, err = ss.RawAddr(host)
+		if err != nil {
+			panic("Error getting raw address.")
+		}
 	}
 
 	done := make(chan []time.Duration)

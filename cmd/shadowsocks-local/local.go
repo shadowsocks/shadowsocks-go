@@ -17,12 +17,12 @@ import (
 	"strings"
 	"time"
 
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/bonafideyan/shadowsocks-go/shadowsocks"
 )
 
-var debug ss.DebugLog
-
 var (
+	debug ss.DebugLog
+
 	errAddrType      = errors.New("socks addr type not supported")
 	errVer           = errors.New("socks version not supported")
 	errMethod        = errors.New("socks only support 1 method now")
@@ -246,6 +246,7 @@ func connectToServer(serverId int, rawaddr []byte, addr string) (remote *ss.Conn
 		}
 		return nil, err
 	}
+
 	debug.Printf("connected to %s via %s\n", addr, se.server)
 	servers.failCnt[serverId] = 0
 	return
@@ -280,7 +281,7 @@ func createServerConn(rawaddr []byte, addr string) (remote *ss.Conn, err error) 
 	return nil, err
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, redir bool) {
 	if debug {
 		debug.Printf("socks connect from %s\n", conn.RemoteAddr().String())
 	}
@@ -291,23 +292,37 @@ func handleConnection(conn net.Conn) {
 		}
 	}()
 
-	var err error = nil
-	if err = handShake(conn); err != nil {
-		log.Println("socks handshake:", err)
-		return
-	}
-	rawaddr, addr, err := getRequest(conn)
-	if err != nil {
-		log.Println("error getting request:", err)
-		return
-	}
-	// Sending connection established message immediately to client.
-	// This some round trip time for creating socks connection with the client.
-	// But if connection failed, the client will get connection reset error.
-	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
-	if err != nil {
-		debug.Println("send connection confirmation:", err)
-		return
+	var rawaddr, buf []byte
+	var addr string
+	var n int
+	if !redir {
+		var err error = nil
+		if err = handShake(conn); err != nil {
+			log.Println("socks handshake:", err)
+			return
+		}
+		rawaddr, addr, err = getRequest(conn)
+		if err != nil {
+			log.Println("error getting request:", err)
+			return
+		}
+		// Sending connection established message immediately to client.
+		// This some round trip time for creating socks connection with the client.
+		// But if connection failed, the client will get connection reset error.
+		_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
+		if err != nil {
+			debug.Println("send connection confirmation:", err)
+			return
+		}
+	} else {
+		var err error
+		buf = ss.GetLeakyBuf()
+		n, err = conn.Read(buf)
+		if err != nil {
+			println(err.Error())
+		}
+
+		rawaddr, addr = ss.GetOriginalDst(&conn, string(buf[:n]))
 	}
 
 	remote, err := createServerConn(rawaddr, addr)
@@ -323,13 +338,13 @@ func handleConnection(conn net.Conn) {
 		}
 	}()
 
-	go ss.PipeThenClose(conn, remote, nil)
-	ss.PipeThenClose(remote, conn, nil)
+	go ss.PipeThenClose(conn, remote, nil, buf, n)
+	ss.PipeThenClose(remote, conn, nil, nil, 0)
 	closed = true
 	debug.Println("closed connection to", addr)
 }
 
-func run(listenAddr string) {
+func run(listenAddr string, redir bool) {
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatal(err)
@@ -341,7 +356,7 @@ func run(listenAddr string) {
 			log.Println("accept:", err)
 			continue
 		}
-		go handleConnection(conn)
+		go handleConnection(conn, redir)
 	}
 }
 
@@ -407,8 +422,10 @@ func main() {
 	var configFile, cmdServer, cmdURI string
 	var cmdConfig ss.Config
 	var printVer bool
+	var redirect bool
 
 	flag.BoolVar(&printVer, "version", false, "print version")
+	flag.BoolVar(&redirect, "redirect", false, "Redirect normal request to socks server.")
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
 	flag.StringVar(&cmdServer, "s", "", "server address")
 	flag.StringVar(&cmdConfig.LocalAddress, "b", "", "local address, listen only to this address if specified")
@@ -477,5 +494,6 @@ func main() {
 	}
 
 	parseServerConfig(config)
-	run(config.LocalAddress + ":" + strconv.Itoa(config.LocalPort))
+	run(config.LocalAddress+":"+strconv.Itoa(config.LocalPort), redirect)
 }
+
