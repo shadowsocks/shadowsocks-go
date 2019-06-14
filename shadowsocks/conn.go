@@ -99,9 +99,6 @@ func (c *Conn) Read(b []byte) (n int, err error) {
 		if err = c.initDecrypt(iv); err != nil {
 			return
 		}
-		if len(c.iv) == 0 {
-			c.iv = iv
-		}
 	}
 
 	cipherData := c.readBuf
