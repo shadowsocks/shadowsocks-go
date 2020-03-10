@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	AddrMask        byte = 0xf
+	AddrMask byte = 0xf
 )
 
 type Conn struct {
@@ -63,6 +63,22 @@ func DialWithRawAddr(rawaddr []byte, server string, cipher *Cipher) (c *Conn, er
 	}
 	c = NewConn(conn, cipher)
 	if _, err = c.Write(rawaddr); err != nil {
+		c.Close()
+		return nil, err
+	}
+	return
+}
+
+// DiaAndWriteData is intended for use by users implementing a local socks proxy.
+// rawaddr shoud contain part of the data in socks request and forwarding data,
+// starting from the ATYP field. (Refer to rfc1928 for more information.)
+func DiaAndWriteData(data []byte, server string, cipher *Cipher) (c *Conn, err error) {
+	conn, err := net.Dial("tcp", server)
+	if err != nil {
+		return
+	}
+	c = NewConn(conn, cipher)
+	if _, err = c.Write(data); err != nil {
 		c.Close()
 		return nil, err
 	}
