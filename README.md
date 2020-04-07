@@ -1,3 +1,7 @@
+# Deprecated
+
+Use https://github.com/shadowsocks/go-shadowsocks2 instead.
+
 # shadowsocks-go
 
 Current version: 1.2.2 [![Build Status](https://travis-ci.org/shadowsocks/shadowsocks-go.png?branch=master)](https://travis-ci.org/shadowsocks/shadowsocks-go)
