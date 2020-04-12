@@ -36,6 +36,8 @@ const (
 	lenIPv6   = net.IPv6len + 2 // ipv6 + 2port
 	lenDmBase = 2               // 1addrLen + 2port, plus addrLen
 	// lenHmacSha1 = 10
+
+	defaultTimeout = 300
 )
 
 var debug ss.DebugLog
@@ -437,7 +439,7 @@ func main() {
 	flag.StringVar(&configFile, "c", "config.json", "specify config file")
 	flag.StringVar(&cmdConfig.Password, "k", "", "password")
 	flag.IntVar(&cmdConfig.ServerPort, "p", 0, "server port")
-	flag.IntVar(&cmdConfig.Timeout, "t", 300, "timeout in seconds")
+	flag.IntVar(&cmdConfig.Timeout, "t", 0, "timeout in seconds")
 	flag.StringVar(&cmdConfig.Method, "m", "", "encryption method, default: aes-256-cfb")
 	flag.IntVar(&core, "core", 0, "maximum number of CPU cores to use, default is determinied by Go runtime")
 	flag.BoolVar((*bool)(&debug), "d", false, "print debug message")
@@ -463,6 +465,9 @@ func main() {
 		config = &cmdConfig
 		ss.UpdateConfig(config, config)
 	} else {
+		if config.Timeout == 0 && cmdConfig.Timeout == 0 {
+			cmdConfig.Timeout = defaultTimeout
+		}
 		ss.UpdateConfig(config, &cmdConfig)
 	}
 	if config.Method == "" {
