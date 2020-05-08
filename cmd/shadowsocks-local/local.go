@@ -309,8 +309,19 @@ func handleConnection(conn net.Conn) {
 		debug.Println("send connection confirmation:", err)
 		return
 	}
-
+	
+	//need some data for wirte
+	buf := make([]byte, 4096) 
+	copy(buf, rawaddr)
+	ss.SetReadTimeout(conn)
+	if n, err = conn.Read(buf[len(rawaddr):cap(buf)]); err != nil {
+		return
+	}
+	rawaddr = buf[: n+len(rawaddr)]
 	remote, err := createServerConn(rawaddr, addr)
+	buf = nil
+	rawaddr = nil
+	
 	if err != nil {
 		if len(servers.srvCipher) > 1 {
 			log.Println("Failed connect to all available shadowsocks server")
@@ -322,11 +333,12 @@ func handleConnection(conn net.Conn) {
 			remote.Close()
 		}
 	}()
-
+	
+	remote.Flags = 1
 	go ss.PipeThenClose(conn, remote, nil)
 	ss.PipeThenClose(remote, conn, nil)
 	closed = true
-	debug.Println("closed connection to", addr)
+	//debug.Println("closed connection to", addr)
 }
 
 func run(listenAddr string) {
@@ -401,9 +413,26 @@ func parseURI(u string, cfg *ss.Config) (string, error) {
 
 }
 
+func logoForWindows() {
+	var count uint64 = 0
+	cur := 0
+	for {
+		if ss.RecvCount != 0 {
+			cur = ss.RecvCount
+			ss.RecvCount = 0
+			count += uint64(cur)
+			fmt.Printf("\n当前流量:%d ,%d", cur, count/1024/1024)
+		}
+		time.Sleep(time.Second * 5)
+	}
+}
+
 func main() {
 	log.SetOutput(os.Stdout)
-
+	//for windows view
+	if os.DevNull == "NUL" {
+		go logoForWindows()
+	}
 	var configFile, cmdServer, cmdURI string
 	var cmdConfig ss.Config
 	var printVer bool
